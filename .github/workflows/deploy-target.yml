@@ -1,0 +1,141 @@
+name: Deploy ke Firebase Target
+
+on:
+  workflow_dispatch:
+    inputs:
+      firebase_project_id:
+        description: 'Firebase Project ID Target (Wajib)'
+        required: true
+        type: string
+      firebase_api_key:
+        description: 'Firebase Web API Key (Opsional/Rekomendasi)'
+        required: false
+        type: string
+        default: ''
+      firebase_app_id:
+        description: 'Firebase App ID (Opsional/Rekomendasi)'
+        required: false
+        type: string
+        default: ''
+      firebase_messaging_sender_id:
+        description: 'Firebase Messaging Sender ID (Opsional)'
+        required: false
+        type: string
+        default: ''
+      firebase_measurement_id:
+        description: 'Firebase Measurement ID (Opsional)'
+        required: false
+        type: string
+        default: ''
+      google_sheet_id:
+        description: 'Google Sheet ID Target (Opsional)'
+        required: false
+        type: string
+        default: ''
+      google_apps_script_url:
+        description: 'Google Apps Script URL /exec (Opsional)'
+        required: false
+        type: string
+        default: ''
+      cloudinary_name:
+        description: 'Cloudinary Cloud Name (Opsional)'
+        required: false
+        type: string
+        default: ''
+      cloudinary_preset:
+        description: 'Cloudinary Upload Preset (Opsional)'
+        required: false
+        type: string
+        default: 'ml_default'
+      gemini_api_key:
+        description: 'Gemini AI API Key (Opsional)'
+        required: false
+        type: string
+        default: ''
+      storage_prefix:
+        description: 'Storage Prefix Isolasi (Opsional)'
+        required: false
+        type: string
+        default: 'porto'
+      app_name:
+        description: 'Nama Aplikasi / Brand (Opsional)'
+        required: false
+        type: string
+        default: 'Agenze'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Generate .env Konfigurasi Target
+        run: |
+          echo "VITE_FIREBASE_PROJECT_ID=${{ inputs.firebase_project_id }}" >> .env
+          echo "VITE_FIREBASE_AUTH_DOMAIN=${{ inputs.firebase_project_id }}.firebaseapp.com" >> .env
+          echo "VITE_FIREBASE_STORAGE_BUCKET=${{ inputs.firebase_project_id }}.firebasestorage.app" >> .env
+          
+          # Gunakan Firebase Web Keys jika diisi
+          if [ -n "${{ inputs.firebase_api_key }}" ]; then
+            echo "VITE_FIREBASE_API_KEY=${{ inputs.firebase_api_key }}" >> .env
+          fi
+          if [ -n "${{ inputs.firebase_app_id }}" ]; then
+            echo "VITE_FIREBASE_APP_ID=${{ inputs.firebase_app_id }}" >> .env
+          fi
+          if [ -n "${{ inputs.firebase_messaging_sender_id }}" ]; then
+            echo "VITE_FIREBASE_MESSAGING_SENDER_ID=${{ inputs.firebase_messaging_sender_id }}" >> .env
+          fi
+          if [ -n "${{ inputs.firebase_measurement_id }}" ]; then
+            echo "VITE_FIREBASE_MEASUREMENT_ID=${{ inputs.firebase_measurement_id }}" >> .env
+          fi
+
+          # Gunakan Google Services jika diisi
+          if [ -n "${{ inputs.google_sheet_id }}" ]; then
+            echo "VITE_GOOGLE_SHEET_ID=${{ inputs.google_sheet_id }}" >> .env
+          fi
+          if [ -n "${{ inputs.google_apps_script_url }}" ]; then
+            echo "VITE_GOOGLE_APPS_SCRIPT_URL=${{ inputs.google_apps_script_url }}" >> .env
+          fi
+          
+          # Gunakan Cloudinary jika diisi
+          if [ -n "${{ inputs.cloudinary_name }}" ]; then
+            echo "VITE_CLOUDINARY_NAME=${{ inputs.cloudinary_name }}" >> .env
+            echo "VITE_CLOUDINARY_PRESET=${{ inputs.cloudinary_preset }}" >> .env
+          fi
+          
+          # Gunakan Gemini API Key jika diisi
+          if [ -n "${{ inputs.gemini_api_key }}" ]; then
+            echo "VITE_GEMINI_API_KEY=${{ inputs.gemini_api_key }}" >> .env
+          fi
+          
+          echo "VITE_STORAGE_PREFIX=${{ inputs.storage_prefix }}" >> .env
+          echo "VITE_APP_NAME=${{ inputs.app_name }}" >> .env
+          echo "VITE_APP_DOMAIN=https://${{ inputs.firebase_project_id }}.web.app" >> .env
+          
+          echo "File .env berhasil dibuat:"
+          cat .env
+
+      - name: Install Dependencies
+        run: npm ci || npm install
+
+      - name: Build Production Bundle (Vite)
+        run: npm run build
+
+      - name: Deploy ke Firebase Hosting Target
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          if [ -n "$FIREBASE_TOKEN" ]; then
+            npx firebase-tools deploy --only hosting --project "${{ inputs.firebase_project_id }}" --token "$FIREBASE_TOKEN"
+          else
+            echo "Error: Rahasia 'FIREBASE_TOKEN' belum ditambahkan di GitHub Settings > Secrets and variables > Actions."
+            echo "Silakan jalankan 'npx firebase login:ci' di komputer Anda untuk mendapatkan token, lalu simpan sebagai FIREBASE_TOKEN di GitHub Secrets."
+            exit 1
+          fi

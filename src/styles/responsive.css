@@ -1,0 +1,433 @@
+/* ══════════════════════════════════════════════════════════════════════
+   RESPONSIVE MULTI-DEVICE & PWA ADAPTIVE SYSTEM
+   Universal Display Engine: Compact Mobile, Large Mobile, Foldable, Tablet, Laptop, Desktop, 4K Ultrawide
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* Global Fluid Root & Viewport Safety */
+:root {
+  --app-height: 100dvh;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+/* Ensure no horizontal scroll blowout on any device */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  max-width: 100vw;
+  overflow-x: hidden;
+  min-height: 100dvh;
+}
+
+/* 1. Ultra Compact Mobile & Foldables Cover Screen (<= 380px) */
+@media (max-width: 380px) {
+  :root {
+    --cms-font-title-xl: 18px;
+    --cms-font-title-lg: 16px;
+    --cms-font-title-md: 14px;
+    --cms-pad-card-md: 12px;
+    --cms-pad-card-lg: 14px;
+    --cms-gap-lg: 12px;
+    --cms-gap-md: 8px;
+  }
+
+  .cms-card, .dash-card {
+    padding: 12px !important;
+    border-radius: 12px !important;
+  }
+
+  .cms-btn {
+    height: 36px !important;
+    padding: 0 12px !important;
+    font-size: 11.5px !important;
+  }
+}
+
+/* 2. Standard & Large Mobile Devices (<= 767px) */
+@media (max-width: 767px) {
+  html, body {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+  }
+
+  button:not(.cms-circle-btn):not(.cms-mobile-nav-btn):not(.live-chat-close-btn):not(.sidebar-icon-btn):not(.icon-btn):not([aria-label="Tutup"]):not(.cal-nav-btn):not(.cal-today-btn),
+  a, input, select, textarea {
+    min-height: 38px;
+    touch-action: manipulation;
+  }
+
+  /* Explicitly preserve circular geometry for all icon & circle buttons */
+  button.cms-circle-btn,
+  button.cms-mobile-nav-btn,
+  button.live-chat-close-btn,
+  button.sidebar-icon-btn,
+  button.icon-btn,
+  button.cal-nav-btn,
+  button[aria-label="Tutup"]:not(.cms-dialog-btn):not(.cms-pill):not([class*="btn-"]),
+  button.cms-circle-btn[class*="rounded-full"] {
+    min-height: unset !important;
+    max-height: unset;
+    aspect-ratio: 1 / 1 !important;
+    box-sizing: border-box !important;
+  }
+
+  button.cms-circle-btn {
+    min-height: unset !important;
+    height: 28px !important;
+    width: 28px !important;
+    min-width: 28px !important;
+    max-width: 28px !important;
+    aspect-ratio: 1 / 1 !important;
+    border-radius: 50% !important;
+    padding: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  button.cal-nav-btn {
+    min-height: unset !important;
+    height: 26px !important;
+    width: 26px !important;
+    min-width: 26px !important;
+    max-width: 26px !important;
+    aspect-ratio: 1 / 1 !important;
+    border-radius: 50% !important;
+    padding: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex-shrink: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  button.cal-today-btn {
+    min-height: unset !important;
+    height: 26px !important;
+    max-height: 26px !important;
+    line-height: 26px !important;
+    padding: 0 10px !important;
+    border-radius: 9999px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex-shrink: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  .cms-main-container,
+  .settings-content-wrapper,
+  .dashboard-overview-container,
+  .hero-identity-widget-root,
+  .hero-celestial-canvas,
+  .cms-work-area {
+    max-width: 100% !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    overflow-x: clip !important;
+  }
+
+  .dashboard-overview-root {
+    max-width: 100% !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    overflow-x: clip !important;
+    padding: 12px 14px calc(160px + env(safe-area-inset-bottom, 24px)) !important;
+  }
+
+  .cms-page-content,
+  .settings-content-container,
+  .cms-projects-module,
+  .projects-scroll-area {
+    padding-bottom: calc(100px + var(--safe-bottom, 24px)) !important;
+  }
+
+  /* Full width tables with smooth touch scrolling */
+  .cms-table-wrapper,
+  .table-responsive {
+    width: 100% !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  /* Single column grids on mobile for clean breathing room */
+  .cms-grid-responsive,
+  .cms-stats-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+}
+
+/* 3. Foldables Unfolded & Small Tablets (600px - 768px) */
+@media (min-width: 600px) and (max-width: 768px) {
+  .cms-grid-responsive {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 14px !important;
+  }
+}
+
+/* 4. Tablets & iPad Pro (768px - 1024px) */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .cms-grid-responsive {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 16px !important;
+  }
+
+  .cms-tablet-drawer {
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4) !important;
+  }
+
+  .cms-work-area {
+    padding: 0 !important;
+  }
+}
+
+/* 5. Standard Laptops & MacBooks (1025px - 1439px) */
+@media (min-width: 1025px) and (max-width: 1439px) {
+  .cms-grid-responsive {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 18px !important;
+  }
+}
+
+/* 6. Desktop, Ultrawide & 4K Displays (>= 1440px) */
+@media (min-width: 1440px) {
+  .cms-container-max,
+  .dashboard-overview-container {
+    max-width: 1600px !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+  }
+
+  .cms-grid-responsive {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 20px !important;
+  }
+}
+
+/* 7. PWA Standalone Mode (Installed on Home Screen / Desktop App) */
+@media (display-mode: standalone) {
+  body {
+    user-select: none;
+    -webkit-user-select: none;
+    /* Do NOT double-pad body; insets are managed cleanly inside app containers */
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  input, textarea, [contenteditable="true"], .selectable-text {
+    user-select: text !important;
+    -webkit-user-select: text !important;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ANTI-SQUISH (ZERO PENYET) & UNIFIED GEOMETRY SPECIFICATION
+   Guarantees pills, slide buttons, indicators, and switches strictly retain
+   consistent, beautiful geometry across Mobile, Tablet (iPad), Laptop, and Desktop.
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* 1. Universal Rounded Pill System (Zero Penyet / Squish-Proof for Dedicated Pills) */
+.cms-pill,
+.cms-pill-filter,
+.cms-pill-btn,
+.cms-pill-dock,
+.cms-badge-pill,
+.dock-pill-btn,
+.status-pill,
+.view-mode-pill,
+.cms-pill-datepicker,
+.cms-glass-datepicker,
+input[type="date"].cms-pill,
+input[type="date"].cms-input {
+  border-radius: 9999px !important;
+  flex-shrink: 0 !important;
+  white-space: nowrap !important;
+  box-sizing: border-box !important;
+  user-select: none;
+}
+
+/* 2. Universal Slide Buttons & Circle Buttons (Exact 1:1 Aspect Ratio) */
+.cms-circle-btn,
+button.cms-circle-btn,
+.cms-mobile-nav-btn,
+.live-chat-close-btn,
+.hero-quick-btn,
+.carousel-arrow,
+.slider-arrow,
+.slider-btn,
+.carousel-btn,
+.carousel-prev,
+.carousel-prev,
+.carousel-next,
+button[aria-label*="Sebelumnya"],
+button[aria-label*="Berikutnya"],
+button[aria-label*="prev"],
+button[aria-label*="next"],
+button[aria-label="Tutup"]:not(.cms-dialog-btn):not(.cms-pill):not([class*="btn-"]),
+.circle-btn,
+.cms-icon-circle-btn,
+.celestial-sphere-3d {
+  border-radius: 50% !important;
+  aspect-ratio: 1 / 1 !important;
+  flex-shrink: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+}
+
+/* Ensure inner icons inside circle buttons never stretch or deform */
+.cms-circle-btn svg,
+.cms-mobile-nav-btn svg,
+.live-chat-close-btn svg,
+.sidebar-icon-btn svg,
+.hero-quick-btn svg,
+.carousel-arrow svg,
+.slider-arrow svg,
+button[aria-label*="Sebelumnya"] svg,
+button[aria-label*="Berikutnya"] svg,
+svg,
+.lucide {
+  flex-shrink: 0 !important;
+}
+
+/* 3. Universal Slide Indicators & Carousel Dots */
+.slider-dots,
+.carousel-indicators,
+.carousel-dots,
+.slide-indicator-container {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  flex-wrap: nowrap !important;
+}
+
+.slider-dots > *,
+.carousel-indicators > *,
+.carousel-dots > *,
+.slide-indicator,
+.slider-indicator,
+.indicator-dot {
+  flex-shrink: 0 !important;
+  box-sizing: border-box !important;
+  border-radius: 9999px !important;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* 4. Universal Switch Toggle System (Precision Solid & Zero Glow) */
+.cms-switch,
+.cms-toggle-btn,
+button[role="switch"],
+.switch-track {
+  width: 44px !important;
+  min-width: 44px !important;
+  max-width: 44px !important;
+  height: 24px !important;
+  min-height: 24px !important;
+  max-height: 24px !important;
+  border-radius: 9999px !important;
+  border: 1.5px solid var(--glass-border, rgba(255, 255, 255, 0.15)) !important;
+  outline: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+  position: relative !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  cursor: pointer !important;
+  flex-shrink: 0 !important;
+  background: var(--cms-switcher-bg, #1a1d2d) !important;
+  box-shadow: none !important;
+  transition: background-color 0.2s ease, border-color 0.2s ease !important;
+  vertical-align: middle !important;
+  line-height: 1 !important;
+  user-select: none !important;
+  overflow: visible !important;
+}
+
+.cms-switch[aria-checked="true"],
+.cms-toggle-btn[aria-checked="true"],
+button[role="switch"][aria-checked="true"] {
+  background: #10b981 !important;
+  border-color: #10b981 !important;
+  box-shadow: none !important;
+}
+
+.cms-switch.is-danger[aria-checked="true"],
+button[role="switch"].is-danger[aria-checked="true"] {
+  background: #ef4444 !important;
+  border-color: #ef4444 !important;
+  box-shadow: none !important;
+}
+
+/* Switch Knob: Guaranteed 100% Round Ball, Pure Solid White, Exactly Centered Vertically & Horizontally */
+.cms-switch-knob,
+.cms-switch-thumb,
+.cms-switch > div,
+.cms-toggle-btn > div,
+button[role="switch"] > div,
+.switch-thumb {
+  position: absolute !important;
+  top: 50% !important;
+  left: 2px !important;
+  transform: translateY(-50%) translateX(0) !important;
+  width: 17px !important;
+  min-width: 17px !important;
+  max-width: 17px !important;
+  height: 17px !important;
+  min-height: 17px !important;
+  max-height: 17px !important;
+  border-radius: 50% !important;
+  aspect-ratio: 1 / 1 !important;
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
+  box-sizing: border-box !important;
+  flex-shrink: 0 !important;
+  pointer-events: none !important;
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.cms-switch[aria-checked="true"] > .cms-switch-knob,
+.cms-switch[aria-checked="true"] > div,
+.cms-toggle-btn[aria-checked="true"] > div,
+button[role="switch"][aria-checked="true"] > .cms-switch-knob,
+button[role="switch"][aria-checked="true"] > div {
+  transform: translateY(-50%) translateX(20px) !important;
+}
+
+/* 5. Container Bounding: Never overflow viewport width */
+.cms-dashboard-root,
+.cms-main-container,
+.cms-work-area,
+.dashboard-overview-container,
+.cms-card,
+.dash-card {
+  max-width: 100% !important;
+  word-break: break-word;
+}
+
+/* 6. Grid Item Safety: Prevents grid tracks from blowout caused by long content */
+.cms-grid-responsive > *,
+.cms-stats-grid > *,
+.cms-bento-grid > * {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+/* 7. Text Cleanliness: 1-3 Words concise labels where appropriate */
+.cms-one-line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+

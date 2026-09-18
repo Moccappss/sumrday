@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    
+    <!-- ── Viewport: Native App Behavior ── -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
+    
+    <!-- ── SEO ── -->
+    <meta name="description" content="sumr.day | Creative Digital Studio — Menghadirkan interaksi digital (undangan web, landing page, aset visual) berkonsep Warm Tech & Skena-Aesthetic. A little sunshine for your screen." />
+    <meta name="robots" content="index, follow" />
+    <meta name="author" content="sumr.day" />
+    
+    <!-- ── Open Graph / Facebook ── -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://sumrday.web.app/" />
+    <meta property="og:title" content="sumr.day | Creative Digital Studio" />
+    <meta property="og:description" content="A little sunshine for your screen ☀️ Creative Digital Studio berkonsep Warm Tech & Skena-Aesthetic untuk undangan web, landing page, dan aset visual impianmu." />
+    <meta property="og:image" content="https://sumrday.web.app/pwa-512x512.png" />
+
+    <!-- ── Twitter ── -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="sumr.day | Creative Digital Studio" />
+    <meta name="twitter:description" content="A little sunshine for your screen ☀️ Creative Digital Studio berkonsep Warm Tech & Skena-Aesthetic untuk undangan web, landing page, dan aset visual impianmu." />
+    <meta name="twitter:image" content="https://sumrday.web.app/pwa-512x512.png" />
+
+    <!-- ══════════════════════════════════════════════
+         PWA & NATIVE APP META TAGS
+         ══════════════════════════════════════════════ -->
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json" />
+    
+    <!-- Theme Colors -->
+    <meta name="theme-color" content="#050507" />
+    
+    <!-- iOS PWA -->
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="sumr.day" />
+    
+    <!-- Windows Tiles -->
+    <meta name="msapplication-TileColor" content="#050507" />
+    <meta name="msapplication-config" content="none" />
+    <meta name="msapplication-tap-highlight" content="no" />
+    
+    <!-- Disable native phone number formatting -->
+    <meta name="format-detection" content="telephone=no, date=no, email=no, address=no" />
+
+    <!-- ── Fonts (Core: Preconnect + Instant Swap) ── -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Primary Core Fonts (Outfit + Inter) -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <!-- Secondary Theme Fonts (Asynchronously Loaded to protect FCP) -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Playfair+Display:wght@400;500;600;700;800&family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+
+    <!-- ── Third Party preconnects (Cloudinary, Firestore & Google Drive/Apps Script) ── -->
+    <link rel="preconnect" href="https://res.cloudinary.com" />
+    <link rel="preconnect" href="https://firestore.googleapis.com" />
+    <link rel="preconnect" href="https://script.google.com" />
+    <link rel="preconnect" href="https://drive.google.com" />
+    <link rel="preconnect" href="https://lh3.googleusercontent.com" />
+    <link rel="preconnect" href="https://images.weserv.nl" crossorigin />
+    <link rel="dns-prefetch" href="https://res.cloudinary.com" />
+    <link rel="dns-prefetch" href="https://firestore.googleapis.com" />
+    <link rel="dns-prefetch" href="https://script.google.com" />
+    <link rel="dns-prefetch" href="https://drive.google.com" />
+    <link rel="dns-prefetch" href="https://lh3.googleusercontent.com" />
+    <link rel="dns-prefetch" href="https://images.weserv.nl" />
+
+    <title>sumr.day | Creative Digital Studio</title>
+    
+    <!-- ── Dark Mode & Theme & Accent Color: Zero Flash of Unstyled Content ── -->
+    <script>
+      (function() {
+        try {
+          // 1. Dark/Light Theme Setup (CMS & Public Website)
+          var cmsDark = localStorage.getItem('cms_dark_mode');
+          var webTheme = localStorage.getItem('website_theme_override');
+          var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          
+          if (cmsDark === 'true' || (cmsDark === null && prefersDark)) {
+            document.documentElement.setAttribute('data-cms-theme', 'dark');
+          } else if (cmsDark === 'false') {
+            document.documentElement.setAttribute('data-cms-theme', 'light');
+          }
+
+          var isDark = false;
+          if (webTheme === 'dark') {
+            isDark = true;
+          } else if (webTheme === 'light') {
+            isDark = false;
+          } else {
+            try {
+              var mainWeb = localStorage.getItem('porto_main_website');
+              if (mainWeb) {
+                var parsed = JSON.parse(mainWeb);
+                if (parsed && parsed.theme && parsed.theme.defaultMode) {
+                  isDark = parsed.theme.defaultMode === 'dark';
+                } else {
+                  isDark = prefersDark;
+                }
+              } else {
+                isDark = prefersDark;
+              }
+            } catch (_) {
+              isDark = prefersDark;
+            }
+          }
+          document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+
+          // 2. Zero-Flicker Accent & Analogous Color Engine
+          var rawAccent = localStorage.getItem('porto_accent_color');
+          if (!rawAccent) {
+            try {
+              var mainWebStr = localStorage.getItem('porto_main_website');
+              if (mainWebStr) {
+                var mainWebObj = JSON.parse(mainWebStr);
+                if (mainWebObj && mainWebObj.theme && mainWebObj.theme.accentColor) {
+                  rawAccent = mainWebObj.theme.accentColor;
+                }
+              }
+            } catch (_) {}
+          }
+          if (!rawAccent) {
+            try {
+              var settingsStr = localStorage.getItem('porto_settings');
+              if (settingsStr) {
+                var settingsObj = JSON.parse(settingsStr);
+                if (settingsObj && settingsObj.accentColor) {
+                  rawAccent = settingsObj.accentColor;
+                }
+              }
+            } catch (_) {}
+          }
+          var hex = (rawAccent || '#f59e0b').trim();
+          if (hex.startsWith('var')) {
+            var match = hex.match(/#[0-9a-fA-F]{3,8}/);
+            hex = match ? match[0] : '#f59e0b';
+          }
+          if (!hex.startsWith('#') && /^[0-9a-fA-F]{3,8}$/.test(hex)) {
+            hex = '#' + hex;
+          }
+          if (!/^#([0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/.test(hex)) {
+            hex = '#f59e0b';
+          }
+          if (hex.length === 4) {
+            hex = '#' + hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3];
+          }
+
+          var clean = hex.replace('#', '');
+          var r = parseInt(clean.substring(0, 2), 16);
+          var g = parseInt(clean.substring(2, 4), 16);
+          var b = parseInt(clean.substring(4, 6), 16);
+          var rgbStr = r + ', ' + g + ', ' + b;
+
+          function hexToHsl(hHex) {
+            var c = hHex.replace('#', '');
+            var rNorm = parseInt(c.substring(0, 2), 16) / 255;
+            var gNorm = parseInt(c.substring(2, 4), 16) / 255;
+            var bNorm = parseInt(c.substring(4, 6), 16) / 255;
+            var max = Math.max(rNorm, gNorm, bNorm), min = Math.min(rNorm, gNorm, bNorm);
+            var h = 0, s = 0, l = (max + min) / 2;
+            if (max !== min) {
+              var d = max - min;
+              s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+              switch (max) {
+                case rNorm: h = (gNorm - bNorm) / d + (gNorm < bNorm ? 6 : 0); break;
+                case gNorm: h = (bNorm - rNorm) / d + 2; break;
+                case bNorm: h = (rNorm - gNorm) / d + 4; break;
+              }
+              h /= 6;
+            }
+            return { h: Math.round(h * 360), s: Math.round(s * 100), l: Math.round(l * 100) };
+          }
+
+          function hslToHex(h, s, l) {
+            h = ((h % 360) + 360) % 360;
+            s = Math.max(0, Math.min(100, s)) / 100;
+            l = Math.max(0, Math.min(100, l)) / 100;
+            var c = (1 - Math.abs(2 * l - 1)) * s;
+            var x = c * (1 - Math.abs((h / 60) % 2 - 1));
+            var m = l - c / 2;
+            var rP = 0, gP = 0, bP = 0;
+            if (h >= 0 && h < 60) { rP = c; gP = x; bP = 0; }
+            else if (h >= 60 && h < 120) { rP = x; gP = c; bP = 0; }
+            else if (h >= 120 && h < 180) { rP = 0; gP = c; bP = x; }
+            else if (h >= 180 && h < 240) { rP = 0; gP = x; bP = c; }
+            else if (h >= 240 && h < 300) { rP = x; gP = 0; bP = c; }
+            else if (h >= 300 && h < 360) { rP = c; gP = 0; bP = x; }
+            var toHex = function(n) {
+              var hx = Math.round((n + m) * 255).toString(16);
+              return hx.length === 1 ? '0' + hx : hx;
+            };
+            return '#' + toHex(rP) + toHex(gP) + toHex(bP);
+          }
+
+          function hexToRgb(hHex) {
+            var c = hHex.replace('#', '');
+            return parseInt(c.substring(0, 2), 16) + ', ' + parseInt(c.substring(2, 4), 16) + ', ' + parseInt(c.substring(4, 6), 16);
+          }
+
+          var hsl = hexToHsl(hex);
+          var sat = Math.max(75, hsl.s);
+          var lum = Math.min(65, Math.max(45, hsl.l));
+
+          var coolHex = hslToHex(hsl.h - 32, sat * 0.95, lum * 1.05);
+          var warmHex = hslToHex(hsl.h + 32, sat * 1.02, lum * 0.98);
+          var deepHex = hslToHex(hsl.h - 18, sat, Math.max(38, lum * 0.88));
+          var popHex = hslToHex(hsl.h + 54, Math.min(100, sat * 1.1), lum * 1.08);
+
+          var coolRgb = hexToRgb(coolHex);
+          var warmRgb = hexToRgb(warmHex);
+          var popRgb = hexToRgb(popHex);
+
+          var root = document.documentElement.style;
+          root.setProperty('--cms-accent', hex);
+          root.setProperty('--accent', hex);
+          root.setProperty('--accent-color', hex);
+          root.setProperty('--color-primary', hex);
+          root.setProperty('--primary', hex);
+          root.setProperty('--theme-accent', hex);
+          root.setProperty('--blog-accent', hex);
+
+          root.setProperty('--cms-accent-rgb', rgbStr);
+          root.setProperty('--theme-accent-rgb', rgbStr);
+          root.setProperty('--color-primary-rgb', rgbStr);
+          root.setProperty('--primary-rgb', rgbStr);
+
+          root.setProperty('--theme-analogous-1', hex);
+          root.setProperty('--theme-analogous-2', coolHex);
+          root.setProperty('--theme-analogous-3', warmHex);
+          root.setProperty('--theme-analogous-4', popHex);
+          root.setProperty('--theme-analogous-deep', deepHex);
+
+          root.setProperty('--theme-analogous-cool-rgb', coolRgb);
+          root.setProperty('--theme-analogous-warm-rgb', warmRgb);
+          root.setProperty('--theme-analogous-pop-rgb', popRgb);
+
+          root.setProperty('--cms-accent-gradient-analogous', 'linear-gradient(135deg, ' + coolHex + ' 0%, ' + hex + ' 50%, ' + warmHex + ' 100%)');
+          root.setProperty('--cms-accent-gradient-vibrant', 'linear-gradient(135deg, ' + coolHex + ' 0%, ' + hex + ' 45%, ' + popHex + ' 100%)');
+          root.setProperty('--cms-accent-gradient-subtle', 'linear-gradient(135deg, rgba(' + coolRgb + ', 0.15) 0%, rgba(' + rgbStr + ', 0.08) 50%, rgba(' + warmRgb + ', 0.15) 100%)');
+          root.setProperty('--cms-accent-mesh', 'radial-gradient(circle at 10% 10%, rgba(' + coolRgb + ', 0.25) 0%, transparent 60%), radial-gradient(circle at 90% 90%, rgba(' + warmRgb + ', 0.22) 0%, transparent 60%)');
+
+          root.setProperty('--cms-accent-soft', 'rgba(' + rgbStr + ', 0.12)');
+          root.setProperty('--cms-accent-light', 'rgba(' + rgbStr + ', 0.22)');
+          root.setProperty('--cms-accent-medium', 'rgba(' + rgbStr + ', 0.45)');
+          root.setProperty('--cms-accent-strong', 'rgba(' + rgbStr + ', 0.7)');
+
+          root.setProperty('--cms-accent-border', 'rgba(' + rgbStr + ', 0.35)');
+          root.setProperty('--cms-accent-border-strong', 'rgba(' + rgbStr + ', 0.75)');
+          root.setProperty('--cms-accent-ring', '0 0 0 3px rgba(' + coolRgb + ', 0.35)');
+          root.setProperty('--cms-accent-ring-strong', '0 0 0 4px rgba(' + rgbStr + ', 0.5)');
+
+          root.setProperty('--cms-accent-glow', '0 0 24px rgba(' + rgbStr + ', 0.45), 0 0 12px rgba(' + warmRgb + ', 0.35)');
+          root.setProperty('--cms-accent-glow-subtle', '0 0 14px rgba(' + coolRgb + ', 0.25)');
+          root.setProperty('--cms-accent-glow-intense', '0 0 36px rgba(' + rgbStr + ', 0.7), 0 0 16px rgba(' + popRgb + ', 0.55)');
+          root.setProperty('--cms-accent-shadow', '0 8px 24px -4px rgba(' + coolRgb + ', 0.35), 0 4px 12px -2px rgba(' + warmRgb + ', 0.25)');
+
+          var brightness = (r * 299 + g * 587 + b * 114) / 1000;
+          root.setProperty('--cms-accent-fg', brightness < 135 ? '#ffffff' : '#0a0a0f');
+        } catch (e) {}
+      })();
+    </script>
+
+    <!-- ── Native App Feel: Critical CSS inline ── -->
+    <style>
+      :root {
+        --sat: env(safe-area-inset-top, 0px);
+        --sab: env(safe-area-inset-bottom, 0px);
+        --sal: env(safe-area-inset-left, 0px);
+        --sar: env(safe-area-inset-right, 0px);
+      }
+      /* Prevent flash of unstyled content */
+      html { 
+        background: #ffffff; 
+        color-scheme: light dark;
+      }
+      [data-cms-theme="dark"], [data-theme="dark"] { 
+        background: #08080f; 
+      }
+      [data-theme="light"] {
+        background: #ffffff;
+      }
+      
+      /* Prevent zoom and overscroll scaling */
+      html, body, #root {
+        touch-action: manipulation;
+        -webkit-text-size-adjust: 100%;
+        text-size-adjust: 100%;
+        width: 100%;
+        max-width: 100vw;
+        overflow-x: hidden;
+      }
+      
+      /* PWA standalone background */
+      @media (display-mode: standalone) {
+        html, body { 
+          background: #f1eff8; 
+          user-select: none;
+          -webkit-user-select: none;
+        }
+        [data-cms-theme="dark"] html, [data-cms-theme="dark"] body, [data-theme="dark"] html, [data-theme="dark"] body {
+          background: #08080f !important;
+        }
+        [data-cms-theme="light"] html, [data-cms-theme="light"] body, [data-theme="light"] html, [data-theme="light"] body {
+          background: #f1eff8 !important;
+        }
+      }
+    </style>
+    <script>
+      document.addEventListener('gesturestart', function(e) { e.preventDefault(); });
+      document.addEventListener('dblclick', function(e) { 
+        if (e.target && !e.target.closest('input, textarea, [contenteditable="true"]')) {
+          e.preventDefault(); 
+        }
+      }, { passive: false });
+
+      // PWA beforeinstallprompt capture
+      window.__pwaInstallPrompt = null;
+      window.addEventListener('beforeinstallprompt', function(e) {
+        window.__pwaInstallPrompt = e;
+        window.dispatchEvent(new CustomEvent('pwa_prompt_available', { detail: e }));
+      });
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

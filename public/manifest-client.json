@@ -1,0 +1,35 @@
+{
+  "name": "sumr.day Client Hub & Creative Launcher",
+  "short_name": "sumr.day Client",
+  "description": "Portal Klien, Tracking Proyek & Launcher Game Interaktif sumr.day",
+  "id": "sumrday-client-hub",
+  "start_url": "/client",
+  "scope": "/client",
+  "display": "standalone",
+  "display_override": ["standalone", "fullscreen", "minimal-ui"],
+  "background_color": "#09090e",
+  "theme_color": "#f59e0b",
+  "orientation": "any",
+  "lang": "id",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "name": "sumr.day | Creative Digital Studio",
+  "short_name": "sumr.day",
+  "description": "sumr.day | Creative Digital Studio — Warm Tech & Skena-Aesthetic. A little sunshine for your screen.",
+  "id": "sumrday-studio-app",
+  "start_url": "/admin",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "window-controls-overlay", "minimal-ui"],
+  "background_color": "#050507",
+  "theme_color": "#f59e0b",
+  "orientation": "natural",
+  "lang": "id",
+  "categories": ["business", "productivity", "utilities", "design"],
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Dashboard Admin",
+      "short_name": "Dashboard",
+      "description": "Buka Dashboard Utama sumr.day OS",
+      "url": "/admin"
+    },
+    {
+      "name": "Manajemen Proyek",
+      "short_name": "Proyek",
+      "description": "Buka modul manajemen proyek dan tugas",
+      "url": "/admin/projects"
+    },
+    {
+      "name": "Live Chat & Inbox",
+      "short_name": "Chat",
+      "description": "Buka pesan masuk dan percakapan klien",
+      "url": "/admin/chat"
+    }
+  ],
+  "screenshots": []
+}

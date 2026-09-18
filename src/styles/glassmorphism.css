@@ -1,0 +1,563 @@
+/* ══════════════════════════════════════════════════════════════════════
+   DESIGN SYSTEM: UNIFIED CMS TYPOGRAPHY, SPACING & CARD MODELS
+   ══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Global Typography Family */
+  --font-family-cms: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  
+  /* Standardized Typography Scale */
+  --cms-font-title-xl: 22px;
+  --cms-font-title-lg: 18px;
+  --cms-font-title-md: 15px;
+  --cms-font-title-sm: 13.5px;
+  --cms-font-body: 12.5px;
+  --cms-font-caption: 11px;
+  --cms-font-micro: 9.5px;
+
+  /* Standardized Spacing & Radius Tokens */
+  --cms-radius-xl: 22px;
+  --cms-radius-lg: 18px;
+  --cms-radius-md: 14px;
+  --cms-radius-sm: 10px;
+  --cms-radius-full: 9999px;
+
+  --cms-gap-xl: 24px;
+  --cms-gap-lg: 18px;
+  --cms-gap-md: 14px;
+  --cms-gap-sm: 10px;
+  --cms-gap-xs: 6px;
+
+  --cms-pad-card-lg: 22px;
+  --cms-pad-card-md: 18px;
+  --cms-pad-card-sm: 12px;
+
+  /* Standardized Card Shadow & Specular Highlights */
+  --cms-card-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.08), 0 4px 12px -2px rgba(0, 0, 0, 0.04);
+  --cms-card-shadow-hover: 0 16px 40px -8px rgba(0, 0, 0, 0.14), 0 6px 16px -2px rgba(0, 0, 0, 0.06);
+  --cms-card-highlight: inset 0 1px 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* Ensure global font application in CMS */
+.cms-dashboard-root,
+.dashboard-overview-root,
+.cms-work-area,
+.cms-card,
+.dash-card {
+  font-family: var(--font-family-cms) !important;
+  letter-spacing: -0.01em;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   STANDARDIZED CMS CARD MODELS
+   ══════════════════════════════════════════════════════════════════════ */
+
+.cms-card,
+.ultra-glass-card,
+.premium-glass {
+  background: var(--cms-card-bg, #181926);
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.08));
+  border-radius: var(--cms-radius-lg);
+  padding: var(--cms-pad-card-md);
+  box-shadow: var(--cms-card-shadow), var(--cms-card-highlight);
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), 
+              border-color 0.22s cubic-bezier(0.16, 1, 0.3, 1), 
+              box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  box-sizing: border-box;
+}
+
+.cms-card:hover,
+.ultra-glass-card:hover {
+  border-color: var(--cms-accent-border, rgba(124, 58, 237, 0.35));
+  box-shadow: var(--cms-card-shadow-hover), 0 0 20px rgba(var(--cms-accent-rgb, 124, 58, 237), 0.12);
+}
+
+/* Elevated Card (for hero widgets & spotlight sections) */
+.cms-card-elevated {
+  background: var(--cms-card-bg, #181926);
+  border: 1.5px solid var(--glass-border);
+  border-radius: var(--cms-radius-xl);
+  padding: var(--cms-pad-card-lg);
+  box-shadow: 0 14px 40px -8px rgba(0, 0, 0, 0.18), var(--cms-card-highlight);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Card Header Subsystem */
+.cms-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cms-gap-sm);
+  margin-bottom: var(--cms-gap-md);
+  flex-wrap: wrap;
+}
+
+.cms-card-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cms-card-icon-badge {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  border-radius: 12px;
+  background: var(--cms-accent-soft);
+  color: var(--cms-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(var(--cms-accent-rgb, 124, 58, 237), 0.18);
+}
+
+.cms-card-title {
+  margin: 0;
+  font-size: var(--cms-font-title-md);
+  font-weight: 850;
+  color: var(--cms-text);
+  line-height: 1.25;
+}
+
+.cms-card-subtitle {
+  margin: 2px 0 0 0;
+  font-size: var(--cms-font-caption);
+  color: var(--cms-text-muted);
+  font-weight: 600;
+}
+
+/* Stat Box Component inside Cards */
+.cms-stat-box {
+  background: var(--cms-input-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--cms-radius-md);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: all 0.18s ease;
+}
+
+.cms-stat-box:hover {
+  border-color: var(--cms-accent-border);
+  transform: translateY(-1px);
+}
+
+.cms-stat-value {
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--cms-text);
+  letter-spacing: -0.02em;
+}
+
+.cms-stat-label {
+  font-size: var(--cms-font-micro);
+  font-weight: 800;
+  color: var(--cms-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   STANDARDIZED INPUTS, BUTTONS & PILLS
+   ══════════════════════════════════════════════════════════════════════ */
+
+.cms-input {
+  height: 42px;
+  background: var(--cms-input-bg);
+  border: 1.5px solid var(--glass-border);
+  border-radius: var(--cms-radius-sm);
+  padding: 0 14px;
+  font-size: var(--cms-font-body);
+  color: var(--cms-text);
+  font-weight: 600;
+  outline: none;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
+}
+
+.cms-input:focus {
+  border-color: var(--cms-accent);
+  box-shadow: 0 0 0 3px var(--cms-accent-soft);
+  background: var(--cms-card-bg);
+}
+
+.cms-btn {
+  height: 40px;
+  padding: 0 18px;
+  border-radius: var(--cms-radius-sm);
+  font-size: var(--cms-font-body);
+  font-weight: 750;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  border: 1.5px solid transparent;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.cms-btn-primary {
+  background: var(--cms-accent, #7c3aed);
+  color: #ffffff;
+  box-shadow: 0 6px 18px rgba(var(--cms-accent-rgb, 124, 58, 237), 0.3);
+}
+
+.cms-btn-primary:hover {
+  transform: translateY(-1.5px);
+  box-shadow: 0 10px 24px rgba(var(--cms-accent-rgb, 124, 58, 237), 0.45);
+}
+
+.cms-btn-secondary {
+  background: var(--cms-input-bg);
+  color: var(--cms-text);
+  border-color: var(--glass-border);
+}
+
+.cms-btn-secondary:hover {
+  border-color: var(--cms-accent-border);
+  background: var(--cms-card-bg);
+  transform: translateY(-1.5px);
+}
+
+.cms-circle-btn {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  background: var(--cms-input-bg);
+  border: 1px solid var(--glass-border);
+  color: var(--cms-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  padding: 0;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.cms-circle-btn:hover {
+  background: var(--cms-card-bg);
+  border-color: var(--cms-accent);
+  color: var(--cms-accent);
+  transform: scale(1.08);
+}
+
+.cms-pill-filter {
+  padding: 6px 14px;
+  border-radius: var(--cms-radius-full);
+  border: none;
+  font-size: var(--cms-font-caption);
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.18s ease;
+  flex-shrink: 0;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ACCENT & VIBRANT HIGHLIGHTS
+   ══════════════════════════════════════════════════════════════════════ */
+
+.hyper-accent-glow {
+  box-shadow: var(--cms-accent-glow) !important;
+}
+
+.hyper-accent-glow-intense {
+  box-shadow: var(--cms-accent-glow-intense) !important;
+}
+
+.hyper-accent-border {
+  border-color: var(--cms-accent-border) !important;
+}
+
+.hyper-accent-bg {
+  background: var(--cms-accent) !important;
+  color: var(--cms-accent-fg) !important;
+}
+
+.hyper-accent-gradient {
+  background: var(--cms-accent-gradient) !important;
+  color: #fff !important;
+}
+
+.text-gradient-accent {
+  background-image: linear-gradient(135deg, var(--theme-analogous-2, #4f46e5) 0%, var(--cms-accent, #7c3aed) 50%, var(--theme-analogous-3, #c026d3) 100%) !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  color: transparent !important;
+  display: inline-block;
+}
+
+/* Tactile Spring Press */
+.spring-click {
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+.spring-click:active {
+  transform: scale(0.95) !important;
+}
+
+/* Reading Progress Indicator */
+.reading-progress-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3.5px;
+  background: var(--cms-accent-gradient, linear-gradient(90deg, #7c3aed, #ec4899));
+  z-index: 99999;
+  transition: width 0.1s linear;
+  box-shadow: 0 0 10px var(--cms-accent, #7c3aed);
+}
+
+/* Ultra-Sleek Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--cms-accent, #7c3aed);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   GLOBAL MODAL OVERLAY & SOLID CARD SHADOW ARCHITECTURE
+   (No heavy dark background, NO background blur, pure solid modals with rich shadow)
+   ══════════════════════════════════════════════════════════════════════ */
+
+.cms-modal-overlay,
+.dialog-overlay,
+.modal-overlay,
+.project-pill-modal-overlay,
+div[style*="position: fixed"][style*="inset: 0"],
+div[style*="position:fixed"][style*="inset:0"] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Soft non-dimming click overlay */
+.cms-modal-overlay,
+.dialog-overlay,
+.modal-overlay,
+.project-pill-modal-overlay {
+  background: rgba(0, 0, 0, 0.12) !important;
+}
+
+/* Modal Popup Body / Card: SOLID OPAQUE with RICH 3D SHADOW */
+.project-pill-modal-inner,
+.cms-dialog-box,
+.cms-modal-card,
+.modal-content,
+.cms-modal-container {
+  background-color: var(--cms-card-bg, #ffffff) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: 0 25px 80px -10px rgba(0, 0, 0, 0.42), 0 0 0 1px var(--glass-border, rgba(0,0,0,0.08)) !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   GLOBAL ADMIN SOLID ARCHITECTURE & SUPER ENERGY EFFICIENCY
+   Zero blur computation, zero unnecessary composite GPU layers across all admin devices
+   ══════════════════════════════════════════════════════════════════════ */
+.cms-dashboard-root,
+.cms-dashboard-root *,
+.admin-layout,
+.admin-layout *,
+.cms-work-area,
+.cms-work-area *,
+.cms-main-container,
+.cms-main-container *,
+.cms-floating-sidebar,
+.cms-floating-sidebar *,
+.sidebar-pill-header,
+.cms-pill-container,
+.cms-pill-nav,
+.cms-card,
+.ultra-glass-card,
+.premium-glass,
+.dash-card,
+.memo-document-sheet,
+.memo-canvas-container,
+.project-pill-modal-overlay,
+.project-pill-modal-overlay *,
+.project-pill-modal-inner,
+.project-pill-modal-inner *,
+.cms-modal-overlay,
+.cms-modal-overlay *,
+.cms-dialog-box,
+.cms-dialog-box *,
+.cms-modal-card,
+.cms-modal-card *,
+.modal-content,
+.modal-content *,
+.cms-modal-container,
+.cms-modal-container *,
+.cms-dropdown,
+.cms-dropdown *,
+.cms-select-dropdown,
+.glass-panel,
+.glass-panel-solid,
+[data-cms-theme] .cms-card,
+[data-cms-theme] .cms-panel,
+[data-cms-theme] .cms-floating-sidebar,
+[data-cms-theme] .cms-header,
+[data-cms-theme] .cms-footer,
+[data-cms-theme] .premium-glass,
+[data-card-style] .admin-layout .cms-card,
+[data-card-style] .cms-dashboard-root .cms-card {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.cms-dashboard-root .cms-card,
+.admin-layout .cms-card,
+.cms-dashboard-root .ultra-glass-card,
+.cms-dashboard-root .premium-glass,
+.cms-dashboard-root .dash-card,
+.admin-layout .cms-floating-sidebar,
+.admin-layout .sidebar-pill-header,
+.admin-layout .cms-pill-nav,
+.admin-layout .cms-dialog-box,
+.admin-layout .cms-modal-card,
+.admin-layout .project-pill-modal-inner {
+  background: var(--cms-card-bg) !important;
+}
+
+/* Zero Glow Enforcement for Solid Admin */
+.cms-dashboard-root *,
+.admin-layout *,
+[data-cms-theme] * {
+  --cms-accent-glow: none !important;
+  --cms-accent-glow-subtle: none !important;
+  --cms-accent-glow-intense: none !important;
+}
+
+.cms-dashboard-root .hyper-accent-glow,
+.cms-dashboard-root .hyper-accent-glow-intense,
+.admin-layout .hyper-accent-glow,
+.admin-layout .hyper-accent-glow-intense,
+[data-cms-theme] .hyper-accent-glow,
+[data-cms-theme] .hyper-accent-glow-intense {
+  box-shadow: none !important;
+  text-shadow: none !important;
+  filter: none !important;
+}
+
+.cms-dashboard-root .dock-indicator,
+.admin-layout .dock-indicator {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   MOBILE PERFORMANCE & THERMAL REGULATION (ANTI-OVERHEATING)
+   Replaces expensive live backdrop-filter blur with clean solid surfaces on mobile GPUs
+   ══════════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  .cms-card,
+  .ultra-glass-card,
+  .premium-glass,
+  .dash-card,
+  .memo-document-sheet,
+  .cms-work-area {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .cms-card,
+  .ultra-glass-card,
+  .premium-glass {
+    background: var(--cms-card-bg, #1a1b26) !important;
+  }
+
+  /* Smooth touch scrolling without frame dropping */
+  .cms-work-area,
+  .memo-canvas-container,
+  .cms-main-layout {
+    -webkit-overflow-scrolling: touch !important;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   TACTILE MICRO-SPRINGS & SOLID SKELETON LOADERS
+   Premium native feel, thumb-friendly touch response, and low-power skeleton screen
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* Native-like Spring Press Feedback */
+.cms-btn:active,
+.cms-circle-btn:active,
+.cms-mobile-nav-btn:active,
+.cms-stat-box:active,
+.cms-pill-filter:active,
+button.cms-card:active {
+  transform: scale(0.96) !important;
+  transition: transform 0.08s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+
+/* Auto Center Input on Virtual Keyboard Focus */
+.cms-input:focus,
+.cms-textarea:focus,
+.memo-block-textarea:focus {
+  scroll-margin-bottom: 250px;
+}
+
+/* Solid Shimmer Skeleton Loader (No GPU blur, ultra-lightweight) */
+@keyframes solidSkeletonShimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.cms-skeleton-solid {
+  background: linear-gradient(
+    90deg,
+    var(--cms-card-bg, #181926) 25%,
+    var(--cms-card-bg-hover, #202234) 50%,
+    var(--cms-card-bg, #181926) 75%
+  ) !important;
+  background-size: 200% 100% !important;
+  animation: solidSkeletonShimmer 1.8s ease-in-out infinite !important;
+  border-radius: var(--cms-radius-md);
+  border: 1px solid var(--cms-border, rgba(255, 255, 255, 0.06));
+}
+
+.cms-skeleton-card {
+  height: 120px;
+  width: 100%;
+  border-radius: var(--cms-radius-lg);
+}
+
+.cms-skeleton-bar {
+  height: 14px;
+  border-radius: 6px;
+}
+
+/* Pause animations when tab is inactive/hidden */
+body.app-paused *,
+.app-paused * {
+  animation-play-state: paused !important;
+}
+
