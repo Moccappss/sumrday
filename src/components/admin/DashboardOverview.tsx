@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, Suspense, lazy } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   ArrowRight, ArrowLeft, Activity, HardDrive, Users, Clock, Globe,
@@ -22,13 +22,12 @@ import { useBusinessProfile } from '../../hooks/useBusinessProfile';
 import { auth, db } from '../../firebase';
 import { collection, query, onSnapshot, orderBy, limit } from 'firebase/firestore';
 import { performCmsAudit } from '../../utils/cmsAudit';
-import { callGemini } from '../../utils/ai';
 import { storage } from '../../utils/storage';
 import { subscribeToGames } from '../../services/gameService';
 import { useContextMenu } from './ContextMenuProvider';
 import InfoTooltip from './InfoTooltip';
 import { clear as clearIdb } from 'idb-keyval';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+const DashboardTrafficBarChart = lazy(() => import('./DashboardTrafficBarChart'));
 import { applyAccentColor } from '../../utils/theme';
 import { haptic } from '../../utils/haptics';
 import GlassColorPicker from './GlassColorPicker';
@@ -858,7 +857,25 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   const [gameLicenses, setGameLicenses] = useState<any[]>([]);
 
   useEffect(() => {
-    const unsubProjects = storage.listenItem('porto_portfolio', (data) => {
+    // Initial fetch to guarantee non-empty live state on mount
+    const fetchInitialData = async () => {
+      try {
+        const [proj1, tx] = await Promise.all([
+          storage.getItem<any[]>('porto_projects', []),
+          storage.getItem<any[]>('porto_transactions', [])
+        ]);
+        const validProjects = Array.isArray(proj1) ? proj1 : [];
+        setLiveProjects(validProjects);
+        if (Array.isArray(tx) && tx.length > 0) {
+          setTransactions(tx);
+        }
+      } catch (err) {
+        console.warn('[DashboardOverview] fetchInitialData error:', err);
+      }
+    };
+    fetchInitialData();
+
+    const unsubProjects = storage.listenItem('porto_projects', (data) => {
       if (Array.isArray(data)) setLiveProjects(data);
     });
     const unsubTx = storage.listenItem('porto_transactions', (data) => setTransactions(data || []));
@@ -879,6 +896,20 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({
       setRecentChats(Array.isArray(data) ? data.slice(0, 4) : []);
     });
 
+    const handleProjectsUpdate = (e: any) => {
+      if (Array.isArray(e.detail)) setLiveProjects(e.detail);
+    };
+    const handleTxUpdate = (e: any) => {
+      if (Array.isArray(e.detail)) setTransactions(e.detail);
+    };
+    const handleStorageDirty = () => {
+      fetchInitialData();
+    };
+
+    window.addEventListener('porto_projects_updated', handleProjectsUpdate);
+    window.addEventListener('porto_transactions_updated', handleTxUpdate);
+    window.addEventListener('porto_storage_dirty', handleStorageDirty);
+
     const handleSyncChange = (e: any) => {
       if (e.detail?.mode) setSyncMode(e.detail.mode);
     };
@@ -896,6 +927,9 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({
       unsubGames();
       unsubLicenses();
       unsubChats();
+      window.removeEventListener('porto_projects_updated', handleProjectsUpdate);
+      window.removeEventListener('porto_transactions_updated', handleTxUpdate);
+      window.removeEventListener('porto_storage_dirty', handleStorageDirty);
       window.removeEventListener('porto_sync_mode_changed', handleSyncChange);
     };
   }, []);
@@ -1268,6 +1302,7 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({
     try {
       const prompt = `Berikan 1 kode warna HEX yang sangat tren, estetik, dan elegan untuk desainer grafis (misalnya cyber violet, neon cyan, warm ochre, emerald noir, atau sunset crimson). HANYA kembalikan 1 kode HEX dengan format #RRGGBB tanpa teks lain.`;
       const systemPrompt = `Kamu adalah Color Specialist Senior. Keluarkan hanya 1 kode warna HEX yang modern.`;
+      const { callGemini } = await import('../../utils/ai');
       const res = await callGemini(prompt, systemPrompt);
       const match = res.match(/#[0-9a-fA-F]{6}/);
       if (match) {
@@ -1304,6 +1339,7 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   "dpi": 72 | 150 | 300,
   "badge": "singkat"
 }`;
+      const { callGemini } = await import('../../utils/ai');
       const res = await callGemini(prompt, 'Keluarkan JSON valid tanpa markdown tambahan.');
       const parsed = JSON.parse(res.replace(/```json|```/g, '').trim());
       if (parsed.name && parsed.width && parsed.height) {
@@ -1366,6 +1402,7 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({
     try {
       const prompt = aiDesignPrompt.trim() || 'Berikan 1 ide proyek desain grafis / branding kreatif masa kini lengkap dengan: 1. Nama Konsep & Industri, 2. Arah Gaya Visual, 3. Rekomendasi Palet Warna (3 HEX), 4. Tantangan Desain.';
       const systemPrompt = 'Kamu adalah Creative Director & Desainer Grafis Senior. Berikan ide proyek desain yang segar, orisinal, terstruktur rapi dan sangat menginspirasi. Jangan gunakan format yang bertele-tele.';
+      const { callGemini } = await import('../../utils/ai');
       const res = await callGemini(prompt, systemPrompt);
       setAiDesignResult(res);
     } catch (err: any) {
@@ -1538,6 +1575,7 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({
       } else if (aiMode === 'copywriting') {
         systemPrompt = "Buat copywriting pemasaran yang memikat untuk produk atau tawaran jasa dengan CTA yang persuasif.";
       }
+      const { callGemini } = await import('../../utils/ai');
       const res = await callGemini(aiPrompt, systemPrompt);
       setAiResult(res);
     } catch (err: any) {
@@ -1714,26 +1752,28 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({
 
   return (
     <div 
-      className="dashboard-overview-root" 
+      className="dashboard-overview-root smart-scroll-y" 
       style={{ 
         height: '100%', 
-        overflowY: fullscreenApp && !isMobile && !isTablet ? 'auto' : 'auto', 
+        minHeight: '100%',
+        overflowY: 'auto', 
         background: 'var(--cms-bg)', 
         padding: isMobile 
           ? '10px 8px calc(140px + env(safe-area-inset-bottom, 24px))'
           : isTablet 
             ? 'max(16px, calc(env(safe-area-inset-top, 0px) + 8px)) 16px calc(90px + env(safe-area-inset-bottom, 24px))' 
-            : '20px 24px 80px', 
+            : showGadgetStation ? '20px 24px 48px' : '16px 24px 32px', 
         scrollbarWidth: 'thin', 
         width: '100%', 
         maxWidth: '100%', 
         minWidth: 0,
         boxSizing: 'border-box', 
-        overflowX: 'hidden' 
+        overflowX: 'hidden',
+        display: 'block'
       }}
     >
       {!fullscreenApp ? (
-        <div style={{ maxWidth: 1600, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: isMobile ? 10 : 20, width: '100%', maxWidth: '100%', boxSizing: 'border-box', minWidth: 0 }}>
+        <div style={{ maxWidth: 1600, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', gap: isMobile ? 10 : 20, boxSizing: 'border-box', minWidth: 0 }}>
         
         {/* ── 1. FLAT SOLID MODERN DASHBOARD ── */}
         <FlatSolidDashboard
@@ -1830,6 +1870,7 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                     type="button"
                     title={tab.label}
                     aria-label={tab.label}
+                    className="cms-circle-btn"
                     onClick={() => {
                       setStudioTab(tab.id as any);
                       handleExpandFromDock(tab.id);
@@ -1842,13 +1883,15 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                       height: 30,
                       minWidth: 30,
                       minHeight: 30,
+                      aspectRatio: '1 / 1',
                       borderRadius: '50%',
                       border: 'none',
                       background: isActive ? 'var(--cms-accent, #7c3aed)' : 'transparent',
                       color: isActive ? '#ffffff' : 'var(--cms-text-muted)',
                       cursor: 'pointer',
                       transition: 'all 0.15s ease',
-                      flexShrink: 0
+                      flexShrink: 0,
+                      padding: 0
                     }}
                   >
                     <Icon size={15} />
@@ -1857,51 +1900,61 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               })}
             </div>
 
-            {/* Controls: Ciutkan Semua & Lebarkan Semua */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            {/* Controls: Ciutkan & Lebarkan (Icon-only) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
               <button
                 type="button"
                 onClick={collapseAllSuites}
+                className="cms-circle-btn"
                 style={{
-                  display: 'inline-flex',
+                  display: 'flex',
                   alignItems: 'center',
-                  gap: 4,
-                  padding: isMobile ? '5px 10px' : '6px 14px',
-                  borderRadius: 9999,
+                  justifyContent: 'center',
+                  width: 30,
+                  height: 30,
+                  minWidth: 30,
+                  minHeight: 30,
+                  aspectRatio: '1 / 1',
+                  borderRadius: '50%',
                   border: '1px solid var(--glass-border, rgba(0,0,0,0.08))',
                   background: 'transparent',
                   color: 'var(--cms-text-muted)',
-                  fontSize: isMobile ? 10.5 : 11.5,
-                  fontWeight: 850,
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                  padding: 0
                 }}
-                title="Ciutkan Semua Suite"
+                title="Tutup Semua Suite"
+                aria-label="Tutup Semua Suite"
               >
-                <ChevronUp size={13} />
-                <span>Ciutkan Semua</span>
+                <ChevronUp size={15} />
               </button>
 
               <button
                 type="button"
                 onClick={expandAllSuites}
+                className="cms-circle-btn"
                 style={{
-                  display: 'inline-flex',
+                  display: 'flex',
                   alignItems: 'center',
-                  gap: 4,
-                  padding: isMobile ? '5px 10px' : '6px 14px',
-                  borderRadius: 9999,
+                  justifyContent: 'center',
+                  width: 30,
+                  height: 30,
+                  minWidth: 30,
+                  minHeight: 30,
+                  aspectRatio: '1 / 1',
+                  borderRadius: '50%',
                   border: 'none',
                   background: 'var(--cms-accent, #7c3aed)',
                   color: '#ffffff',
-                  fontSize: isMobile ? 10.5 : 11.5,
-                  fontWeight: 850,
                   cursor: 'pointer',
-                  boxShadow: '0 2px 8px rgba(var(--cms-accent-rgb, 124, 58, 237), 0.25)'
+                  boxShadow: '0 2px 8px rgba(var(--cms-accent-rgb, 124, 58, 237), 0.25)',
+                  flexShrink: 0,
+                  padding: 0
                 }}
-                title="Lebarkan Semua Suite"
+                title="Buka Semua Suite"
+                aria-label="Buka Semua Suite"
               >
-                <ChevronDown size={13} />
-                <span>Lebarkan Semua</span>
+                <ChevronDown size={15} />
               </button>
             </div>
           </div>
@@ -2080,23 +2133,24 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                   <button
                     type="button"
                     onClick={() => toggleSuite('web')}
+                    title={expandedSuites.web ? 'Ciutkan Suite Web' : 'Lebarkan Suite Web'}
+                    aria-label={expandedSuites.web ? 'Ciutkan Suite Web' : 'Lebarkan Suite Web'}
                     style={{
-                      display: 'inline-flex',
+                      display: 'flex',
                       alignItems: 'center',
-                      gap: 4,
-                      padding: isMobile ? '5px 10px' : '6px 14px',
-                      borderRadius: 9999,
+                      justifyContent: 'center',
+                      width: isMobile ? 32 : 36,
+                      height: isMobile ? 32 : 36,
+                      borderRadius: isMobile ? 9 : 11,
                       border: '1.5px solid var(--glass-border, rgba(124, 58, 237, 0.25))',
                       background: expandedSuites.web ? 'var(--cms-accent, #7c3aed)' : 'var(--cms-card-bg, #ffffff)',
                       color: expandedSuites.web ? '#ffffff' : 'var(--cms-accent, #7c3aed)',
-                      fontSize: 11.5,
-                      fontWeight: 850,
                       cursor: 'pointer',
-                      flexShrink: 0
+                      flexShrink: 0,
+                      transition: 'all 0.15s ease'
                     }}
                   >
-                    <span>{expandedSuites.web ? 'Ciutkan' : 'Lebarkan'}</span>
-                    {expandedSuites.web ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                    {expandedSuites.web ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                   </button>
                 </div>
               </div>
@@ -2650,23 +2704,24 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                   <button
                     type="button"
                     onClick={() => toggleSuite('design')}
+                    title={expandedSuites.design ? 'Ciutkan Suite Desain' : 'Lebarkan Suite Desain'}
+                    aria-label={expandedSuites.design ? 'Ciutkan Suite Desain' : 'Lebarkan Suite Desain'}
                     style={{
-                      display: 'inline-flex',
+                      display: 'flex',
                       alignItems: 'center',
-                      gap: 4,
-                      padding: isMobile ? '5px 10px' : '6px 14px',
-                      borderRadius: 9999,
+                      justifyContent: 'center',
+                      width: isMobile ? 32 : 36,
+                      height: isMobile ? 32 : 36,
+                      borderRadius: isMobile ? 9 : 11,
                       border: '1.5px solid var(--glass-border, rgba(236, 72, 153, 0.25))',
                       background: expandedSuites.design ? '#ec4899' : 'var(--cms-card-bg, #ffffff)',
                       color: expandedSuites.design ? '#ffffff' : '#ec4899',
-                      fontSize: 11.5,
-                      fontWeight: 850,
                       cursor: 'pointer',
-                      flexShrink: 0
+                      flexShrink: 0,
+                      transition: 'all 0.15s ease'
                     }}
                   >
-                    <span>{expandedSuites.design ? 'Ciutkan' : 'Lebarkan'}</span>
-                    {expandedSuites.design ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                    {expandedSuites.design ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                   </button>
                 </div>
               </div>
@@ -3638,23 +3693,24 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                   <button
                     type="button"
                     onClick={() => toggleSuite('business')}
+                    title={expandedSuites.business ? 'Ciutkan Suite Bisnis' : 'Lebarkan Suite Bisnis'}
+                    aria-label={expandedSuites.business ? 'Ciutkan Suite Bisnis' : 'Lebarkan Suite Bisnis'}
                     style={{
-                      display: 'inline-flex',
+                      display: 'flex',
                       alignItems: 'center',
-                      gap: 4,
-                      padding: isMobile ? '5px 10px' : '6px 14px',
-                      borderRadius: 9999,
+                      justifyContent: 'center',
+                      width: isMobile ? 32 : 36,
+                      height: isMobile ? 32 : 36,
+                      borderRadius: isMobile ? 9 : 11,
                       border: '1.5px solid var(--glass-border, rgba(16, 185, 129, 0.25))',
                       background: expandedSuites.business ? '#10b981' : 'var(--cms-card-bg, #ffffff)',
                       color: expandedSuites.business ? '#ffffff' : '#10b981',
-                      fontSize: 11.5,
-                      fontWeight: 850,
                       cursor: 'pointer',
-                      flexShrink: 0
+                      flexShrink: 0,
+                      transition: 'all 0.15s ease'
                     }}
                   >
-                    <span>{expandedSuites.business ? 'Ciutkan' : 'Lebarkan'}</span>
-                    {expandedSuites.business ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                    {expandedSuites.business ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                   </button>
                 </div>
               </div>
@@ -3722,17 +3778,9 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({
 
                       {transactions.length > 0 && (
                         <div style={{ height: 75, width: '100%', minWidth: 0, background: 'var(--cms-input-bg)', border: '1px solid var(--cms-border)', borderRadius: 10, padding: '6px 6px 0', boxSizing: 'border-box', overflow: 'hidden' }}>
-                          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                            <BarChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                              <Tooltip 
-                                cursor={{ fill: 'rgba(255,255,255,0.05)' }}
-                                contentStyle={{ background: 'var(--cms-panel-bg)', border: '1px solid var(--cms-border)', borderRadius: 8, color: 'var(--cms-text)', fontSize: 9, fontWeight: 800 }} 
-                                formatter={(value: any) => `Rp ${Number(value || 0).toLocaleString('id-ID')}`}
-                                labelStyle={{ display: 'none' }}
-                              />
-                              <Bar dataKey="revenue" fill="var(--cms-accent)" radius={[4, 4, 0, 0]} maxBarSize={20} />
-                            </BarChart>
-                          </ResponsiveContainer>
+                          <Suspense fallback={null}>
+                            <DashboardTrafficBarChart data={chartData} />
+                          </Suspense>
                         </div>
                       )}
                     </div>
@@ -5520,8 +5568,9 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                       position: 'fixed',
                       inset: 0,
                       zIndex: 99999,
-                      background: 'rgba(0,0,0,0.65)',
-                      backdropFilter: 'blur(8px)',
+                      background: 'rgba(0,0,0,0.8)',
+                      backdropFilter: 'none',
+                      WebkitBackdropFilter: 'none',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -5608,8 +5657,9 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                       position: 'fixed',
                       inset: 0,
                       zIndex: 99999,
-                      background: 'rgba(0,0,0,0.7)',
-                      backdropFilter: 'blur(10px)',
+                      background: 'rgba(0,0,0,0.8)',
+                      backdropFilter: 'none',
+                      WebkitBackdropFilter: 'none',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',

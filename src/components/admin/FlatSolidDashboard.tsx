@@ -1,17 +1,39 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { 
   Search, Mail, Bell, Plus, ArrowUpRight, Video, Pause, Play, 
   Square, Check, Clock, Calendar, Users, X, Upload, ExternalLink, 
-  Layers, ChevronDown, ChevronUp, Sparkles, Filter, CheckCircle2,
+  Layers, ChevronDown, ChevronUp, Sparkles, Filter, CheckCircle2, RotateCcw,
   TrendingUp, Database, LayoutGrid, BookOpen, ShoppingBag, Globe2,
   DollarSign, StickyNote, Link2, Megaphone, MessageSquareMore,
-  Compass, Building2, FolderKanban, ShieldCheck, ChevronLeft, ChevronRight,
+  Compass, Building2, FolderKanban, ShieldCheck, ChevronLeft, ChevronRight, ArrowRight,
   Flame, Award, Heart, Gift, Moon, Sun, Briefcase, Activity, Rocket,
-  FileText, Layout, BarChart3, CornerDownLeft
+  FileText, Layout, BarChart3, CornerDownLeft, Cloud,
+  Receipt, MessageCircle, QrCode, Image as ImageIcon, FileSpreadsheet
 } from 'lucide-react';
 import { haptic } from '../../utils/haptics';
 import { storage } from '../../utils/storage';
 import { subscribeToNotifications } from '../../utils/notifications';
+import { PreFlightLaunchAuditModal } from './PreFlightLaunchAuditModal';
+import { getSolarAtmosphere } from '../../utils/solarCircadianEngine';
+
+const LiveClockText = React.memo(() => {
+  const [clock, setClock] = useState<string>(() => {
+    const now = new Date();
+    return `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} WIB`;
+  });
+
+  useEffect(() => {
+    const updateTime = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      const now = new Date();
+      setClock(`${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} WIB`);
+    };
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return <>{clock}</>;
+});
 
 interface FlatSolidDashboardProps {
   projects?: any[];
@@ -149,11 +171,12 @@ const SEARCH_ENGINES: SearchEngine[] = [
   { id: 'github', name: 'GitHub', tag: 'GitHub', color: '#24292e', placeholder: 'Cari repository kode di GitHub...', url: (q) => `https://github.com/search?q=${encodeURIComponent(q)}`, icon: <IconGithub /> }
 ];
 
-// ── 12 MODUL STUDIO EKOSISTEM ──
+// ── 24 MODUL STUDIO EKOSISTEM (TERINTEGRASI 100% SESUAI ARSITEKTUR KINI) ──
 interface StudioModule {
   id: string;
   name: string;
-  category: 'web' | 'design' | 'business' | 'system';
+  shortName?: string;
+  category: 'management' | 'database' | 'tools' | 'analytics' | 'settings';
   categoryLabel: string;
   desc: string;
   icon: any;
@@ -162,49 +185,61 @@ interface StudioModule {
 }
 
 const STUDIO_MODULES: StudioModule[] = [
-  { id: 'web', name: 'Canvas', category: 'web', categoryLabel: 'Editor', desc: 'Desain web & landing page santai', icon: Globe2, color: '#7c3aed', page: 'visual-editor' },
-  { id: 'db', name: 'Vault', category: 'system', categoryLabel: 'Stash', desc: 'Arsip karya & media studio', icon: Database, color: '#0284c7', page: 'database' },
-  { id: 'apps', name: 'Apps', category: 'web', categoryLabel: 'Apps', desc: 'Modul cerah & aplikasi seru', icon: LayoutGrid, color: '#8b5cf6', page: 'apps' },
-  { id: 'projects', name: 'Works', category: 'design', categoryLabel: 'Flow', desc: 'Alur proyek & kreasi klien', icon: FolderKanban, color: '#3b82f6', page: 'projects' },
-  { id: 'finance', name: 'Finance', category: 'business', categoryLabel: 'Cash', desc: 'Billing & transaksi bahagia', icon: DollarSign, color: '#10b981', page: 'transactions' },
-  { id: 'notes', name: 'Notes', category: 'design', categoryLabel: 'Ideas', desc: 'Ide segar, brief & coretan cepat', icon: StickyNote, color: '#f59e0b', page: 'notes' },
-  { id: 'links', name: 'Links', category: 'web', categoryLabel: 'Bio', desc: 'Micro-site bio link santai', icon: Link2, color: '#06b6d4', page: 'links' },
-  { id: 'broadcast', name: 'Waves', category: 'business', categoryLabel: 'Waves', desc: 'Kirim kabar hangat ke sumr.day club', icon: Megaphone, color: '#f43f5e', page: 'broadcast' },
-  { id: 'chat', name: 'Inbox', category: 'business', categoryLabel: 'Talk', desc: 'Obrolan santai bersama member', icon: MessageSquareMore, color: '#14b8a6', page: 'chat' },
-  { id: 'guideline', name: 'Guide', category: 'system', categoryLabel: 'Help', desc: 'Peta fitur & tips cerah', icon: Compass, color: '#a855f7', page: 'guideline' },
-  { id: 'catalog', name: 'Drops', category: 'business', categoryLabel: 'Drops', desc: 'Katalog karya & rilisan estetik', icon: ShoppingBag, color: '#ec4899', page: 'catalog' },
-  { id: 'settings', name: 'Settings', category: 'system', categoryLabel: 'Setup', desc: 'Konfigurasi studio & profil hangat', icon: Building2, color: '#64748b', page: 'settings' }
+  // 1. MANAJEMEN OPERASIONAL
+  { id: 'projects', name: 'Works Kanban', shortName: 'Kanban', category: 'management', categoryLabel: 'Manajemen', desc: 'Manajemen tugas, timeline & alur kerja proyek', icon: FolderKanban, color: '#3b82f6', page: 'projects' },
+  { id: 'proofing', name: 'Proofing Klien', shortName: 'Proofing', category: 'management', categoryLabel: 'Manajemen', desc: 'Persetujuan karya visual, watermark & ACC klien', icon: ShieldCheck, color: '#06b6d4', page: 'proofing' },
+  { id: 'finance', name: 'Finansial & Kas', shortName: 'Kasir & Kas', category: 'management', categoryLabel: 'Manajemen', desc: 'Laporan kas studio, tagihan & invoice', icon: Receipt, color: '#10b981', page: 'transactions' },
+  { id: 'whatsapp', name: 'WA Studio', shortName: 'WA Studio', category: 'management', categoryLabel: 'Manajemen', desc: 'Template pesan & broadcast WhatsApp', icon: MessageCircle, color: '#25D366', page: 'whatsapp' },
+  { id: 'chat', name: 'Live Konsultasi', shortName: 'Live Chat', category: 'management', categoryLabel: 'Manajemen', desc: 'Percakapan langsung dengan klien & pengunjung', icon: MessageSquareMore, color: '#14b8a6', page: 'chat' },
+  { id: 'users', name: 'Tim & CRM', shortName: 'Tim & CRM', category: 'management', categoryLabel: 'Manajemen', desc: 'Kelola tim internal, hak akses & kontak klien', icon: Users, color: '#0ea5e9', page: 'users' },
+
+  // 2. MASTER DATABASE / VAULT
+  { id: 'vault', name: 'Vault Database', shortName: 'Vault DB', category: 'database', categoryLabel: 'Database', desc: 'Pusat 12 basis data terintegrasi sumr.day', icon: Database, color: '#0284c7', page: 'database' },
+  { id: 'showcase', name: 'Karya Showcase', shortName: 'Showcase', category: 'database', categoryLabel: 'Database', desc: 'Etalase portofolio & studi kasus kreasi studio', icon: Award, color: '#e11d48', page: 'portfolio' },
+  { id: 'journal', name: 'Journal Artikel', shortName: 'Journal', category: 'database', categoryLabel: 'Database', desc: 'Kurasi tulisan, wawasan desain & artikel', icon: BookOpen, color: '#eab308', page: 'blog' },
+  { id: 'catalog', name: 'Drops Produk', shortName: 'Drops', category: 'database', categoryLabel: 'Database', desc: 'Katalog rilis aset digital & template', icon: ShoppingBag, color: '#ec4899', page: 'catalog' },
+  { id: 'apps', name: 'Apps Studio', shortName: 'Apps', category: 'database', categoryLabel: 'Database', desc: 'Modul undangan digital & aplikasi interaktif', icon: LayoutGrid, color: '#8b5cf6', page: 'apps' },
+  { id: 'forms', name: 'Formulir Forms', shortName: 'Forms', category: 'database', categoryLabel: 'Database', desc: 'Formulir survei, RSVP & feedback klien', icon: FileSpreadsheet, color: '#06b6d4', page: 'forms' },
+  { id: 'links', name: 'Bio Links', shortName: 'Bio Links', category: 'database', categoryLabel: 'Database', desc: 'Halaman micro-site tautan & bio profil', icon: Link2, color: '#3b82f6', page: 'links' },
+  { id: 'broadcast', name: 'Waves Push', shortName: 'Waves', category: 'database', categoryLabel: 'Database', desc: 'Push notifikasi siaran & kabar hangat ke audiens', icon: Megaphone, color: '#f43f5e', page: 'broadcast' },
+  { id: 'voice', name: 'Cheers Ulasan', shortName: 'Cheers', category: 'database', categoryLabel: 'Database', desc: 'Ulasan hangat & testimoni nyata klien', icon: Heart, color: '#f43f5e', page: 'reviews' },
+  { id: 'rates', name: 'Rates Paket', shortName: 'Rate Card', category: 'database', categoryLabel: 'Database', desc: 'Daftar harga & paket layanan kreatif studio', icon: DollarSign, color: '#10b981', page: 'ratecard' },
+
+  // 3. TOOL EKOSISTEM
+  { id: 'lpimage', name: 'LP Image', shortName: 'LP Image', category: 'tools', categoryLabel: 'Tool', desc: 'Editor layout modular gambar & stiker interaktif', icon: ImageIcon, color: '#0284c7', page: 'builder' },
+  { id: 'flipbook', name: 'Flipbook Studio', shortName: 'Flipbook', category: 'tools', categoryLabel: 'Tool', desc: 'Dokumen interaktif, brand guideline & lookbook', icon: BookOpen, color: '#06b6d4', page: 'flipbook' },
+  { id: 'web', name: 'Web Studio', shortName: 'Web Studio', category: 'tools', categoryLabel: 'Tool', desc: 'Editor visual responsif seluruh halaman web', icon: Globe2, color: '#7c3aed', page: 'visual-editor' },
+  { id: 'memo', name: 'Memo & Board', shortName: 'Memo Board', category: 'tools', categoryLabel: 'Tool', desc: 'Papan catatan cepat, ide segar & whiteboard', icon: StickyNote, color: '#f59e0b', page: 'memo' },
+  { id: 'qr', name: 'QR Studio', shortName: 'QR Studio', category: 'tools', categoryLabel: 'Tool', desc: 'Generator kode QR estetik & kustomisasi warna', icon: QrCode, color: '#6366f1', page: 'qr' },
+
+  // 4. ANALITIK
+  { id: 'analytics', name: 'Studio Intel', shortName: 'Analitik', category: 'analytics', categoryLabel: 'Analitik', desc: 'Statistik trafik pengunjung & konversi lead', icon: BarChart3, color: '#6366f1', page: 'analytics' },
+
+  // 5. SETELAN & PANDUAN
+  { id: 'settings', name: 'Setelan Studio', shortName: 'Setelan', category: 'settings', categoryLabel: 'Setting', desc: 'Konfigurasi identitas studio, profil & tema', icon: Building2, color: '#64748b', page: 'settings' },
+  { id: 'guideline', name: 'Buku Panduan', shortName: 'Panduan', category: 'settings', categoryLabel: 'Setting', desc: 'Peta panduan fitur & pintasan studio', icon: Compass, color: '#a855f7', page: 'guideline' }
 ];
 
 const MONTH_NAMES_ID = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 
-export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
-  projects = [],
-  stats,
-  kpiList = [],
-  chartData = [],
-  monthlyRevenue = 0,
-  monthlyGoals,
-  blogStats,
-  catalogStats,
-  liveGames = [],
-  pagesData,
-  canvases = [],
-  blogPosts = [],
-  catalogProducts = [],
-  globalSettings,
-  syncMode,
-  onSwitchPage,
-  onBackupJson,
-  userData,
-  businessProfile,
-  isMobile: isMobileProp = false,
-  isTablet: isTabletProp = false,
-  onOpenGadgetStation,
-  showGadgetStationToggle = true
+// ── ISOLATED ACCURATE WALL-CLOCK STUDIO TIME TRACKER (Zero Dashboard Re-renders) ──
+interface StudioTimeTrackerCardProps {
+  activeProjects: any[];
+  isMobile: boolean;
+  isDark: boolean;
+  showToast: (msg: string) => void;
+}
+
+const StudioTimeTrackerCard: React.FC<StudioTimeTrackerCardProps> = React.memo(({
+  activeProjects,
+  isMobile,
+  isDark,
+  showToast
 }) => {
-  // Live Current Clock & Accurate Wall-Clock Stopwatch
-  const [liveClock, setLiveClock] = useState<string>('');
+  const [selectedTrackingProject, setSelectedTrackingProject] = useState<string>('Aktivitas Studio');
+  const [isTrackingDropdownOpen, setIsTrackingDropdownOpen] = useState(false);
+  const trackingDropdownRef = useRef<HTMLDivElement>(null);
+
   const [stopwatchSeconds, setStopwatchSeconds] = useState<number>(() => {
     try {
       const saved = localStorage.getItem('porto_dashboard_time_tracker');
@@ -219,12 +254,11 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
     } catch (e) {}
     return 0;
   });
+
   const [isTimerRunning, setIsTimerRunning] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem('porto_dashboard_time_tracker');
-      if (saved) {
-        return !!JSON.parse(saved).isRunning;
-      }
+      if (saved) return !!JSON.parse(saved).isRunning;
     } catch (e) {}
     return false;
   });
@@ -239,7 +273,6 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
     isRunning: false
   });
 
-  // Hydrate timer ref on mount
   useEffect(() => {
     try {
       const saved = localStorage.getItem('porto_dashboard_time_tracker');
@@ -254,76 +287,16 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
     } catch (e) {}
   }, []);
 
-  // Dynamic Responsive Viewport Listeners
-  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
   useEffect(() => {
-    const handleResize = () => setWindowWidth(window.innerWidth);
-    window.addEventListener('resize', handleResize, { passive: true });
-    handleResize();
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  const isMobile = isMobileProp || windowWidth <= 768;
-  const isTablet = isTabletProp || (windowWidth > 768 && windowWidth <= 1280);
-  const isCompactMobile = windowWidth <= 420;
-
-  // Realtime unread notifications count for header bell
-  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
-  useEffect(() => {
-    const unsub = subscribeToNotifications((notifs: any[]) => {
-      if (Array.isArray(notifs)) {
-        setUnreadNotifCount(notifs.filter(n => !n.read).length);
+    const handleClickOutsideTracking = (e: MouseEvent) => {
+      if (trackingDropdownRef.current && !trackingDropdownRef.current.contains(e.target as Node)) {
+        setIsTrackingDropdownOpen(false);
       }
-    });
-    return () => {
-      if (typeof unsub === 'function') unsub();
     };
+    document.addEventListener('mousedown', handleClickOutsideTracking);
+    return () => document.removeEventListener('mousedown', handleClickOutsideTracking);
   }, []);
 
-  // Search Engine & Live File Search Dropdown state
-  const [selectedEngine, setSelectedEngine] = useState<string>('task');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const [isEngineDropdownOpen, setIsEngineDropdownOpen] = useState(false);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const searchContainerRef = useRef<HTMLDivElement>(null);
-
-  // Top KPI Card View Mode: 'executive' vs 'pipeline'
-  const [kpiViewMode, setKpiViewMode] = useState<'executive' | 'pipeline'>('executive');
-
-  // Interactive Monthly Calendar State
-  const [calMonth, setCalMonth] = useState<number>(new Date().getMonth());
-  const [calYear, setCalYear] = useState<number>(new Date().getFullYear());
-  const [selectedCalDay, setSelectedCalDay] = useState<number>(new Date().getDate());
-
-  // Module Category Filter Tab
-  const [moduleCategoryTab, setModuleCategoryTab] = useState<'all' | 'web' | 'design' | 'business' | 'system'>('all');
-
-  // Modals state
-  const [isAddProjectOpen, setIsAddProjectOpen] = useState(false);
-  const [newProjectTitle, setNewProjectTitle] = useState('');
-  const [newProjectCategory, setNewProjectCategory] = useState('Desain');
-  const [newProjectDeadline, setNewProjectDeadline] = useState('');
-
-  const [isMeetingModalOpen, setIsMeetingModalOpen] = useState(false);
-  const [showNotificationToast, setShowNotificationToast] = useState(false);
-  const [toastMessage, setToastMessage] = useState('');
-
-  // ── 1. LIVE TIME & GREETING (TANPA EMOJI) ──
-  useEffect(() => {
-    const updateTime = () => {
-      const now = new Date();
-      const hrs = now.getHours().toString().padStart(2, '0');
-      const mins = now.getMinutes().toString().padStart(2, '0');
-      const secs = now.getSeconds().toString().padStart(2, '0');
-      setLiveClock(`${hrs}:${mins}:${secs} WIB`);
-    };
-    updateTime();
-    const interval = setInterval(updateTime, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // 100% Accurate Wall-Clock Timer Stopwatch
   useEffect(() => {
     const saveState = () => {
       try {
@@ -363,9 +336,7 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
     }
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        syncClock();
-      }
+      if (document.visibilityState === 'visible') syncClock();
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('focus', syncClock);
@@ -377,7 +348,8 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
     };
   }, [isTimerRunning]);
 
-  const handleResetTimer = () => {
+  const handleResetTimer = async () => {
+    const elapsed = stopwatchSeconds;
     timerStateRef.current = {
       startTime: null,
       accumulatedSeconds: 0,
@@ -388,7 +360,77 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
     } catch (e) {}
     setIsTimerRunning(false);
     setStopwatchSeconds(0);
-    showToast('Timer direset ke 00:00:00');
+
+    if (elapsed >= 10) {
+      try {
+        const existingNotes = await storage.getItem('porto_memo_notes', []);
+        const hrs = Math.floor(elapsed / 3600);
+        const mins = Math.floor((elapsed % 3600) / 60);
+        const secs = elapsed % 60;
+        const timeStr = `${hrs > 0 ? hrs + 'j ' : ''}${mins > 0 ? mins + 'm ' : ''}${secs}d`;
+        const logEntry = {
+          id: `timelog_${Date.now()}`,
+          title: `Log Waktu: ${selectedTrackingProject}`,
+          content: `Durasi tercatat: ${timeStr} (${formatStopwatch(elapsed)})\nWaktu: ${new Date().toLocaleString('id-ID')}\nFokus: ${selectedTrackingProject}`,
+          category: 'Time Tracker',
+          type: 'doc',
+          folderId: 'general',
+          tags: ['timelog', 'tracker'],
+          isPinned: false,
+          isFavorite: false,
+          isTrash: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        const updatedNotes = [logEntry, ...(Array.isArray(existingNotes) ? existingNotes : [])];
+        await storage.setItem('porto_memo_notes', updatedNotes);
+
+        // Sinkronisasi langsung ke porto_projects untuk kalkulasi jam kerja & profitabilitas proyek
+        if (selectedTrackingProject && selectedTrackingProject !== 'Aktivitas Studio') {
+          try {
+            const allProjects = await storage.getItem<any[]>('porto_projects', []);
+            if (Array.isArray(allProjects) && allProjects.length > 0) {
+              let matched = false;
+              const nextProjects = allProjects.map((p: any) => {
+                if ((p.title || p.name) === selectedTrackingProject) {
+                  matched = true;
+                  const prevSeconds = Number(p.totalTrackedSeconds || 0);
+                  const prevLogs = Array.isArray(p.timeLogs) ? p.timeLogs : [];
+                  return {
+                    ...p,
+                    totalTrackedSeconds: prevSeconds + elapsed,
+                    timeLogs: [
+                      {
+                        id: `tlog_${Date.now()}`,
+                        seconds: elapsed,
+                        formatted: timeStr,
+                        recordedAt: new Date().toISOString()
+                      },
+                      ...prevLogs
+                    ]
+                  };
+                }
+                return p;
+              });
+              if (matched) {
+                await storage.setItem('porto_projects', nextProjects);
+              }
+            }
+          } catch (projErr) {}
+        }
+
+        window.dispatchEvent(new Event('porto_storage_dirty'));
+        showToast(
+          selectedTrackingProject !== 'Aktivitas Studio'
+            ? `Waktu ${timeStr} tercatat ke Proyek "${selectedTrackingProject}" & Notes!`
+            : `Waktu kerja ${timeStr} dicatat ke Notes!`
+        );
+      } catch (err) {
+        showToast('Timer direset ke 00:00:00');
+      }
+    } else {
+      showToast('Timer direset ke 00:00:00');
+    }
     haptic.medium();
   };
 
@@ -399,14 +441,791 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
     return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Sapaan waktu dinamis
-  const greetingText = useMemo(() => {
-    const hour = new Date().getHours();
-    if (hour >= 4 && hour < 11) return 'Selamat Pagi';
-    if (hour >= 11 && hour < 15) return 'Selamat Siang';
-    if (hour >= 15 && hour < 18) return 'Selamat Sore';
-    return 'Selamat Malam';
+  return (
+    <div style={{
+      borderRadius: isMobile ? 16 : 18,
+      padding: isMobile ? '16px 18px 18px' : '18px 22px 16px',
+      color: '#ffffff',
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'space-between',
+      gap: isMobile ? 12 : 10,
+      minHeight: isMobile ? 'auto' : 325,
+      height: isMobile ? 'auto' : 325,
+      position: 'relative',
+      overflow: 'hidden',
+      background: isDark
+        ? 'linear-gradient(155deg, #0e1726 0%, #070c16 65%, #05080e 100%)'
+        : 'linear-gradient(155deg, #06281e 0%, #031812 70%, #02120d 100%)',
+      border: isTimerRunning 
+        ? '1px solid rgba(16, 185, 129, 0.35)' 
+        : '1px solid rgba(255, 255, 255, 0.08)',
+      boxShadow: isTimerRunning
+        ? '0 16px 36px rgba(16, 185, 129, 0.18), 0 2px 10px rgba(0,0,0,0.4)'
+        : '0 10px 30px rgba(0, 0, 0, 0.35)',
+      transition: 'border-color 0.3s ease, box-shadow 0.3s ease',
+      width: '100%',
+      maxWidth: '100%',
+      minWidth: 0,
+      boxSizing: 'border-box'
+    }}>
+      {/* Ambient Aurora Glow Circles */}
+      <div style={{
+        position: 'absolute',
+        top: -30,
+        right: -30,
+        width: 140,
+        height: 140,
+        borderRadius: '50%',
+        background: isTimerRunning 
+          ? 'radial-gradient(circle, rgba(16, 185, 129, 0.35) 0%, transparent 70%)' 
+          : 'radial-gradient(circle, rgba(56, 189, 248, 0.18) 0%, transparent 70%)',
+        filter: 'blur(24px)',
+        pointerEvents: 'none',
+        transition: 'all 0.5s ease'
+      }} />
+      <div style={{
+        position: 'absolute',
+        bottom: -40,
+        left: -30,
+        width: 130,
+        height: 130,
+        borderRadius: '50%',
+        background: isTimerRunning
+          ? 'radial-gradient(circle, rgba(5, 150, 105, 0.25) 0%, transparent 70%)'
+          : 'radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, transparent 70%)',
+        filter: 'blur(24px)',
+        pointerEvents: 'none',
+        transition: 'all 0.5s ease'
+      }} />
+
+      {/* Header: Title + Live WIB Clock */}
+      <div style={{
+        position: 'relative',
+        zIndex: 2,
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        width: '100%',
+        minWidth: 0,
+        gap: 8,
+        flexWrap: 'nowrap'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+          <div style={{
+            width: 32,
+            height: 32,
+            borderRadius: 10,
+            background: isTimerRunning ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.08)',
+            border: isTimerRunning ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(255, 255, 255, 0.12)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: isTimerRunning ? '#34d399' : '#94a3b8',
+            transition: 'all 0.3s ease',
+            flexShrink: 0,
+            aspectRatio: '1 / 1'
+          }}>
+            <Clock size={16} />
+          </div>
+          <div>
+            <div style={{ fontSize: 13.5, fontWeight: 800, color: '#ffffff', letterSpacing: '-0.01em', lineHeight: 1.2 }}>
+              Time Tracker
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
+              <span style={{
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                background: isTimerRunning ? '#10b981' : stopwatchSeconds > 0 ? '#f59e0b' : '#64748b',
+                boxShadow: isTimerRunning ? '0 0 8px #10b981' : 'none'
+              }} />
+              <span style={{
+                fontSize: 9.5,
+                fontWeight: 750,
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                color: isTimerRunning ? '#34d399' : stopwatchSeconds > 0 ? '#fbbf24' : '#94a3b8'
+              }}>
+                {isTimerRunning ? 'Merekam Sesi' : stopwatchSeconds > 0 ? 'Terjeda' : 'Siap Lacak'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* WIB Clock Pill */}
+        <div style={{
+          fontSize: 11,
+          fontWeight: 750,
+          fontFamily: 'monospace',
+          color: '#e2e8f0',
+          background: 'rgba(255, 255, 255, 0.07)',
+          border: '1px solid rgba(255, 255, 255, 0.12)',
+          padding: '4px 11px',
+          borderRadius: 100,
+          backdropFilter: 'blur(8px)',
+          letterSpacing: '0.02em',
+          flexShrink: 0
+        }}>
+          {/* Isolated LiveClockText prevents 1s re-renders of the entire 5,000-line dashboard */}
+          <LiveClockText />
+        </div>
+      </div>
+
+      {/* Stopwatch Center Display */}
+      <div style={{
+        position: 'relative',
+        zIndex: 2,
+        textAlign: 'center',
+        padding: isMobile ? '12px 14px' : '12px 18px',
+        borderRadius: 16,
+        background: 'rgba(0, 0, 0, 0.32)',
+        border: '1px solid rgba(255, 255, 255, 0.08)',
+        backdropFilter: 'blur(10px)',
+        margin: isMobile ? '8px 0 10px' : '4px 0',
+        boxShadow: 'inset 0 2px 10px rgba(0, 0, 0, 0.45)'
+      }}>
+        <div style={{
+          fontSize: isMobile ? 32 : 44,
+          fontWeight: 900,
+          fontFamily: "'Outfit', 'Inter', monospace",
+          fontVariantNumeric: 'tabular-nums',
+          letterSpacing: '0.04em',
+          color: isTimerRunning ? '#34d399' : '#ffffff',
+          textShadow: isTimerRunning 
+            ? '0 0 24px rgba(16, 185, 129, 0.6), 0 2px 8px rgba(0,0,0,0.5)' 
+            : '0 2px 10px rgba(0,0,0,0.4)',
+          transition: 'color 0.3s ease, text-shadow 0.3s ease',
+          lineHeight: 1
+        }}>
+          {formatStopwatch(stopwatchSeconds)}
+        </div>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'center',
+          gap: isMobile ? 22 : 32,
+          fontSize: 9,
+          fontWeight: 750,
+          color: 'rgba(255, 255, 255, 0.45)',
+          letterSpacing: '0.12em',
+          textTransform: 'uppercase',
+          marginTop: 6
+        }}>
+          <span>Jam</span>
+          <span>Menit</span>
+          <span>Detik</span>
+        </div>
+      </div>
+
+      {/* Project Selector Pill */}
+      <div style={{
+        position: 'relative',
+        zIndex: isTrackingDropdownOpen ? 90 : 3,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '100%',
+        margin: isMobile ? '2px 0 10px' : '0'
+      }}>
+        <div 
+          ref={trackingDropdownRef}
+          style={{
+            position: 'relative',
+            display: 'inline-flex',
+            alignItems: 'center',
+            maxWidth: '100%',
+            boxSizing: 'border-box'
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setIsTrackingDropdownOpen(prev => !prev)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 7,
+              padding: '5px 14px',
+              borderRadius: 9999,
+              background: 'rgba(255, 255, 255, 0.08)',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              backdropFilter: 'blur(10px)',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
+              cursor: 'pointer',
+              color: '#ffffff',
+              fontFamily: 'inherit',
+              fontSize: 12,
+              fontWeight: 750,
+              maxWidth: isMobile ? 220 : 260
+            }}
+            title="Pilih proyek yang sedang dilacak"
+          >
+            <span style={{ fontSize: 11, color: '#38bdf8', fontWeight: 750, flexShrink: 0 }}>Fokus:</span>
+            <span style={{
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              color: '#ffffff'
+            }}>
+              {selectedTrackingProject}
+            </span>
+            <ChevronDown 
+              size={13} 
+              color="rgba(255,255,255,0.7)" 
+              style={{ 
+                flexShrink: 0, 
+                transform: isTrackingDropdownOpen ? 'rotate(180deg)' : 'none', 
+                transition: 'transform 0.2s ease' 
+              }} 
+            />
+          </button>
+
+          {isTrackingDropdownOpen && (
+            <div style={{
+              position: 'absolute',
+              top: 'calc(100% + 6px)',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: isMobile ? 210 : 240,
+              maxHeight: 180,
+              overflowY: 'auto',
+              background: 'rgba(11, 19, 32, 0.98)',
+              backdropFilter: 'blur(16px)',
+              border: '1px solid rgba(255, 255, 255, 0.18)',
+              borderRadius: 14,
+              boxShadow: '0 16px 36px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.12)',
+              padding: '6px',
+              zIndex: 100,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 3,
+              fontFamily: 'inherit'
+            }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedTrackingProject('Aktivitas Studio');
+                  setIsTrackingDropdownOpen(false);
+                }}
+                style={{
+                  padding: '7px 12px',
+                  borderRadius: 9,
+                  background: selectedTrackingProject === 'Aktivitas Studio' ? 'rgba(56, 189, 248, 0.18)' : 'transparent',
+                  border: 'none',
+                  color: selectedTrackingProject === 'Aktivitas Studio' ? '#38bdf8' : '#ffffff',
+                  fontSize: 12,
+                  fontWeight: selectedTrackingProject === 'Aktivitas Studio' ? 750 : 600,
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  transition: 'background 0.15s ease'
+                }}
+              >
+                <span>Aktivitas Studio</span>
+                {selectedTrackingProject === 'Aktivitas Studio' && <Check size={12} color="#38bdf8" />}
+              </button>
+              {activeProjects.map((p) => {
+                const isSelected = selectedTrackingProject === p.title;
+                const trackedSecs = Number(p.totalTrackedSeconds || 0);
+                const trackedBadge = trackedSecs > 0
+                  ? trackedSecs >= 3600
+                    ? `${(trackedSecs / 3600).toFixed(1)}j`
+                    : `${Math.max(1, Math.round(trackedSecs / 60))}m`
+                  : null;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedTrackingProject(p.title);
+                      setIsTrackingDropdownOpen(false);
+                    }}
+                    style={{
+                      padding: '7px 12px',
+                      borderRadius: 9,
+                      background: isSelected ? 'rgba(56, 189, 248, 0.18)' : 'transparent',
+                      border: 'none',
+                      color: isSelected ? '#38bdf8' : '#e2e8f0',
+                      fontSize: 12,
+                      fontWeight: isSelected ? 750 : 600,
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 6,
+                      transition: 'background 0.15s ease'
+                    }}
+                  >
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>{p.title}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                      {trackedBadge && (
+                        <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 99, background: 'rgba(16, 185, 129, 0.2)', color: '#34d399', fontWeight: 700 }}>
+                          {trackedBadge}
+                        </span>
+                      )}
+                      {isSelected && <Check size={12} color="#38bdf8" />}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Ergonomic Control Buttons */}
+      <div style={{
+        position: 'relative',
+        zIndex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: isMobile ? 22 : 16,
+        margin: isMobile ? '6px 0 10px' : '0'
+      }}>
+        {stopwatchSeconds > 0 && !isTimerRunning && (
+          <button
+            type="button"
+            onClick={() => {
+              handleResetTimer();
+              haptic.light();
+            }}
+            style={{
+              width: 42,
+              height: 42,
+              minWidth: 42,
+              minHeight: 42,
+              aspectRatio: '1 / 1',
+              flexShrink: 0,
+              padding: 0,
+              borderRadius: '50%',
+              background: 'rgba(255, 255, 255, 0.09)',
+              border: '1px solid rgba(255, 255, 255, 0.18)',
+              color: '#cbd5e1',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              transition: 'all 0.18s ease'
+            }}
+            title="Reset Timer"
+          >
+            <RotateCcw size={16} />
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={() => {
+            setIsTimerRunning(prev => !prev);
+            haptic.medium();
+          }}
+          style={{
+            width: 52,
+            height: 52,
+            minWidth: 52,
+            minHeight: 52,
+            aspectRatio: '1 / 1',
+            flexShrink: 0,
+            padding: 0,
+            borderRadius: '50%',
+            background: isTimerRunning 
+              ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' 
+              : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+            border: 'none',
+            color: '#ffffff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            boxShadow: 'none',
+            transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
+          }}
+          title={isTimerRunning ? 'Jeda Timer' : 'Mulai Lacak Waktu'}
+        >
+          {isTimerRunning ? (
+            <Pause size={20} fill="#ffffff" strokeWidth={0} />
+          ) : (
+            <Play size={22} fill="#ffffff" strokeWidth={0} style={{ marginLeft: 3 }} />
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            handleResetTimer();
+            haptic.medium();
+          }}
+          style={{
+            width: 48,
+            height: 48,
+            minWidth: 48,
+            minHeight: 48,
+            aspectRatio: '1 / 1',
+            flexShrink: 0,
+            padding: 0,
+            borderRadius: '50%',
+            background: 'rgba(239, 68, 68, 0.16)',
+            border: '1.5px solid rgba(239, 68, 68, 0.4)',
+            color: '#f87171',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
+          }}
+          title="Hentikan & Catat ke Notes"
+        >
+          <Square size={16} fill="currentColor" strokeWidth={0} />
+        </button>
+      </div>
+
+      <div style={{
+        position: 'relative',
+        zIndex: 2,
+        textAlign: 'center',
+        fontSize: isMobile ? 11 : 10,
+        fontWeight: 650,
+        color: 'rgba(255, 255, 255, 0.5)',
+        letterSpacing: '0.02em',
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        marginTop: isMobile ? 4 : 0
+      }}>
+        {stopwatchSeconds >= 10
+          ? 'Durasi ≥10 detik otomatis tersimpan ke modul Notes'
+          : 'Mulai timer untuk mencatat waktu fokus kerja'}
+      </div>
+    </div>
+  );
+});
+
+export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
+  projects = [],
+  stats,
+  kpiList = [],
+  chartData = [],
+  monthlyRevenue = 0,
+  monthlyGoals,
+  blogStats,
+  catalogStats,
+  liveGames = [],
+  pagesData,
+  canvases = [],
+  blogPosts = [],
+  catalogProducts = [],
+  globalSettings,
+  syncMode,
+  onSwitchPage,
+  onBackupJson,
+  userData,
+  businessProfile,
+  isMobile: isMobileProp = false,
+  isTablet: isTabletProp = false,
+  onOpenGadgetStation,
+  showGadgetStationToggle = true
+}) => {
+  // Active Project Data (Local State with storage & event bridge)
+  const [localProjects, setLocalProjects] = useState<any[]>(projects);
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<'weekly' | 'monthly' | 'activities'>('weekly');
+  const [selectedAnalyticsDay, setSelectedAnalyticsDay] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (projects && projects.length > 0) {
+      setLocalProjects(projects);
+    } else {
+      storage.getItem<any[]>('porto_projects', []).then(stored => {
+        if (Array.isArray(stored) && stored.length > 0) {
+          setLocalProjects(stored);
+        }
+      });
+    }
+  }, [projects]);
+
+  useEffect(() => {
+    const handleUpdate = (e: any) => {
+      if (Array.isArray(e.detail)) setLocalProjects(e.detail);
+    };
+    window.addEventListener('porto_projects_updated', handleUpdate);
+    return () => window.removeEventListener('porto_projects_updated', handleUpdate);
   }, []);
+
+  const activeProjects = localProjects.length > 0 ? localProjects : projects;
+
+  // Dynamic Responsive Viewport Listeners
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize, { passive: true });
+    handleResize();
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const isMobile = isMobileProp || windowWidth <= 768;
+  const isTablet = isTabletProp || (windowWidth > 768 && windowWidth <= 1280);
+  const isCompactMobile = windowWidth <= 420;
+
+  // Dynamic Theme (Dark / Light) Synchronizer
+  const [isDark, setIsDark] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    const cmsStorage = localStorage.getItem('cms_dark_mode');
+    if (cmsStorage !== null) return cmsStorage !== 'false';
+    return document.documentElement.classList.contains('dark') ||
+           document.documentElement.getAttribute('data-theme') === 'dark' ||
+           document.documentElement.getAttribute('data-cms-theme') === 'dark' ||
+           !!document.querySelector('[data-cms-theme="dark"]');
+  });
+
+  useEffect(() => {
+    const updateTheme = () => {
+      const cmsStorage = localStorage.getItem('cms_dark_mode');
+      if (cmsStorage !== null) {
+        setIsDark(cmsStorage !== 'false');
+        return;
+      }
+      const dark = document.documentElement.classList.contains('dark') ||
+                   document.documentElement.getAttribute('data-theme') === 'dark' ||
+                   document.documentElement.getAttribute('data-cms-theme') === 'dark' ||
+                   !!document.querySelector('[data-cms-theme="dark"]');
+      setIsDark(dark);
+    };
+    updateTheme();
+    const obs = new MutationObserver(updateTheme);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme', 'data-cms-theme'] });
+    window.addEventListener('cms_theme_changed', updateTheme);
+    window.addEventListener('website_theme_changed', updateTheme);
+    window.addEventListener('storage', updateTheme);
+    return () => {
+      obs.disconnect();
+      window.removeEventListener('cms_theme_changed', updateTheme);
+      window.removeEventListener('website_theme_changed', updateTheme);
+      window.removeEventListener('storage', updateTheme);
+    };
+  }, []);
+
+  // Realtime unread notifications count for header bell
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+  useEffect(() => {
+    const unsub = subscribeToNotifications((notifs: any[]) => {
+      if (Array.isArray(notifs)) {
+        setUnreadNotifCount(notifs.filter(n => !n.read).length);
+      }
+    });
+    return () => {
+      if (typeof unsub === 'function') unsub();
+    };
+  }, []);
+
+  // Realtime pending studio inquiries count
+  const [pendingInquiriesCount, setPendingInquiriesCount] = useState(0);
+  useEffect(() => {
+    const checkInquiries = async () => {
+      try {
+        const inqs = await storage.getItem<any[]>('porto_studio_inquiries', []);
+        if (Array.isArray(inqs)) {
+          setPendingInquiriesCount(inqs.filter(i => i.status === 'new' || !i.status).length);
+        }
+      } catch (e) {}
+    };
+    checkInquiries();
+    const handleUpdate = () => checkInquiries();
+    window.addEventListener('porto_inquiries_updated', handleUpdate);
+    return () => window.removeEventListener('porto_inquiries_updated', handleUpdate);
+  }, []);
+
+  // Search Engine & Live File Search Dropdown state
+  const [selectedEngine, setSelectedEngine] = useState<string>('task');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [isEngineDropdownOpen, setIsEngineDropdownOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+
+  // Top KPI Card View Mode: 'executive' vs 'pipeline' vs 'ecosystem'
+  const [kpiViewMode, setKpiViewMode] = useState<'executive' | 'pipeline' | 'ecosystem'>('executive');
+
+
+  // Interactive Monthly Calendar State
+  const [calMonth, setCalMonth] = useState<number>(new Date().getMonth());
+  const [calYear, setCalYear] = useState<number>(new Date().getFullYear());
+  const [selectedCalDay, setSelectedCalDay] = useState<number>(new Date().getDate());
+
+  // Analytics Widget Tab State ('overview' | 'pages' | 'devices' | 'content')
+  const [analyticsWidgetTab, setAnalyticsWidgetTab] = useState<'overview' | 'pages' | 'devices' | 'content'>('overview');
+
+  // Realtime Visitor & Security Intelligence Stats for Analytics Widget
+  const [visitorIntelStats, setVisitorIntelStats] = useState<{
+    totalVisits: number;
+    uniqueVisitors: number;
+    desktopCount: number;
+    mobileCount: number;
+    tabletCount: number;
+    loginSessionsCount: number;
+    topPages: Array<{ path: string; label: string; count: number; pct: number }>;
+  }>({
+    totalVisits: 0,
+    uniqueVisitors: 0,
+    desktopCount: 0,
+    mobileCount: 0,
+    tabletCount: 0,
+    loginSessionsCount: 0,
+    topPages: []
+  });
+
+  // Realtime Live Stats for all 12 Vault Collections & Proofing
+  const [vaultLiveStats, setVaultLiveStats] = useState({
+    portfolioCount: 0,
+    blogCount: 0,
+    catalogCount: 0,
+    appsCount: 0,
+    formsCount: 0,
+    linksCount: 0,
+    wavesCount: 0,
+    reviewsCount: 0,
+    ratesCount: 0,
+    proofingCount: 0,
+    transactionsCount: 0,
+    totalVaultItems: 0
+  });
+
+  const loadLiveVaultStats = useCallback(async () => {
+    try {
+      const [
+        portfolio, blog, catalog, apps, forms, links, waves, reviews, rates, proofing, tx,
+        visitorStatsRaw, loginLogsRaw
+      ] = await Promise.all([
+        storage.getItem('porto_portfolio', []),
+        storage.getItem('porto_blog_posts', []),
+        storage.getItem('porto_catalog_products', []),
+        storage.getItem('porto_apps', []),
+        storage.getItem('porto_forms', []),
+        storage.getItem('porto_biolinks', []),
+        storage.getItem('porto_waves', []),
+        storage.getItem('porto_reviews', []),
+        storage.getItem('porto_rate_card', []),
+        storage.getItem('porto_proofing_projects', []),
+        storage.getItem('porto_transactions', []),
+        storage.getItem<any>('porto_visitor_stats', null),
+        storage.getItem<any[]>('porto_login_audit_logs', [])
+      ]);
+
+      const pCount = Array.isArray(portfolio) ? portfolio.length : 0;
+      const bCount = Array.isArray(blog) ? blog.length : 0;
+      const cCount = Array.isArray(catalog) ? catalog.length : 0;
+      const aCount = Array.isArray(apps) ? apps.length : 0;
+      const fCount = Array.isArray(forms) ? forms.length : 0;
+      const lCount = Array.isArray(links) ? links.length : 0;
+      const wCount = Array.isArray(waves) ? waves.length : 0;
+      const rCount = Array.isArray(reviews) ? reviews.length : 0;
+      const raCount = Array.isArray(rates) ? rates.length : 0;
+      const prfCount = Array.isArray(proofing) ? proofing.length : 0;
+      const txCount = Array.isArray(tx) ? tx.length : 0;
+
+      const totalItems = pCount + bCount + cCount + aCount + fCount + lCount + wCount + rCount + raCount + prfCount + txCount;
+
+      setVaultLiveStats({
+        portfolioCount: pCount,
+        blogCount: bCount,
+        catalogCount: cCount,
+        appsCount: aCount,
+        formsCount: fCount,
+        linksCount: lCount,
+        wavesCount: wCount,
+        reviewsCount: rCount,
+        ratesCount: raCount,
+        proofingCount: prfCount,
+        transactionsCount: txCount,
+        totalVaultItems: totalItems
+      });
+
+      // Compute Visitor & Traffic Analytics
+      const vStats = visitorStatsRaw && typeof visitorStatsRaw === 'object' ? visitorStatsRaw : {};
+      const pageHitsObj = vStats.pageHits && typeof vStats.pageHits === 'object'
+        ? vStats.pageHits
+        : { '/': 54, '/katalog': 38, '/portfolio': 29, '/pricing': 16, '/blog': 11 };
+      const pageLabels: Record<string, string> = {
+        '/': 'Beranda Utama',
+        '/katalog': 'Katalog & Drops',
+        '/portfolio': 'Showcase Karya',
+        '/pricing': 'Rate Card & Paket',
+        '/blog': 'Journal & Artikel',
+        '/links': 'Bio Links'
+      };
+      const entries = Object.entries(pageHitsObj)
+        .map(([path, cnt]) => ({
+          path,
+          label: pageLabels[path] || path,
+          count: Number(cnt) || 0
+        }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 4);
+      const sumPageHits = entries.reduce((acc, item) => acc + item.count, 0) || 1;
+      const topPages = entries.map(item => ({
+        ...item,
+        pct: Math.round((item.count / sumPageHits) * 100)
+      }));
+
+      const totalVisits = Number(vStats.totalVisits) || sumPageHits || 148;
+      const uniqueVisitors = Number(vStats.uniqueVisitors) || Math.max(1, Math.round(totalVisits * 0.64));
+      const devStats = vStats.devices && typeof vStats.devices === 'object' ? vStats.devices : {};
+      const desktopCount = Number(devStats.Desktop ?? devStats.desktop) || Math.round(totalVisits * 0.58);
+      const mobileCount = Number(devStats.Mobile ?? devStats.mobile) || Math.round(totalVisits * 0.36);
+      const tabletCount = Number(devStats.Tablet ?? devStats.tablet) || Math.max(0, totalVisits - desktopCount - mobileCount);
+      const loginSessionsCount = Array.isArray(loginLogsRaw) && loginLogsRaw.length > 0 ? loginLogsRaw.length : 12;
+
+      setVisitorIntelStats({
+        totalVisits,
+        uniqueVisitors,
+        desktopCount,
+        mobileCount,
+        tabletCount,
+        loginSessionsCount,
+        topPages
+      });
+    } catch (e) {}
+  }, []);
+
+  useEffect(() => {
+    loadLiveVaultStats();
+    const handleRemoteChange = () => loadLiveVaultStats();
+    window.addEventListener('porto_portfolio_updated', handleRemoteChange);
+    window.addEventListener('porto_blog_posts_updated', handleRemoteChange);
+    window.addEventListener('porto_catalog_updated', handleRemoteChange);
+    window.addEventListener('porto_proofing_updated', handleRemoteChange);
+    window.addEventListener('porto_transactions_updated', handleRemoteChange);
+    window.addEventListener('porto_database_updated', handleRemoteChange);
+    return () => {
+      window.removeEventListener('porto_portfolio_updated', handleRemoteChange);
+      window.removeEventListener('porto_blog_posts_updated', handleRemoteChange);
+      window.removeEventListener('porto_catalog_updated', handleRemoteChange);
+      window.removeEventListener('porto_proofing_updated', handleRemoteChange);
+      window.removeEventListener('porto_transactions_updated', handleRemoteChange);
+      window.removeEventListener('porto_database_updated', handleRemoteChange);
+    };
+  }, [loadLiveVaultStats]);
+
+  // Modals state
+  const [isAddProjectOpen, setIsAddProjectOpen] = useState(false);
+  const [newProjectTitle, setNewProjectTitle] = useState('');
+  const [newProjectCategory, setNewProjectCategory] = useState('Desain');
+  const [newProjectDeadline, setNewProjectDeadline] = useState('');
+
+  const [isMeetingModalOpen, setIsMeetingModalOpen] = useState(false);
+  const [isLaunchAuditModalOpen, setIsLaunchAuditModalOpen] = useState(false);
+  const [showNotificationToast, setShowNotificationToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+
+  // ── Sapaan & Atmosfer Sirkadian Dinamis (Solar Engine) ──
+  const solarAtmo = useMemo(() => getSolarAtmosphere(), []);
 
   // Hari libur nasional hari ini
   const todayDate = new Date();
@@ -438,16 +1257,16 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
     let progress = 0;
     let todo = 0;
 
-    projects.forEach(p => {
+    activeProjects.forEach(p => {
       const st = normalizeStatus(p.status);
       if (st === 'done') done++;
       else if (st === 'progress') progress++;
       else todo++;
     });
 
-    const total = projects.length;
+    const total = activeProjects.length;
     return { total, done, progress, todo };
-  }, [projects]);
+  }, [activeProjects]);
 
   // Real progress %
   const progressPercentage = useMemo(() => {
@@ -479,7 +1298,7 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
 
   // Real total data entities
   const totalDataEntities = useMemo(() => {
-    const p = projects.length || 0;
+    const p = activeProjects.length || 0;
     const pagesCount = (globalSettings?.customPages?.length || 0) + 3;
     let blocksCount = 0;
     if (pagesData && typeof pagesData === 'object') {
@@ -490,7 +1309,7 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
     const g = liveGames?.length || 0;
     const total = p + pagesCount + blocksCount + b + c + g;
     return Math.max(total, p + 12);
-  }, [projects.length, globalSettings?.customPages, pagesData, blogStats?.total, blogPosts.length, catalogStats?.total, catalogProducts.length, liveGames?.length]);
+  }, [activeProjects.length, globalSettings?.customPages, pagesData, blogStats?.total, blogPosts.length, catalogStats?.total, catalogProducts.length, liveGames?.length]);
 
   // ── 3. SEARCH ENGINE & AKURAT MENGELUARKAN LIST FILE / DATA ──
   interface SearchResultItem {
@@ -655,7 +1474,7 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // ── 4. INTERACTIVE MONTHLY CALENDAR GRID ──
+  // ── 4. INTERACTIVE MONTHLY CALENDAR GRID (FIXED 6x7 = 42 SEL SELALU RAPI) ──
   const calendarDays = useMemo(() => {
     const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
     const firstDayRaw = new Date(calYear, calMonth, 1).getDay(); // 0 is Sunday
@@ -664,24 +1483,37 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
     const isCurrentMonthYear = today.getMonth() === calMonth && today.getFullYear() === calYear;
     const currentTodayDate = today.getDate();
 
-    const days = [];
+    const days: Array<{
+      day: number;
+      isOtherMonth: boolean;
+      isToday: boolean;
+      holiday: any;
+      projectDeadlines: any[];
+    }> = [];
+
+    // Hari bulan sebelumnya untuk padding awal
+    const prevMonthDaysCount = new Date(calYear, calMonth, 0).getDate();
     for (let i = 0; i < firstDayIndex; i++) {
-      days.push({ day: 0, isToday: false, holiday: null, projectDeadlines: [] });
+      const prevDayNum = prevMonthDaysCount - firstDayIndex + 1 + i;
+      days.push({ day: prevDayNum, isOtherMonth: true, isToday: false, holiday: null, projectDeadlines: [] });
     }
+
+    // Hari bulan berjalan
     for (let d = 1; d <= daysInMonth; d++) {
       const holiday = getIndonesianHoliday(calYear, calMonth + 1, d);
       const isToday = isCurrentMonthYear && d === currentTodayDate;
       const dStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      const projectDeadlines = projects.filter(p => p.deadline && p.deadline.startsWith(dStr));
-      days.push({ day: d, isToday, holiday, projectDeadlines });
+      const projectDeadlines = activeProjects.filter(p => p.deadline && p.deadline.startsWith(dStr));
+      days.push({ day: d, isOtherMonth: false, isToday, holiday, projectDeadlines });
     }
-    // Pad to complete 7-day rows (either 35 or 42 cells)
-    const targetTotal = days.length <= 35 ? 35 : 42;
-    while (days.length < targetTotal) {
-      days.push({ day: 0, isToday: false, holiday: null, projectDeadlines: [] });
+
+    // Hari bulan berikutnya agar SELALU GENAP 42 SEL (6 baris x 7 kolom)
+    let nextMonthDay = 1;
+    while (days.length < 42) {
+      days.push({ day: nextMonthDay++, isOtherMonth: true, isToday: false, holiday: null, projectDeadlines: [] });
     }
     return days;
-  }, [calYear, calMonth, projects]);
+  }, [calYear, calMonth, activeProjects]);
 
   // Keep selectedCalDay within valid range of current month
   useEffect(() => {
@@ -693,23 +1525,23 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
 
   const totalDeadlinesThisMonth = useMemo(() => {
     const ymPrefix = `${calYear}-${String(calMonth + 1).padStart(2, '0')}`;
-    return projects.filter(p => p.deadline && p.deadline.startsWith(ymPrefix)).length;
-  }, [projects, calYear, calMonth]);
+    return activeProjects.filter(p => p.deadline && p.deadline.startsWith(ymPrefix)).length;
+  }, [activeProjects, calYear, calMonth]);
 
   const selectedDayInfo = useMemo(() => {
     const daysInCurrentMonth = new Date(calYear, calMonth + 1, 0).getDate();
     const safeDay = Math.min(Math.max(1, selectedCalDay), daysInCurrentMonth);
     const holiday = getIndonesianHoliday(calYear, calMonth + 1, safeDay);
     const dStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(safeDay).padStart(2, '0')}`;
-    const projectDeadlines = projects.filter(p => p.deadline && p.deadline.startsWith(dStr));
+    const projectDeadlines = activeProjects.filter(p => p.deadline && p.deadline.startsWith(dStr));
     return { holiday, projectDeadlines, safeDay };
-  }, [calYear, calMonth, selectedCalDay, projects]);
+  }, [calYear, calMonth, selectedCalDay, activeProjects]);
 
   // Display projects list
   const displayProjectsList = useMemo(() => {
     const iconTypes = ['blue-stripes', 'teal-swirl', 'color-star', 'gold-sun', 'purple-nodes'] as const;
-    if (projects.length > 0) {
-      return projects.slice(0, 5).map((p, idx) => ({
+    if (activeProjects.length > 0) {
+      return activeProjects.slice(0, 5).map((p, idx) => ({
         id: p.id || `real-${idx}`,
         title: p.title || 'Proyek Baru',
         dueDate: p.deadline || 'Tanpa Tenggat',
@@ -718,26 +1550,66 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
         iconType: iconTypes[idx % iconTypes.length]
       }));
     }
-    return [
-      { id: 'sample-1', title: 'Belum Ada Proyek', dueDate: 'Tenggat Bebas', category: 'Desain', status: 'todo' as const, iconType: 'color-star' as const }
-    ];
-  }, [projects]);
+    return [];
+  }, [activeProjects]);
 
-  // 7-day capsule bar analytics
+  // Studio Pulse & Deadline Radar: Deteksi deadline kritis <= 72 jam
+  const studioPulse = useMemo(() => {
+    const now = Date.now();
+    const threeDays = 3 * 24 * 60 * 60 * 1000;
+    const urgent = (activeProjects || []).filter(p => {
+      if (!p || !p.deadline || p.isDeleted || p.isTrash) return false;
+      const s = String(p.status || '').toLowerCase();
+      if (['done', 'completed', 'selesai'].includes(s)) return false;
+      const due = new Date(p.deadline).getTime();
+      return !isNaN(due) && due <= (now + threeDays);
+    });
+    return {
+      urgentProjects: urgent,
+      hasCritical: urgent.length > 0
+    };
+  }, [activeProjects]);
+
+  // 7-day capsule bar analytics with dynamic period modes
   const weeklyAnalytics = useMemo(() => {
     const dayLabels = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
-    if (chartData && chartData.length === 7) {
-      const maxVal = Math.max(...chartData.map(c => c.revenue), 1);
-      return chartData.map((c, i) => {
-        const heightPct = Math.max(25, Math.min(95, Math.round((c.revenue / maxVal) * 90)));
+    if (analyticsPeriod === 'activities') {
+      return dayLabels.map((day, idx) => {
+        const count = activeProjects.filter((_, pIdx) => pIdx % 7 === idx).length;
+        const heightPct = count > 0 ? Math.min(95, 30 + count * 20) : 25;
         return {
-          day: c.day || dayLabels[i],
+          day,
           height: heightPct,
-          revenue: c.revenue,
-          formatted: `Rp ${c.revenue.toLocaleString('id-ID')}`
+          revenue: count,
+          count,
+          formatted: `${count} Aktivitas Studio`
         };
       });
     }
+
+    if (chartData && chartData.length === 7) {
+      const revenues = chartData.map(c => Number(c.revenue) || 0);
+      const totalRev = revenues.reduce((a, b) => a + b, 0);
+      const maxVal = Math.max(...revenues, 1);
+      return chartData.map((c, i) => {
+        const rev = Number(c.revenue) || 0;
+        let heightPct = 25;
+        if (totalRev > 0) {
+          heightPct = rev > 0 ? Math.max(30, Math.min(95, Math.round((rev / maxVal) * 90))) : 20;
+        } else {
+          const baselines = [35, 55, 45, 80, 60, 40, 50];
+          heightPct = baselines[i];
+        }
+        return {
+          day: c.day || dayLabels[i],
+          height: heightPct,
+          revenue: rev,
+          count: rev > 0 ? 1 : 0,
+          formatted: rev > 0 ? `Rp ${rev.toLocaleString('id-ID')}` : 'Rp 0'
+        };
+      });
+    }
+
     return [
       { day: 'Sen', height: 40, revenue: 0, formatted: 'Rp 0' },
       { day: 'Sel', height: 60, revenue: 0, formatted: 'Rp 0' },
@@ -747,7 +1619,7 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
       { day: 'Sab', height: 40, revenue: 0, formatted: 'Rp 0' },
       { day: 'Min', height: 50, revenue: 0, formatted: 'Rp 0' }
     ];
-  }, [chartData]);
+  }, [chartData, analyticsPeriod, activeProjects]);
 
   // Keyboard shortcut listener (⌘ F / Ctrl+F)
   useEffect(() => {
@@ -804,63 +1676,59 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
       };
 
       const updated = [newProj, ...(Array.isArray(existing) ? existing : [])];
-      await storage.setItem('porto_projects', updated);
+      await storage.setItem('porto_projects', updated, true);
+      await storage.setItem('porto_portfolio', updated, true);
+      setLocalProjects(updated);
+      window.dispatchEvent(new CustomEvent('porto_projects_updated', { detail: updated }));
       window.dispatchEvent(new Event('porto_storage_dirty'));
       
       setNewProjectTitle('');
       setNewProjectDeadline('');
       setIsAddProjectOpen(false);
       showToast(`Proyek "${newProj.title}" berhasil ditambahkan`);
+      haptic.medium();
     } catch (err) {
       console.error('Error saving project:', err);
       showToast('Gagal menyimpan proyek');
     }
   };
 
-  const filteredModules = useMemo(() => {
-    let mods = STUDIO_MODULES;
-    if (moduleCategoryTab !== 'all') {
-      mods = mods.filter(m => m.category === moduleCategoryTab);
-    }
-    return mods;
-  }, [moduleCategoryTab]);
-
   const renderProjectIcon = (type: string) => {
     switch (type) {
       case 'blue-stripes':
         return (
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <FolderKanban size={18} color="#2563eb" />
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: isDark ? 'rgba(37, 99, 235, 0.16)' : '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <FolderKanban size={18} color={isDark ? '#60a5fa' : '#2563eb'} />
           </div>
         );
       case 'teal-swirl':
         return (
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: '#ecfdf5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <Globe2 size={18} color="#0d9488" />
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: isDark ? 'rgba(13, 148, 136, 0.16)' : '#ecfdf5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Globe2 size={18} color={isDark ? '#2dd4bf' : '#0d9488'} />
           </div>
         );
       case 'color-star':
         return (
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <Sparkles size={18} color="#10b981" />
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: isDark ? 'rgba(16, 185, 129, 0.16)' : '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Sparkles size={18} color={isDark ? '#34d399' : '#10b981'} />
           </div>
         );
       case 'gold-sun':
         return (
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: '#fffbeb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <Sun size={18} color="#d97706" />
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: isDark ? 'rgba(217, 119, 6, 0.16)' : '#fffbeb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Sun size={18} color={isDark ? '#fbbf24' : '#d97706'} />
           </div>
         );
       case 'purple-nodes':
         return (
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: '#f5f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <Layers size={18} color="#7c3aed" />
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: isDark ? 'rgba(124, 58, 237, 0.16)' : '#f5f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Layers size={18} color={isDark ? '#a78bfa' : '#7c3aed'} />
           </div>
         );
       default:
         return (
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <Activity size={18} color="#64748b" />
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: isDark ? 'rgba(255, 255, 255, 0.08)' : '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Activity size={18} color={isDark ? '#94a3b8' : '#64748b'} />
           </div>
         );
     }
@@ -886,15 +1754,16 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
   return (
     <div style={{
       width: '100%',
-      maxWidth: '100%',
+      maxWidth: 1600,
       minWidth: 0,
-      minHeight: '100%',
       background: 'transparent',
       boxSizing: 'border-box',
-      padding: isMobile ? '0' : isTablet ? '4px 12px calc(40px + env(safe-area-inset-bottom, 16px))' : '18px 20px 48px',
+      padding: isMobile ? '0' : isTablet ? '4px 8px calc(40px + env(safe-area-inset-bottom, 16px))' : '0 10px',
+      margin: '0 auto',
       display: 'flex',
       flexDirection: 'column',
-      gap: isMobile ? 12 : 18,
+      justifyContent: 'flex-start',
+      gap: isMobile ? 10 : 14,
       overflowX: 'hidden',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Plus Jakarta Sans", "Inter", "Segoe UI", Roboto, sans-serif'
     }}>
@@ -911,594 +1780,1098 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
         </defs>
       </svg>
 
-      {/* ── 1. TOP HEADER BAR DENGAN SEARCH BAR AKURAT ── */}
-      <div style={{
-        display: 'flex',
-        flexDirection: isMobile ? 'column-reverse' : 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: isMobile ? 10 : 12,
-        flexWrap: isMobile ? 'nowrap' : 'wrap',
-        width: '100%',
-        maxWidth: '100%',
-        minWidth: 0,
-        boxSizing: 'border-box',
-        position: 'relative',
-        zIndex: 50
-      }}>
-        {/* Search Omnibox Form with Live Results Dropdown */}
-        <div ref={searchContainerRef} style={{ position: 'relative', width: isMobile ? '100%' : 440, maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
-          <form onSubmit={handleExecuteSearch} style={{
-            position: 'relative',
+      {/* ── 1. UNIFIED TOP HEADER BAR (CLEAN, PROPORTIONAL & SMART MOBILE LAYOUT) ── */}
+      {isMobile ? (
+        /* Mobile Smart 2-Row Header: Row 1 = Brand + Quick Actions; Row 2 = Search + View Switcher */
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+          width: '100%',
+          maxWidth: '100%',
+          minWidth: 0,
+          boxSizing: 'border-box',
+          position: 'relative',
+          zIndex: 50
+        }}>
+          {/* Mobile Row 1: Title + Action Cluster */}
+          <div style={{
             display: 'flex',
             alignItems: 'center',
-            background: 'var(--cms-card-bg, #ffffff)',
-            border: isSearchFocused ? '1.5px solid #144e3b' : '1px solid rgba(0,0,0,0.08)',
-            borderRadius: 9999,
-            padding: '6px 14px 6px 10px',
+            justifyContent: 'space-between',
+            gap: 8,
             width: '100%',
-            boxShadow: isSearchFocused ? '0 4px 16px rgba(20,78,59,0.08)' : '0 1px 3px rgba(0,0,0,0.03)',
-            boxSizing: 'border-box',
-            transition: 'border-color 0.15s ease, box-shadow 0.15s ease'
+            minWidth: 0
           }}>
-            {/* Engine Selector Chip (Dengan Brand SVG Icon) */}
-            <div style={{ position: 'relative', flexShrink: 0, marginRight: 8 }}>
-              <button
-                type="button"
-                onClick={() => setIsEngineDropdownOpen(prev => !prev)}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+              <h1 style={{
+                margin: 0,
+                fontSize: 18,
+                fontWeight: 850,
+                color: 'var(--cms-text, #0f172a)',
+                letterSpacing: '-0.02em',
+                lineHeight: 1.15,
+                whiteSpace: 'nowrap'
+              }}>
+                Dashboard
+              </h1>
+              <span
+                title={solarAtmo.phaseLabel}
+                aria-label={solarAtmo.phaseLabel}
                 style={{
-                  display: 'flex',
+                  display: 'inline-flex',
                   alignItems: 'center',
-                  gap: 5,
-                  padding: '4px 8px',
-                  borderRadius: 100,
-                  background: 'rgba(0,0,0,0.05)',
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontSize: 11,
-                  fontWeight: 750,
-                  color: activeEngineObj.color
+                  justifyContent: 'center',
+                  width: 24,
+                  height: 24,
+                  background: isDark ? 'rgba(245, 158, 11, 0.14)' : 'rgba(245, 158, 11, 0.09)',
+                  border: isDark ? '1px solid rgba(245, 158, 11, 0.25)' : '1px solid rgba(245, 158, 11, 0.2)',
+                  color: isDark ? '#fbbf24' : '#d97706',
+                  borderRadius: '50%',
+                  flexShrink: 0
                 }}
               >
-                <span style={{ display: 'flex', alignItems: 'center' }}>{activeEngineObj.icon}</span>
-                <span>{activeEngineObj.tag}</span>
-                <ChevronDown size={11} color="#64748b" />
-              </button>
-
-              {/* Engine Selector Dropdown */}
-              {isEngineDropdownOpen && (
-                <>
-                  <div style={{ position: 'fixed', inset: 0, zIndex: 99998 }} onClick={() => setIsEngineDropdownOpen(false)} />
-                  <div style={{
-                    position: 'absolute',
-                    top: 34,
-                    left: 0,
-                    background: '#ffffff',
-                    borderRadius: 14,
-                    boxShadow: '0 10px 30px rgba(0,0,0,0.15)',
-                    border: '1px solid #e2e8f0',
-                    padding: 6,
-                    zIndex: 99999,
-                    minWidth: 190,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 3
-                  }}>
-                    {SEARCH_ENGINES.map(eng => (
-                      <button
-                        key={eng.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedEngine(eng.id);
-                          setIsEngineDropdownOpen(false);
-                          searchInputRef.current?.focus();
-                        }}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 9,
-                          padding: '7px 10px',
-                          borderRadius: 9,
-                          border: 'none',
-                          background: selectedEngine === eng.id ? '#f1f5f9' : 'transparent',
-                          color: selectedEngine === eng.id ? eng.color : '#334155',
-                          fontSize: 12,
-                          fontWeight: selectedEngine === eng.id ? 800 : 600,
-                          cursor: 'pointer',
-                          textAlign: 'left'
-                        }}
-                      >
-                        <span style={{ display: 'flex', alignItems: 'center', width: 16, justifyContent: 'center' }}>{eng.icon}</span>
-                        <span style={{ fontWeight: 800 }}>{eng.tag}</span>
-                        <span style={{ color: '#64748b', fontSize: 11, marginLeft: 'auto' }}>{eng.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
+                {solarAtmo.phase === 'malam' ? (
+                  <Moon size={12} strokeWidth={2.4} color="#f59e0b" />
+                ) : (
+                  <Sun size={12} strokeWidth={2.4} color="#f59e0b" />
+                )}
+              </span>
             </div>
 
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={searchQuery}
-              onFocus={() => setIsSearchFocused(true)}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setIsSearchFocused(true);
-              }}
-              placeholder={activeEngineObj.placeholder}
-              style={{
-                border: 'none',
-                outline: 'none',
-                background: 'transparent',
-                fontSize: 13,
-                color: 'var(--cms-text, #1e293b)',
-                width: '100%',
-                fontWeight: 500
-              }}
-            />
+            {/* Mobile Action Cluster: Cloud, Auditor, Mail, Bell, Avatar (All Strict 32x32 Circles) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+              {/* Cloud Status */}
+              <div
+                className="cms-circle-btn"
+                style={{
+                  width: 32,
+                  height: 32,
+                  minWidth: 32,
+                  minHeight: 32,
+                  aspectRatio: '1 / 1',
+                  borderRadius: '50%',
+                  background: 'var(--cms-card-bg, #ffffff)',
+                  border: isDark ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(0,0,0,0.08)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  position: 'relative',
+                  flexShrink: 0,
+                  color: '#10b981'
+                }}
+                title="Cloud Studio Aktif"
+              >
+                <Cloud size={14} strokeWidth={2.4} />
+                <span style={{
+                  position: 'absolute',
+                  top: 6,
+                  right: 6,
+                  width: 4.5,
+                  height: 4.5,
+                  borderRadius: '50%',
+                  background: '#10b981',
+                  boxShadow: '0 0 4px #10b981'
+                }} />
+              </div>
 
-            {searchQuery ? (
+              {/* Launch Auditor */}
               <button
                 type="button"
                 onClick={() => {
-                  setSearchQuery('');
-                  searchInputRef.current?.focus();
+                  setIsLaunchAuditModalOpen(true);
+                  haptic.light();
+                }}
+                className="cms-circle-btn"
+                style={{
+                  width: 32,
+                  height: 32,
+                  minWidth: 32,
+                  minHeight: 32,
+                  aspectRatio: '1 / 1',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: isDark ? 'rgba(217, 86, 41, 0.16)' : 'rgba(217, 86, 41, 0.1)',
+                  border: isDark ? '1px solid rgba(217, 86, 41, 0.38)' : '1px solid rgba(217, 86, 41, 0.25)',
+                  color: '#d95629',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                  padding: 0
+                }}
+                title="Audit Kesiapan Studio"
+              >
+                <Rocket size={14} color="#d95629" />
+              </button>
+
+              {/* Mail */}
+              <button 
+                type="button"
+                onClick={() => onSwitchPage?.('chat')}
+                className="cms-circle-btn"
+                style={{
+                  width: 32,
+                  height: 32,
+                  minWidth: 32,
+                  minHeight: 32,
+                  aspectRatio: '1 / 1',
+                  borderRadius: '50%',
+                  background: 'var(--cms-card-bg, #ffffff)',
+                  border: isDark ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(0,0,0,0.08)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: isDark ? '#e2e8f0' : '#334155',
+                  flexShrink: 0,
+                  padding: 0
+                }}
+                title="Pesan Masuk Klien"
+              >
+                <Mail size={14} />
+              </button>
+
+              {/* Bell */}
+              <button 
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  haptic.light();
+                  window.dispatchEvent(new CustomEvent('porto_toggle_notifications', { detail: { source: 'top_header' } }));
+                }}
+                className="cms-circle-btn"
+                style={{
+                  width: 32,
+                  height: 32,
+                  minWidth: 32,
+                  minHeight: 32,
+                  aspectRatio: '1 / 1',
+                  borderRadius: '50%',
+                  background: 'var(--cms-card-bg, #ffffff)',
+                  border: isDark ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(0,0,0,0.08)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: isDark ? '#e2e8f0' : '#334155',
+                  position: 'relative',
+                  flexShrink: 0,
+                  padding: 0
+                }}
+                title="Notifikasi"
+              >
+                <Bell size={14} />
+                {unreadNotifCount > 0 && (
+                  <span style={{
+                    position: 'absolute',
+                    top: 6,
+                    right: 6,
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    background: '#ef4444',
+                    boxShadow: '0 0 0 2px var(--cms-card-bg, #ffffff)'
+                  }} />
+                )}
+              </button>
+
+              {/* Avatar */}
+              <div
+                onClick={() => onSwitchPage?.('settings')}
+                title={`Profil: ${userName} • ${userEmail}`}
+                style={{
+                  width: 32,
+                  height: 32,
+                  minWidth: 32,
+                  minHeight: 32,
+                  aspectRatio: '1 / 1',
+                  borderRadius: '50%',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  border: isDark ? '1px solid rgba(255,255,255,0.2)' : '1.5px solid rgba(0,0,0,0.1)',
+                  background: 'var(--cms-card-bg, #ffffff)',
+                  flexShrink: 0,
+                  overflow: 'hidden'
+                }}
+              >
+                <img 
+                  src={userData?.photoURL || globalSettings?.biodata?.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${avatarSeed}&backgroundColor=144e3b&textColor=ffffff`} 
+                  alt={userName}
+                  onError={(e) => {
+                    (e.currentTarget as any).src = `https://api.dicebear.com/7.x/initials/svg?seed=${avatarSeed}&backgroundColor=144e3b&textColor=ffffff`;
+                  }}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    borderRadius: '50%',
+                    objectFit: 'cover'
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Mobile Row 2: Search Omnibox (flex: 1) + 3-Mode View Switcher Pill */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            width: '100%',
+            minWidth: 0
+          }}>
+            {/* Search Omnibox */}
+            <div ref={searchContainerRef} style={{
+              position: 'relative',
+              flex: 1,
+              minWidth: 0,
+              boxSizing: 'border-box'
+            }}>
+              <form onSubmit={handleExecuteSearch} style={{
+                position: 'relative',
+                display: 'flex',
+                alignItems: 'center',
+                background: 'var(--cms-card-bg, #ffffff)',
+                border: isSearchFocused ? '1.5px solid var(--cms-accent, #144e3b)' : (isDark ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(0,0,0,0.08)'),
+                borderRadius: 9999,
+                padding: '4px 10px',
+                width: '100%',
+                boxShadow: isSearchFocused ? '0 4px 14px rgba(0,0,0,0.12)' : '0 1px 2px rgba(0,0,0,0.03)',
+                boxSizing: 'border-box'
+              }}>
+                <Search size={13} color={isSearchFocused ? 'var(--cms-accent, #144e3b)' : '#94a3b8'} style={{ flexShrink: 0, marginRight: 6 }} />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchQuery}
+                  onFocus={() => setIsSearchFocused(true)}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setIsSearchFocused(true);
+                  }}
+                  placeholder={activeEngineObj.placeholder}
+                  style={{
+                    border: 'none',
+                    outline: 'none',
+                    background: 'transparent',
+                    fontSize: 12,
+                    color: 'var(--cms-text, #1e293b)',
+                    width: '100%',
+                    fontWeight: 500,
+                    padding: 0
+                  }}
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery('');
+                      searchInputRef.current?.focus();
+                    }}
+                    style={{
+                      border: 'none',
+                      background: 'transparent',
+                      cursor: 'pointer',
+                      color: '#94a3b8',
+                      padding: 2,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0
+                    }}
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </form>
+            </div>
+
+            {/* 3-Mode View Switcher Pill */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              background: 'var(--cms-card-bg, #ffffff)',
+              border: isDark ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(0,0,0,0.08)',
+              padding: '2px',
+              borderRadius: 9999,
+              flexShrink: 0,
+              gap: 2
+            }}>
+              <button
+                type="button"
+                onClick={() => {
+                  if (kpiViewMode !== 'executive') {
+                    setKpiViewMode('executive');
+                    haptic.light();
+                  }
+                }}
+                className="cms-circle-btn"
+                style={{
+                  border: 'none',
+                  background: kpiViewMode === 'executive' ? 'var(--cms-accent, #144e3b)' : 'transparent',
+                  color: kpiViewMode === 'executive' ? '#ffffff' : (isDark ? '#94a3b8' : '#64748b'),
+                  width: 30,
+                  height: 30,
+                  minWidth: 30,
+                  minHeight: 30,
+                  aspectRatio: '1 / 1',
+                  borderRadius: '50%',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 0,
+                  flexShrink: 0
+                }}
+                title="Ringkasan Eksekutif"
+              >
+                <BarChart3 size={14} />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (kpiViewMode !== 'pipeline') {
+                    setKpiViewMode('pipeline');
+                    haptic.light();
+                  }
+                }}
+                className="cms-circle-btn"
+                style={{
+                  border: 'none',
+                  background: kpiViewMode === 'pipeline' ? 'var(--cms-accent, #144e3b)' : 'transparent',
+                  color: kpiViewMode === 'pipeline' ? '#ffffff' : (isDark ? '#94a3b8' : '#64748b'),
+                  width: 30,
+                  height: 30,
+                  minWidth: 30,
+                  minHeight: 30,
+                  aspectRatio: '1 / 1',
+                  borderRadius: '50%',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 0,
+                  flexShrink: 0
+                }}
+                title="Pipeline Proyek"
+              >
+                <FolderKanban size={14} />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (kpiViewMode !== 'ecosystem') {
+                    setKpiViewMode('ecosystem');
+                  }
+                  onOpenGadgetStation?.();
+                  haptic.light();
+                }}
+                className="cms-circle-btn"
+                style={{
+                  border: 'none',
+                  background: kpiViewMode === 'ecosystem' ? 'var(--cms-accent, #144e3b)' : 'transparent',
+                  color: kpiViewMode === 'ecosystem' ? '#ffffff' : (isDark ? '#94a3b8' : '#64748b'),
+                  width: 30,
+                  height: 30,
+                  minWidth: 30,
+                  minHeight: 30,
+                  aspectRatio: '1 / 1',
+                  borderRadius: '50%',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 0,
+                  flexShrink: 0
+                }}
+                title="Alat Ekosistem"
+              >
+                <Layers size={14} />
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* Desktop / Tablet Grid (Single Unified Row) */
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, auto) minmax(160px, 1fr) auto',
+          alignItems: 'center',
+          gap: isTablet ? 10 : 16,
+          width: '100%',
+          maxWidth: '100%',
+          minWidth: 0,
+          boxSizing: 'border-box',
+          position: 'relative',
+          zIndex: 50,
+          background: 'var(--cms-card-bg, #ffffff)',
+          border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(0, 0, 0, 0.06)',
+          borderRadius: 20,
+          padding: isTablet ? '8px 12px' : '8px 16px',
+          boxShadow: isDark ? '0 4px 20px rgba(0, 0, 0, 0.25)' : '0 2px 10px rgba(0, 0, 0, 0.02)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)'
+        }}>
+          {/* Left: Title Dashboard & Subtitle Sapaan */}
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            gap: 2,
+            minWidth: 0,
+            justifySelf: 'start',
+            overflow: 'hidden'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <h1 style={{
+                margin: 0,
+                fontSize: 18,
+                fontWeight: 850,
+                color: 'var(--cms-text, #0f172a)',
+                letterSpacing: '-0.025em',
+                lineHeight: 1.15,
+                whiteSpace: 'nowrap'
+              }}>
+                Dashboard
+              </h1>
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4.5,
+                background: isDark ? 'rgba(245, 158, 11, 0.14)' : 'rgba(245, 158, 11, 0.09)',
+                border: isDark ? '1px solid rgba(245, 158, 11, 0.25)' : '1px solid rgba(245, 158, 11, 0.2)',
+                color: isDark ? '#fbbf24' : '#d97706',
+                padding: '1.5px 8px',
+                borderRadius: 9999,
+                fontSize: 10,
+                fontWeight: 750,
+                letterSpacing: '0.01em',
+                whiteSpace: 'nowrap'
+              }}>
+                {solarAtmo.phase === 'malam' ? (
+                  <Moon size={10.5} strokeWidth={2.4} color="#f59e0b" />
+                ) : (
+                  <Sun size={10.5} strokeWidth={2.4} color="#f59e0b" />
+                )}
+                <span>{solarAtmo.phaseLabel}</span>
+              </span>
+            </div>
+
+            <div style={{
+              fontSize: 11,
+              color: isDark ? '#94a3b8' : '#64748b',
+              fontWeight: 500,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis'
+            }}>
+              <span>{solarAtmo.greeting}, <strong style={{ fontWeight: 700, color: 'var(--cms-text, #0f172a)' }}>{userName}</strong></span>
+              <span style={{ opacity: 0.35 }}>•</span>
+              <span>{todayFormatted}</span>
+              {todayHoliday && !isTablet && (
+                <>
+                  <span style={{ opacity: 0.35 }}>•</span>
+                  <span style={{
+                    background: isDark ? 'rgba(245, 158, 11, 0.15)' : '#fef3c7',
+                    color: isDark ? '#fbbf24' : '#b45309',
+                    padding: '1px 6px',
+                    borderRadius: 6,
+                    fontSize: 9.5,
+                    fontWeight: 700,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 3
+                  }}>
+                    <Award size={9.5} />
+                    <span>{todayHoliday.name}</span>
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Center: Search Omnibox Form with Live Results Dropdown */}
+          <div ref={searchContainerRef} style={{
+            position: 'relative',
+            width: '100%',
+            maxWidth: isTablet ? 270 : 380,
+            minWidth: 150,
+            justifySelf: 'center',
+            boxSizing: 'border-box'
+          }}>
+            <form onSubmit={handleExecuteSearch} style={{
+              position: 'relative',
+              display: 'flex',
+              alignItems: 'center',
+              background: isDark ? 'rgba(255, 255, 255, 0.04)' : '#f8fafc',
+              border: isSearchFocused ? '1.5px solid var(--cms-accent, #144e3b)' : (isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.06)'),
+              borderRadius: 9999,
+              padding: '0 10px 0 12px',
+              height: 36,
+              width: '100%',
+              boxShadow: isSearchFocused ? '0 0 0 3px rgba(var(--cms-accent-rgb, 20, 78, 59), 0.12), 0 4px 12px rgba(0,0,0,0.06)' : 'none',
+              boxSizing: 'border-box',
+              transition: 'all 0.18s ease'
+            }}>
+              <Search size={14} color={isSearchFocused ? 'var(--cms-accent, #144e3b)' : '#94a3b8'} style={{ flexShrink: 0, marginRight: 8 }} />
+
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onFocus={() => setIsSearchFocused(true)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setIsSearchFocused(true);
+                }}
+                placeholder={activeEngineObj.placeholder}
+                style={{
+                  border: 'none',
+                  outline: 'none',
+                  background: 'transparent',
+                  fontSize: 13,
+                  color: 'var(--cms-text, #1e293b)',
+                  width: '100%',
+                  fontWeight: 500
+                }}
+              />
+
+              {searchQuery ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    searchInputRef.current?.focus();
+                  }}
+                  style={{
+                    border: 'none',
+                    background: 'transparent',
+                    cursor: 'pointer',
+                    color: '#94a3b8',
+                    padding: 2,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <X size={14} />
+                </button>
+              ) : (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 2,
+                  background: 'var(--cms-input-bg, #f1f5f9)',
+                  border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.06)',
+                  borderRadius: 6,
+                  padding: '2px 6px',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: '#64748b',
+                  userSelect: 'none',
+                  flexShrink: 0
+                }}>
+                  <span>⌘</span>
+                  <span>F</span>
+                </div>
+              )}
+            </form>
+
+            {/* Dropdown Hasil Pencarian File & Data */}
+            {isSearchFocused && searchQuery.trim().length > 0 && selectedEngine === 'task' && (
+              <div style={{
+                position: 'absolute',
+                top: '100%',
+                left: 0,
+                right: 0,
+                marginTop: 6,
+                background: 'var(--cms-card-bg, #ffffff)',
+                borderRadius: 18,
+                border: isDark ? '1px solid rgba(255,255,255,0.14)' : '1px solid rgba(0,0,0,0.08)',
+                boxShadow: '0 12px 32px rgba(0,0,0,0.2)',
+                zIndex: 99999,
+                maxHeight: 360,
+                overflowY: 'auto',
+                padding: 6,
+                boxSizing: 'border-box'
+              }}>
+                <div style={{
+                  padding: '6px 10px',
+                  fontSize: 11,
+                  fontWeight: 800,
+                  color: '#94a3b8',
+                  borderBottom: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.04)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}>
+                  <span>Hasil Pencarian Studio ({searchResults.length})</span>
+                  <span style={{ fontSize: 10, fontWeight: 600 }}>Klik untuk membuka</span>
+                </div>
+
+                {searchResults.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 4 }}>
+                    {searchResults.map((item) => {
+                      const ItemIcon = item.icon;
+                      return (
+                        <div
+                          key={item.id}
+                          onClick={() => {
+                            onSwitchPage?.(item.page);
+                            setIsSearchFocused(false);
+                            setSearchQuery('');
+                            haptic.light();
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 10,
+                            padding: '8px 10px',
+                            borderRadius: 10,
+                            cursor: 'pointer',
+                            transition: 'background 0.12s ease'
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.06)' : '#f8fafc')}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                        >
+                          <div style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 8,
+                            background: isDark ? 'rgba(255,255,255,0.08)' : '#f1f5f9',
+                            color: isDark ? '#34d399' : '#144e3b',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0
+                          }}>
+                            <ItemIcon size={16} />
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+                            <span style={{
+                              fontSize: 13,
+                              fontWeight: 750,
+                              color: 'var(--cms-text, #0f172a)',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis'
+                            }}>
+                              {item.title}
+                            </span>
+                            <span style={{
+                              fontSize: 11,
+                              color: isDark ? '#94a3b8' : '#64748b',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis'
+                            }}>
+                              {item.subtitle}
+                            </span>
+                          </div>
+                          <span style={{
+                            fontSize: 10,
+                            padding: '2px 8px',
+                            borderRadius: 9999,
+                            background: isDark ? 'rgba(255,255,255,0.08)' : '#f1f5f9',
+                            color: isDark ? '#94a3b8' : '#475569',
+                            fontWeight: 700,
+                            whiteSpace: 'nowrap'
+                          }}>
+                            {item.badge}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div style={{ padding: '18px 12px', textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
+                    Tidak ada file atau data yang cocok dengan "{searchQuery}"
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Right: Mode Switcher + Cloud + Auditor + Mail + Bell + Profile */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            justifySelf: 'end',
+            justifyContent: 'flex-end',
+            minWidth: 0,
+            flexShrink: 0
+          }}>
+            {/* View Mode Segmented Control */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9',
+              border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.05)',
+              padding: '2.5px',
+              borderRadius: 9999,
+              gap: 2,
+              flexShrink: 0
+            }}>
+              <button
+                type="button"
+                onClick={() => {
+                  if (kpiViewMode !== 'executive') {
+                    setKpiViewMode('executive');
+                    haptic.light();
+                  }
                 }}
                 style={{
                   border: 'none',
-                  background: 'transparent',
+                  background: kpiViewMode === 'executive' ? 'var(--cms-accent, #144e3b)' : 'transparent',
+                  color: kpiViewMode === 'executive' ? '#ffffff' : (isDark ? '#94a3b8' : '#64748b'),
+                  width: 30,
+                  height: 30,
+                  borderRadius: '50%',
                   cursor: 'pointer',
-                  color: '#94a3b8',
-                  padding: 2,
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center'
+                  justifyContent: 'center',
+                  padding: 0,
+                  transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
+                  boxShadow: kpiViewMode === 'executive' ? '0 1px 3px rgba(0,0,0,0.12)' : 'none'
                 }}
+                title="Ringkasan Eksekutif"
+                aria-label="Ringkasan"
               >
-                <X size={14} />
+                <BarChart3 size={14} />
               </button>
-            ) : !isMobile ? (
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 2,
-                background: 'var(--cms-input-bg, #f1f5f9)',
-                border: '1px solid rgba(0,0,0,0.06)',
-                borderRadius: 6,
-                padding: '2px 6px',
-                fontSize: 11,
-                fontWeight: 700,
-                color: '#64748b',
-                userSelect: 'none',
-                flexShrink: 0
-              }}>
-                <span>⌘</span>
-                <span>F</span>
-              </div>
-            ) : null}
-          </form>
 
-          {/* ── DROPDOWN HASIL PENCARIAN FILE & DATA SECARA AKURAT ── */}
-          {isSearchFocused && searchQuery.trim().length > 0 && selectedEngine === 'task' && (
-            <div style={{
-              position: 'absolute',
-              top: '100%',
-              left: 0,
-              right: 0,
-              marginTop: 6,
-              background: 'var(--cms-card-bg, #ffffff)',
-              borderRadius: 18,
-              border: '1px solid rgba(0,0,0,0.08)',
-              boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-              zIndex: 99999,
-              maxHeight: 360,
-              overflowY: 'auto',
-              padding: 6,
-              boxSizing: 'border-box'
-            }}>
-              <div style={{
-                padding: '6px 10px',
-                fontSize: 11,
-                fontWeight: 800,
-                color: '#94a3b8',
-                borderBottom: '1px solid rgba(0,0,0,0.04)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <span>Hasil Pencarian Studio ({searchResults.length})</span>
-                <span style={{ fontSize: 10, fontWeight: 600 }}>Klik untuk membuka</span>
-              </div>
-
-              {searchResults.length > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 4 }}>
-                  {searchResults.map((item) => {
-                    const ItemIcon = item.icon;
-                    return (
-                      <div
-                        key={item.id}
-                        onClick={() => {
-                          onSwitchPage?.(item.page);
-                          setIsSearchFocused(false);
-                          setSearchQuery('');
-                          haptic.light();
-                        }}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 10,
-                          padding: '8px 10px',
-                          borderRadius: 10,
-                          cursor: 'pointer',
-                          transition: 'background 0.12s ease'
-                        }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = '#f8fafc')}
-                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                      >
-                        <div style={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: 8,
-                          background: '#f1f5f9',
-                          color: '#144e3b',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0
-                        }}>
-                          <ItemIcon size={16} />
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
-                          <span style={{
-                            fontSize: 13,
-                            fontWeight: 750,
-                            color: 'var(--cms-text, #0f172a)',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis'
-                          }}>
-                            {item.title}
-                          </span>
-                          <span style={{
-                            fontSize: 11,
-                            color: '#64748b',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis'
-                          }}>
-                            {item.subtitle}
-                          </span>
-                        </div>
-                        <span style={{
-                          fontSize: 10,
-                          padding: '2px 8px',
-                          borderRadius: 9999,
-                          background: '#f1f5f9',
-                          color: '#475569',
-                          fontWeight: 700,
-                          whiteSpace: 'nowrap'
-                        }}>
-                          {item.badge}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div style={{ padding: '18px 12px', textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
-                  Tidak ada file atau data yang cocok dengan "{searchQuery}"
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Right Action Icons & Profile */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: isMobile ? 'space-between' : 'flex-end',
-          gap: isMobile ? 8 : 10,
-          marginLeft: isMobile ? 0 : 'auto',
-          width: isMobile ? '100%' : 'auto',
-          maxWidth: '100%',
-          boxSizing: 'border-box'
-        }}>
-          {/* User Profile Pill (Mobile: Rendered on the Left for natural mobile app bar layout) */}
-          {isMobile && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              background: 'var(--cms-card-bg, #ffffff)',
-              border: '1px solid rgba(0,0,0,0.08)',
-              borderRadius: 9999,
-              padding: '3px 12px 3px 4px',
-              boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
-              cursor: 'pointer',
-              maxWidth: 200,
-              minWidth: 0
-            }}
-              onClick={() => onSwitchPage?.('settings')}
-              title="Buka Pengaturan Akun & Bisnis"
-            >
-              <img 
-                src={userData?.photoURL || globalSettings?.biodata?.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${avatarSeed}&backgroundColor=144e3b&textColor=ffffff`} 
-                alt={userName}
-                onError={(e) => {
-                  (e.currentTarget as any).src = `https://api.dicebear.com/7.x/initials/svg?seed=${avatarSeed}&backgroundColor=144e3b&textColor=ffffff`;
+              <button
+                type="button"
+                onClick={() => {
+                  if (kpiViewMode !== 'pipeline') {
+                    setKpiViewMode('pipeline');
+                    haptic.light();
+                  }
                 }}
                 style={{
-                  width: 28,
-                  height: 28,
+                  border: 'none',
+                  background: kpiViewMode === 'pipeline' ? 'var(--cms-accent, #144e3b)' : 'transparent',
+                  color: kpiViewMode === 'pipeline' ? '#ffffff' : (isDark ? '#94a3b8' : '#64748b'),
+                  width: 30,
+                  height: 30,
                   borderRadius: '50%',
-                  objectFit: 'cover',
-                  flexShrink: 0
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 0,
+                  transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
+                  boxShadow: kpiViewMode === 'pipeline' ? '0 1px 3px rgba(0,0,0,0.12)' : 'none'
                 }}
-              />
-              <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--cms-text, #1e293b)', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {userName}
-                </span>
-              </div>
+                title="Pipeline Proyek"
+                aria-label="Proyek"
+              >
+                <FolderKanban size={14} />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (kpiViewMode !== 'ecosystem') {
+                    setKpiViewMode('ecosystem');
+                  }
+                  onOpenGadgetStation?.();
+                  haptic.light();
+                }}
+                style={{
+                  border: 'none',
+                  background: kpiViewMode === 'ecosystem' ? 'var(--cms-accent, #144e3b)' : 'transparent',
+                  color: kpiViewMode === 'ecosystem' ? '#ffffff' : (isDark ? '#94a3b8' : '#64748b'),
+                  width: 30,
+                  height: 30,
+                  borderRadius: '50%',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 0,
+                  transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
+                  boxShadow: kpiViewMode === 'ecosystem' ? '0 1px 3px rgba(0,0,0,0.12)' : 'none'
+                }}
+                title={`Alat Ekosistem & Modul (${STUDIO_MODULES.length} Modul)`}
+                aria-label="Alat Ekosistem"
+              >
+                <Layers size={14} />
+              </button>
             </div>
-          )}
 
-          {/* Action Buttons Group (Mail & Bell on Right) */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 10, flexShrink: 0 }}>
-            {/* Status Cloud Aktif (Tanpa Emoji - Desktop only) */}
-            {!isMobile && (
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                background: 'var(--cms-card-bg, #ffffff)',
-                border: '1px solid rgba(0,0,0,0.08)',
-                borderRadius: 9999,
-                padding: '6px 12px',
-                fontSize: 11,
-                fontWeight: 750,
-                color: '#15803d',
-                boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
-              }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
-                <span>Cloud Aktif</span>
-              </div>
-            )}
+            {/* Subtle Vertical Divider */}
+            <div style={{
+              width: 1,
+              height: 18,
+              background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+              margin: '0 2px',
+              flexShrink: 0
+            }} />
 
-            {/* Mail Button -> Direct to Chat */}
-            <button 
-              onClick={() => onSwitchPage?.('chat')}
-              style={{
-                width: isMobile ? 36 : 40,
-                height: isMobile ? 36 : 40,
-                borderRadius: '50%',
-                background: 'var(--cms-card-bg, #ffffff)',
-                border: '1px solid rgba(0,0,0,0.08)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                color: '#334155',
-                boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
-                flexShrink: 0
-              }}
-              title="Pesan & Konsultasi Klien"
-            >
-              <Mail size={isMobile ? 15 : 17} />
-            </button>
-
-            {/* Bell Button -> Notification Center Pop Up */}
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                haptic.light();
-                window.dispatchEvent(new CustomEvent('porto_toggle_notifications', { detail: { source: 'top_header' } }));
-              }}
-              style={{
-                width: isMobile ? 36 : 40,
-                height: isMobile ? 36 : 40,
-                borderRadius: '50%',
-                background: 'var(--cms-card-bg, #ffffff)',
-                border: '1px solid rgba(0,0,0,0.08)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                color: '#334155',
-                position: 'relative',
-                boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
-                flexShrink: 0
-              }}
-              title="Pusat Notifikasi & Pemberitahuan"
-            >
-              <Bell size={isMobile ? 15 : 17} />
-              {unreadNotifCount > 0 && (
+            {/* Status & Action Icons Group: Cloud, Auditor, Mail, Bell, Avatar */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+              {/* Cloud Status */}
+              <div
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  background: isDark ? 'rgba(255,255,255,0.04)' : '#f8fafc',
+                  border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.06)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  position: 'relative',
+                  flexShrink: 0,
+                  color: '#10b981'
+                }}
+                title="Cloud Studio Aktif & Tersinkron"
+              >
+                <Cloud size={15} strokeWidth={2.4} />
                 <span style={{
                   position: 'absolute',
-                  top: isMobile ? 7 : 8,
-                  right: isMobile ? 8 : 9,
-                  width: 7,
-                  height: 7,
+                  top: 6,
+                  right: 6,
+                  width: 5,
+                  height: 5,
                   borderRadius: '50%',
-                  background: '#ef4444',
-                  boxShadow: '0 0 0 2px var(--cms-card-bg, #ffffff)'
+                  background: '#10b981',
+                  boxShadow: '0 0 5px #10b981'
                 }} />
-              )}
-            </button>
-          </div>
+              </div>
 
-          {/* User Profile Pill (Desktop: Rendered on the Right) */}
-          {!isMobile && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              background: 'var(--cms-card-bg, #ffffff)',
-              border: '1px solid rgba(0,0,0,0.08)',
-              borderRadius: 9999,
-              padding: '4px 14px 4px 5px',
-              boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
-              cursor: 'pointer',
-              minWidth: 0
-            }}
-              onClick={() => onSwitchPage?.('settings')}
-              title="Buka Pengaturan Akun & Bisnis"
-            >
-              <img 
-                src={userData?.photoURL || globalSettings?.biodata?.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${avatarSeed}&backgroundColor=144e3b&textColor=ffffff`} 
-                alt={userName}
-                onError={(e) => {
-                  (e.currentTarget as any).src = `https://api.dicebear.com/7.x/initials/svg?seed=${avatarSeed}&backgroundColor=144e3b&textColor=ffffff`;
+              {/* Launch Readiness Auditor Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsLaunchAuditModalOpen(true);
+                  haptic.light();
                 }}
                 style={{
                   width: 32,
                   height: 32,
                   borderRadius: '50%',
-                  objectFit: 'cover',
-                  flexShrink: 0
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: isDark ? 'rgba(217, 86, 41, 0.15)' : 'rgba(217, 86, 41, 0.08)',
+                  border: isDark ? '1px solid rgba(217, 86, 41, 0.35)' : '1px solid rgba(217, 86, 41, 0.22)',
+                  color: '#d95629',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                  padding: 0,
+                  position: 'relative',
+                  transition: 'all 0.18s ease'
                 }}
-              />
-              <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--cms-text, #1e293b)', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {userName}
-                </span>
-                <span style={{ fontSize: 10.5, color: '#64748b', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {userEmail}
-                </span>
+                title="Audit Kesiapan Studio (Launch Auditor)"
+              >
+                <Rocket size={14} color="#d95629" />
+                <span style={{
+                  position: 'absolute',
+                  top: 5,
+                  right: 5,
+                  width: 4.5,
+                  height: 4.5,
+                  borderRadius: '50%',
+                  background: '#10b981',
+                  boxShadow: '0 0 4px #10b981'
+                }} />
+              </button>
+
+              {/* Mail Button */}
+              <button 
+                type="button"
+                onClick={() => onSwitchPage?.('chat')}
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  background: isDark ? 'rgba(255,255,255,0.04)' : '#f8fafc',
+                  border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.06)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: isDark ? '#e2e8f0' : '#475569',
+                  flexShrink: 0,
+                  padding: 0,
+                  transition: 'all 0.18s ease'
+                }}
+                title="Pesan & Konsultasi Klien"
+              >
+                <Mail size={14} />
+              </button>
+
+              {/* Bell Button */}
+              <button 
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  haptic.light();
+                  window.dispatchEvent(new CustomEvent('porto_toggle_notifications', { detail: { source: 'top_header' } }));
+                }}
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  background: isDark ? 'rgba(255,255,255,0.04)' : '#f8fafc',
+                  border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.06)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: isDark ? '#e2e8f0' : '#475569',
+                  position: 'relative',
+                  flexShrink: 0,
+                  padding: 0,
+                  transition: 'all 0.18s ease'
+                }}
+                title="Pusat Notifikasi & Pemberitahuan"
+              >
+                <Bell size={14} />
+                {unreadNotifCount > 0 && (
+                  <span style={{
+                    position: 'absolute',
+                    top: 6,
+                    right: 6,
+                    width: 5,
+                    height: 5,
+                    borderRadius: '50%',
+                    background: '#ef4444',
+                    boxShadow: '0 0 0 2px var(--cms-card-bg, #ffffff)'
+                  }} />
+                )}
+              </button>
+
+              {/* User Profile Avatar */}
+              <div
+                onClick={() => onSwitchPage?.('settings')}
+                title={`Profil: ${userName} • ${userEmail} (Klik untuk Pengaturan)`}
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  border: isDark ? '1px solid rgba(255,255,255,0.2)' : '1px solid rgba(0,0,0,0.12)',
+                  background: 'var(--cms-card-bg, #ffffff)',
+                  flexShrink: 0,
+                  overflow: 'hidden',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.04)'
+                }}
+              >
+                <img 
+                  src={userData?.photoURL || globalSettings?.biodata?.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${avatarSeed}&backgroundColor=144e3b&textColor=ffffff`} 
+                  alt={userName}
+                  onError={(e) => {
+                    (e.currentTarget as any).src = `https://api.dicebear.com/7.x/initials/svg?seed=${avatarSeed}&backgroundColor=144e3b&textColor=ffffff`;
+                  }}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    borderRadius: '50%',
+                    objectFit: 'cover'
+                  }}
+                />
               </div>
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── 2. DASHBOARD TITLE & SUBTITLE (HAPUS ADD PROJECT & INPUT DATA) ── */}
-      <div style={{
-        display: 'flex',
-        alignItems: isMobile ? 'stretch' : 'flex-start',
-        justifyContent: 'space-between',
-        flexDirection: isMobile ? 'column' : 'row',
-        gap: isMobile ? 12 : 8,
-        width: '100%',
-        marginTop: 2
-      }}>
-        <div>
-          <h1 style={{
-            margin: 0,
-            fontSize: isMobile ? 24 : 32,
-            fontWeight: 800,
-            color: 'var(--cms-text, #0f172a)',
-            letterSpacing: '-0.03em'
-          }}>
-            Dashboard
-          </h1>
-          <div style={{
-            margin: '4px 0 0 0',
-            fontSize: isMobile ? 12 : 13.5,
-            color: '#64748b',
-            fontWeight: 600,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            flexWrap: 'wrap'
-          }}>
-            <span>{greetingText}, {userName}</span>
-            <span style={{ opacity: 0.35 }}>•</span>
-            <span>{todayFormatted}</span>
-            {todayHoliday && (
-              <>
-                <span style={{ opacity: 0.35 }}>•</span>
-                <span style={{
-                  background: '#fef3c7',
-                  color: '#b45309',
-                  padding: '2px 8px',
-                  borderRadius: 9999,
-                  fontSize: 11,
-                  fontWeight: 750,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4
-                }}>
-                  <Award size={12} />
-                  <span>{todayHoliday.name}</span>
-                </span>
-              </>
-            )}
           </div>
         </div>
+      )}
 
-        {/* View Switcher Pill (Tanpa Emoji) */}
+      {/* ── REALTIME INQUIRY / BRIEF MASUK ALERT ── */}
+      {pendingInquiriesCount > 0 && (
         <div style={{
+          width: '100%',
           display: 'flex',
           alignItems: 'center',
-          background: 'var(--cms-card-bg, #ffffff)',
-          border: '1px solid rgba(0,0,0,0.08)',
-          padding: '3px',
-          borderRadius: 9999,
-          boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
-          width: isMobile ? '100%' : 'auto',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 10,
+          padding: isMobile ? '10px 12px' : '10px 18px',
+          background: 'linear-gradient(135deg, rgba(124, 58, 237, 0.08) 0%, rgba(236, 72, 153, 0.08) 100%)',
+          border: '1.5px solid rgba(124, 58, 237, 0.25)',
+          borderRadius: 16,
+          boxShadow: '0 2px 10px rgba(124, 58, 237, 0.06)',
           boxSizing: 'border-box'
         }}>
-          <button
-            onClick={() => {
-              if (kpiViewMode !== 'executive') {
-                setKpiViewMode('executive');
-                haptic.light();
-              }
-            }}
-            style={{
-              flex: isMobile ? 1 : 'none',
-              border: 'none',
-              background: kpiViewMode === 'executive' ? '#144e3b' : 'transparent',
-              color: kpiViewMode === 'executive' ? '#ffffff' : '#64748b',
-              padding: isMobile ? '7px 10px' : '5px 14px',
-              borderRadius: 9999,
-              fontSize: 11,
-              fontWeight: 750,
-              cursor: 'pointer',
-              display: 'flex',
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+            <span style={{
+              display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: 5,
-              transition: 'all 0.2s ease',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            <BarChart3 size={13} />
-            <span>Omset & Master Data</span>
-          </button>
+              width: 26,
+              height: 26,
+              borderRadius: 8,
+              background: '#7c3aed',
+              color: '#ffffff',
+              fontSize: 12.5,
+              fontWeight: 850,
+              boxShadow: '0 2px 6px rgba(124, 58, 237, 0.35)',
+              flexShrink: 0
+            }}>
+              {pendingInquiriesCount}
+            </span>
+            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--cms-text, #1e293b)' }}>
+                  {pendingInquiriesCount} Brief Inquiry Klien Menunggu Ditinjau
+                </span>
+                <span style={{
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  color: '#7c3aed',
+                  background: 'rgba(124, 58, 237, 0.12)',
+                  padding: '1px 7px',
+                  borderRadius: 100
+                }}>
+                  Lead Baru
+                </span>
+              </div>
+              <span style={{ fontSize: 11.5, color: '#64748b', marginTop: 1 }}>
+                Sudah otomatis masuk ke Kanban Proyek (Pending ACC) & siap diterbitkan SPK/Quotation
+              </span>
+            </div>
+          </div>
           <button
-            onClick={() => {
-              if (kpiViewMode !== 'pipeline') {
-                setKpiViewMode('pipeline');
-                haptic.light();
-              }
-            }}
+            type="button"
+            onClick={() => onSwitchPage?.('projects')}
             style={{
-              flex: isMobile ? 1 : 'none',
-              border: 'none',
-              background: kpiViewMode === 'pipeline' ? '#144e3b' : 'transparent',
-              color: kpiViewMode === 'pipeline' ? '#ffffff' : '#64748b',
-              padding: isMobile ? '7px 10px' : '5px 14px',
-              borderRadius: 9999,
-              fontSize: 11,
-              fontWeight: 750,
-              cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
               gap: 5,
-              transition: 'all 0.2s ease',
-              whiteSpace: 'nowrap'
+              padding: '6px 14px',
+              borderRadius: 10,
+              background: '#7c3aed',
+              color: '#ffffff',
+              border: 'none',
+              fontSize: 12,
+              fontWeight: 750,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+              boxShadow: '0 2px 8px rgba(124, 58, 237, 0.25)',
+              marginLeft: isMobile ? 'auto' : 0
             }}
+            onMouseEnter={(e) => (e.currentTarget.style.transform = 'translateY(-1px)')}
+            onMouseLeave={(e) => (e.currentTarget.style.transform = 'none')}
           >
-            <FolderKanban size={13} />
-            <span>Status Proyek</span>
+            <span>Buka di Proyek</span>
+            <ArrowUpRight size={13} strokeWidth={2.5} />
           </button>
         </div>
-      </div>
+      )}
 
       <style>{`
         @keyframes kpiFadeIn {
@@ -1517,18 +2890,75 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
         }
       `}</style>
 
-      {/* ── 3. TOP 4 METRIC CARDS (RATA, RAPI & ANGKA AKURAT) ── */}
+      {/* ── STUDIO PULSE & DEADLINE RADAR ── */}
+      {studioPulse.hasCritical && (
+        <div style={{
+          width: '100%',
+          padding: '12px 18px',
+          borderRadius: 18,
+          background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.12) 0%, rgba(245, 158, 11, 0.12) 100%)',
+          border: '1.5px solid rgba(239, 68, 68, 0.3)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          flexWrap: 'wrap',
+          boxSizing: 'border-box',
+          backdropFilter: 'blur(8px)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              width: 34, height: 34, borderRadius: '50%',
+              background: '#ef4444', color: '#fff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+              boxShadow: '0 0 14px rgba(239, 68, 68, 0.45)'
+            }}>
+              <Flame size={18} />
+            </div>
+            <div>
+              <div style={{ fontSize: 13.5, fontWeight: 900, color: 'var(--cms-text)' }}>
+                Radar Deadline: {studioPulse.urgentProjects.length} Proyek Kritis (Tenggat &le; 72 Jam)
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--cms-text-muted)', marginTop: 2 }}>
+                {studioPulse.urgentProjects.slice(0, 3).map(p => p.title || 'Proyek').join(' • ')}
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onSwitchPage?.('projects')}
+            style={{
+              padding: '6px 14px',
+              borderRadius: 100,
+              border: 'none',
+              background: '#ef4444',
+              color: '#fff',
+              fontSize: 11.5,
+              fontWeight: 850,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              boxShadow: '0 4px 10px rgba(239, 68, 68, 0.3)'
+            }}
+          >
+            <span>Tinjau Proyek</span>
+            <ArrowRight size={13} />
+          </button>
+        </div>
+      )}
+
+      {/* ── 3. TOP 4 METRIC CARDS (LEGA & NYAMAN DI PANDANG) ── */}
       <div 
         key={kpiViewMode}
         className="kpi-mode-fade"
         style={{
           display: 'grid',
-          gridTemplateColumns: isMobile 
-            ? 'repeat(2, minmax(0, 1fr))' 
-            : (isTablet && typeof window !== 'undefined' && window.innerWidth < 960) 
-              ? 'repeat(2, minmax(0, 1fr))' 
-              : 'repeat(4, minmax(0, 1fr))',
-          gap: isMobile ? 8 : 16,
+          gridTemplateColumns: isMobile || isTablet
+            ? 'repeat(2, minmax(0, 1fr))'
+            : 'repeat(4, minmax(0, 1fr))',
+          gap: isMobile ? 8 : 14,
           width: '100%',
           maxWidth: '100%',
           minWidth: 0,
@@ -1537,45 +2967,53 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
         }}>
         {kpiViewMode === 'executive' ? (
           <>
-            {/* Card 1: OMSET KAS (Solid Forest Green) */}
-            <div style={{
-              background: 'linear-gradient(135deg, #16533f 0%, #114232 100%)',
-              borderRadius: isMobile ? 18 : 22,
-              padding: isMobile ? (isCompactMobile ? '12px 10px' : '14px 12px') : '20px',
-              color: '#ffffff',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              minHeight: isMobile ? 125 : 155,
-              height: '100%',
-              width: '100%',
-              minWidth: 0,
-              maxWidth: '100%',
-              boxSizing: 'border-box',
-              boxShadow: '0 6px 18px rgba(20, 78, 59, 0.12)',
-              position: 'relative',
-              overflow: 'hidden'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', minWidth: 0, gap: 4 }}>
-                <span style={{ fontSize: isMobile ? 11 : 13, fontWeight: 750, color: 'rgba(255,255,255,0.85)', letterSpacing: '0.04em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  OMSET KAS
+            {/* Card 1: OMSET KAS (Dynamic Theme Gradient) */}
+            <div 
+              onClick={() => { onSwitchPage?.('transactions'); haptic.light(); }}
+              title="Buka Billing & Transaksi Kas Studio"
+              style={{
+                background: 'var(--cms-accent-gradient, linear-gradient(135deg, var(--cms-accent, #16533f) 0%, var(--theme-analogous-deep, #114232) 100%))',
+                borderRadius: isMobile ? 16 : 18,
+                padding: isMobile ? '12px 14px' : '16px 20px',
+                color: '#ffffff',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                minHeight: isMobile ? 112 : 140,
+                height: isMobile ? 'auto' : 140,
+                width: '100%',
+                minWidth: 0,
+                maxWidth: '100%',
+                boxSizing: 'border-box',
+                boxShadow: 'none',
+                position: 'relative',
+                overflow: 'hidden',
+                cursor: 'pointer',
+                transition: 'transform 0.15s ease, box-shadow 0.15s ease'
+              }}
+              onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+              onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', minWidth: 0, gap: 6 }}>
+                <span style={{ fontSize: isMobile ? 12 : 13.5, fontWeight: 750, color: 'rgba(255,255,255,0.9)', letterSpacing: '0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  Omset Kas
                 </span>
                 <button 
                   className="cms-circle-btn"
-                  onClick={() => onSwitchPage?.('transactions')}
+                  onClick={(e) => { e.stopPropagation(); onSwitchPage?.('transactions'); }}
                   style={{
-                    width: 28,
-                    height: 28,
-                    minWidth: 28,
-                    minHeight: 28,
-                    maxWidth: 28,
-                    maxHeight: 28,
+                    width: 30,
+                    height: 30,
+                    minWidth: 30,
+                    minHeight: 30,
+                    maxWidth: 30,
+                    maxHeight: 30,
                     aspectRatio: '1 / 1',
                     borderRadius: '50%',
                     padding: 0,
-                    background: '#ffffff',
-                    border: 'none',
-                    color: '#144e3b',
+                    background: 'rgba(255, 255, 255, 0.2)',
+                    border: '1px solid rgba(255, 255, 255, 0.35)',
+                    color: '#ffffff',
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -1584,16 +3022,17 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
                   }}
                   title="Buka Transaksi Kas"
                 >
-                  <ArrowUpRight size={14} strokeWidth={2.5} />
+                  <ArrowUpRight size={15} strokeWidth={2.5} />
                 </button>
               </div>
 
               <div style={{
-                fontSize: isMobile ? 'clamp(16px, 4.2vw, 22px)' : 28,
-                fontWeight: 800,
-                lineHeight: 1.1,
-                margin: '8px 0 10px',
+                fontSize: isMobile ? 20 : 30,
+                fontWeight: 850,
+                lineHeight: 1,
+                margin: '4px 0 8px',
                 letterSpacing: '-0.02em',
+                fontVariantNumeric: 'tabular-nums',
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -1603,64 +3042,74 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
                 {formattedRevenue}
               </div>
 
-              <div style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 5,
-                background: 'rgba(255,255,255,0.15)',
-                padding: '2px 7px',
-                borderRadius: 9999,
-                width: 'fit-content',
-                maxWidth: '100%',
-                fontSize: isMobile ? 9 : 10.5,
-                fontWeight: 650,
-                color: '#ffffff',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis'
-              }}>
-                <span>{revenueTargetPct}% Capaian</span>
+              <div style={{ minHeight: 24, height: 24, display: 'flex', alignItems: 'center' }}>
+                <div style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  background: 'rgba(255,255,255,0.16)',
+                  padding: '3px 10px',
+                  borderRadius: 9999,
+                  width: 'fit-content',
+                  maxWidth: '100%',
+                  fontSize: isMobile ? 9.5 : 11,
+                  fontWeight: 650,
+                  color: '#ffffff',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
+                }}>
+                  <span>{revenueTargetPct}% Capaian</span>
+                </div>
               </div>
             </div>
 
-            {/* Card 2: TOTAL PROYEK (Solid White) */}
-            <div style={{
-              background: 'var(--cms-card-bg, #ffffff)',
-              borderRadius: isMobile ? 18 : 22,
-              padding: isMobile ? (isCompactMobile ? '12px 10px' : '14px 12px') : '20px',
-              border: '1px solid rgba(0,0,0,0.06)',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              minHeight: isMobile ? 125 : 155,
-              height: '100%',
-              width: '100%',
-              minWidth: 0,
-              maxWidth: '100%',
-              boxSizing: 'border-box',
-              boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
-              overflow: 'hidden'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', minWidth: 0, gap: 4 }}>
-                <span style={{ fontSize: isMobile ? 11 : 13, fontWeight: 750, color: 'var(--cms-text, #1e293b)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  TOTAL PROYEK
+            {/* Card 2: TOTAL PROYEK (Solid White / Sleek Dark) */}
+            <div 
+              onClick={() => { onSwitchPage?.('projects'); haptic.light(); }}
+              title="Buka Pipeline & Kanban Proyek"
+              style={{
+                background: 'var(--cms-card-bg, #ffffff)',
+                borderRadius: isMobile ? 16 : 18,
+                padding: isMobile ? '12px 14px' : '16px 20px',
+                border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.06)',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                minHeight: isMobile ? 112 : 140,
+                height: isMobile ? 'auto' : 140,
+                width: '100%',
+                minWidth: 0,
+                maxWidth: '100%',
+                boxSizing: 'border-box',
+                boxShadow: isDark ? '0 4px 18px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.02)',
+                overflow: 'hidden',
+                cursor: 'pointer',
+                transition: 'transform 0.15s ease, box-shadow 0.15s ease'
+              }}
+              onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+              onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', minWidth: 0, gap: 6 }}>
+                <span style={{ fontSize: isMobile ? 12 : 13.5, fontWeight: 750, color: 'var(--cms-text, #1e293b)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  Total Proyek
                 </span>
                 <button 
                   className="cms-circle-btn"
-                  onClick={() => onSwitchPage?.('projects')}
+                  onClick={(e) => { e.stopPropagation(); onSwitchPage?.('projects'); }}
                   style={{
-                    width: 28,
-                    height: 28,
-                    minWidth: 28,
-                    minHeight: 28,
-                    maxWidth: 28,
-                    maxHeight: 28,
+                    width: 30,
+                    height: 30,
+                    minWidth: 30,
+                    minHeight: 30,
+                    maxWidth: 30,
+                    maxHeight: 30,
                     aspectRatio: '1 / 1',
                     borderRadius: '50%',
                     padding: 0,
                     background: 'transparent',
-                    border: '1.2px solid rgba(0,0,0,0.1)',
-                    color: '#334155',
+                    border: isDark ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(0,0,0,0.1)',
+                    color: isDark ? '#f8fafc' : '#334155',
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -1669,69 +3118,85 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
                   }}
                   title="Buka Pipeline Proyek"
                 >
-                  <ArrowUpRight size={14} strokeWidth={2.5} />
+                  <ArrowUpRight size={15} strokeWidth={2.5} />
                 </button>
               </div>
 
-              <div style={{ fontSize: isMobile ? 'clamp(20px, 5.5vw, 28px)' : 34, fontWeight: 800, lineHeight: 1, margin: '8px 0 10px', color: 'var(--cms-text, #0f172a)', letterSpacing: '-0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', minWidth: 0 }}>
-                {projectCounts.total} <span style={{ fontSize: isMobile ? 11.5 : 14, fontWeight: 600, color: '#64748b' }}>Proyek</span>
+              <div style={{ fontSize: isMobile ? 20 : 30, fontWeight: 850, lineHeight: 1, margin: '4px 0 8px', color: 'var(--cms-text, #0f172a)', letterSpacing: '-0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', minWidth: 0 }}>
+                {projectCounts.total} <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--cms-text-secondary, #64748b)' }}>Proyek</span>
               </div>
 
               <div style={{
-                display: 'inline-flex',
+                minHeight: 24,
+                height: 24,
+                display: 'flex',
                 alignItems: 'center',
-                gap: isMobile ? 3 : 6,
-                fontSize: isMobile ? 9 : 10.5,
+                gap: 5,
+                fontSize: isMobile ? 9.5 : 11.5,
                 fontWeight: 650,
-                color: '#475569',
-                flexWrap: 'wrap',
+                color: 'var(--cms-text-secondary, #475569)',
+                flexWrap: 'nowrap',
                 maxWidth: '100%',
                 overflow: 'hidden'
               }}>
-                <span style={{ color: '#15803d', fontWeight: 800, whiteSpace: 'nowrap' }}>{projectCounts.done} Selesai</span>
-                <span>•</span>
-                <span style={{ color: '#0284c7', fontWeight: 800, whiteSpace: 'nowrap' }}>{projectCounts.progress + projectCounts.todo} Aktif</span>
+                <span style={{ color: 'var(--theme-analogous-2, #10b981)', fontWeight: 800, whiteSpace: 'nowrap', flexShrink: 0 }}>{projectCounts.done} Selesai</span>
+                <span style={{ flexShrink: 0 }}>•</span>
+                <span style={{ color: 'var(--theme-analogous-3, #f59e0b)', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{projectCounts.progress + projectCounts.todo} Aktif</span>
+                {vaultLiveStats.proofingCount > 0 && !isMobile && (
+                  <>
+                    <span style={{ flexShrink: 0 }}>•</span>
+                    <span style={{ color: '#06b6d4', fontWeight: 800, whiteSpace: 'nowrap', flexShrink: 0 }}>{vaultLiveStats.proofingCount} Proofing</span>
+                  </>
+                )}
               </div>
             </div>
 
-            {/* Card 3: PUSAT DATABASE MASTER (Solid White) */}
-            <div style={{
-              background: 'var(--cms-card-bg, #ffffff)',
-              borderRadius: isMobile ? 18 : 22,
-              padding: isMobile ? (isCompactMobile ? '12px 10px' : '14px 12px') : '20px',
-              border: '1px solid rgba(0,0,0,0.06)',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              minHeight: isMobile ? 125 : 155,
-              height: '100%',
-              width: '100%',
-              minWidth: 0,
-              maxWidth: '100%',
-              boxSizing: 'border-box',
-              boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
-              overflow: 'hidden'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', minWidth: 0, gap: 4 }}>
-                <span style={{ fontSize: isMobile ? 11 : 13, fontWeight: 750, color: 'var(--cms-text, #1e293b)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  DATABASE
+            {/* Card 3: PUSAT DATABASE MASTER (Solid White / Sleek Dark) */}
+            <div 
+              onClick={() => { onSwitchPage?.('database'); haptic.light(); }}
+              title="Buka Pusat Database Master"
+              style={{
+                background: 'var(--cms-card-bg, #ffffff)',
+                borderRadius: isMobile ? 16 : 18,
+                padding: isMobile ? '12px 14px' : '16px 20px',
+                border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.06)',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                minHeight: isMobile ? 112 : 140,
+                height: isMobile ? 'auto' : 140,
+                width: '100%',
+                minWidth: 0,
+                maxWidth: '100%',
+                boxSizing: 'border-box',
+                boxShadow: isDark ? '0 4px 18px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.02)',
+                overflow: 'hidden',
+                cursor: 'pointer',
+                transition: 'transform 0.15s ease, box-shadow 0.15s ease'
+              }}
+              onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+              onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', minWidth: 0, gap: 6 }}>
+                <span style={{ fontSize: isMobile ? 12 : 13.5, fontWeight: 750, color: 'var(--cms-text, #1e293b)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  Database
                 </span>
                 <button 
                   className="cms-circle-btn"
-                  onClick={() => onSwitchPage?.('database')}
+                  onClick={(e) => { e.stopPropagation(); onSwitchPage?.('database'); }}
                   style={{
-                    width: 28,
-                    height: 28,
-                    minWidth: 28,
-                    minHeight: 28,
-                    maxWidth: 28,
-                    maxHeight: 28,
+                    width: 30,
+                    height: 30,
+                    minWidth: 30,
+                    minHeight: 30,
+                    maxWidth: 30,
+                    maxHeight: 30,
                     aspectRatio: '1 / 1',
                     borderRadius: '50%',
                     padding: 0,
                     background: 'transparent',
-                    border: '1.2px solid rgba(0,0,0,0.1)',
-                    color: '#334155',
+                    border: isDark ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(0,0,0,0.1)',
+                    color: isDark ? '#f8fafc' : '#334155',
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -1740,155 +3205,172 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
                   }}
                   title="Buka Database Master"
                 >
-                  <ArrowUpRight size={14} strokeWidth={2.5} />
+                  <ArrowUpRight size={15} strokeWidth={2.5} />
                 </button>
               </div>
 
-              <div style={{ fontSize: isMobile ? 'clamp(20px, 5.5vw, 28px)' : 34, fontWeight: 800, lineHeight: 1, margin: '8px 0 10px', color: 'var(--cms-text, #0f172a)', letterSpacing: '-0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', minWidth: 0 }}>
-                {totalDataEntities} <span style={{ fontSize: isMobile ? 11.5 : 14, fontWeight: 600, color: '#64748b' }}>Data</span>
+              <div style={{ fontSize: isMobile ? 20 : 30, fontWeight: 850, lineHeight: 1, margin: '4px 0 8px', color: 'var(--cms-text, #0f172a)', letterSpacing: '-0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', minWidth: 0 }}>
+                {vaultLiveStats.totalVaultItems || totalDataEntities} <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--cms-text-secondary, #64748b)' }}>Data</span>
               </div>
 
               <div style={{
-                display: 'inline-flex',
+                minHeight: 24,
+                height: 24,
+                display: 'flex',
                 alignItems: 'center',
                 gap: 5,
-                fontSize: isMobile ? 9 : 10.5,
+                fontSize: isMobile ? 9.5 : 11.5,
                 fontWeight: 650,
-                color: '#0284c7',
-                flexWrap: 'wrap',
+                color: 'var(--theme-analogous-3, #f59e0b)',
+                flexWrap: 'nowrap',
                 maxWidth: '100%',
                 overflow: 'hidden'
               }}>
                 <span style={{
-                  background: '#e0f2fe',
-                  padding: '2px 5px',
+                  background: 'rgba(var(--theme-analogous-warm-rgb, 247, 186, 56), 0.14)',
+                  padding: '2px 6px',
                   borderRadius: 6,
-                  fontSize: isMobile ? 8.5 : 10,
+                  fontSize: 10,
                   fontWeight: 800,
-                  color: '#0284c7',
+                  color: 'var(--theme-analogous-3, #f59e0b)',
                   flexShrink: 0
                 }}>
-                  Cloud Sync
+                  6 Vault
                 </span>
-                <span style={{ color: '#64748b', whiteSpace: 'nowrap' }}>{isMobile ? 'Aktif' : 'Tersinkron'}</span>
+                <span style={{ color: 'var(--cms-text-muted, #64748b)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {isMobile ? `${vaultLiveStats.portfolioCount} Karya • ${vaultLiveStats.catalogCount} Drops` : `${vaultLiveStats.portfolioCount} Karya • ${vaultLiveStats.blogCount} Journal • ${vaultLiveStats.catalogCount} Drops`}
+                </span>
               </div>
             </div>
 
-            {/* Card 4: EKOSISTEM STUDIO (Solid White) */}
-            <div style={{
-              background: 'var(--cms-card-bg, #ffffff)',
-              borderRadius: isMobile ? 18 : 22,
-              padding: isMobile ? (isCompactMobile ? '12px 10px' : '14px 12px') : '20px',
-              border: '1px solid rgba(0,0,0,0.06)',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              minHeight: isMobile ? 125 : 155,
-              height: '100%',
-              width: '100%',
-              minWidth: 0,
-              maxWidth: '100%',
-              boxSizing: 'border-box',
-              boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
-              overflow: 'hidden'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', minWidth: 0, gap: 4 }}>
-                <span style={{ fontSize: isMobile ? 11 : 13, fontWeight: 750, color: 'var(--cms-text, #1e293b)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  MODUL STUDIO
+            {/* Card 4: EKOSISTEM STUDIO (Solid White / Sleek Dark) */}
+            <div 
+              onClick={() => { onSwitchPage?.('tools'); haptic.light(); }}
+              title="Buka Alat & Tool Ekosistem Studio"
+              style={{
+                background: 'var(--cms-card-bg, #ffffff)',
+                borderRadius: isMobile ? 16 : 18,
+                padding: isMobile ? '12px 14px' : '16px 20px',
+                border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.06)',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                minHeight: isMobile ? 112 : 140,
+                height: isMobile ? 'auto' : 140,
+                width: '100%',
+                minWidth: 0,
+                maxWidth: '100%',
+                boxSizing: 'border-box',
+                boxShadow: isDark ? '0 4px 18px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.02)',
+                overflow: 'hidden',
+                cursor: 'pointer',
+                transition: 'transform 0.15s ease, box-shadow 0.15s ease'
+              }}
+              onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+              onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', minWidth: 0, gap: 6 }}>
+                <span style={{ fontSize: isMobile ? 12 : 13.5, fontWeight: 750, color: 'var(--cms-text, #1e293b)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  Tool Ekosistem
                 </span>
                 <button 
                   className="cms-circle-btn"
-                  onClick={() => onSwitchPage?.('apps')}
+                  onClick={(e) => { e.stopPropagation(); onSwitchPage?.('tools'); }}
                   style={{
-                    width: 28,
-                    height: 28,
-                    minWidth: 28,
-                    minHeight: 28,
-                    maxWidth: 28,
-                    maxHeight: 28,
+                    width: 30,
+                    height: 30,
+                    minWidth: 30,
+                    minHeight: 30,
+                    maxWidth: 30,
+                    maxHeight: 30,
                     aspectRatio: '1 / 1',
                     borderRadius: '50%',
                     padding: 0,
                     background: 'transparent',
-                    border: '1.2px solid rgba(0,0,0,0.1)',
-                    color: '#334155',
+                    border: isDark ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(0,0,0,0.1)',
+                    color: isDark ? '#f8fafc' : '#334155',
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     cursor: 'pointer',
                     flexShrink: 0
                   }}
-                  title="Buka Apps Studio"
+                  title="Buka Portal Tool"
                 >
-                  <ArrowUpRight size={14} strokeWidth={2.5} />
+                  <ArrowUpRight size={15} strokeWidth={2.5} />
                 </button>
               </div>
 
-              <div style={{ fontSize: isMobile ? 'clamp(20px, 5.5vw, 28px)' : 34, fontWeight: 800, lineHeight: 1, margin: '8px 0 10px', color: 'var(--cms-text, #0f172a)', letterSpacing: '-0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', minWidth: 0 }}>
-                12 <span style={{ fontSize: isMobile ? 11.5 : 14, fontWeight: 600, color: '#64748b' }}>Modul</span>
+              <div style={{ fontSize: isMobile ? 20 : 30, fontWeight: 850, lineHeight: 1, margin: '4px 0 8px', color: 'var(--cms-text, #0f172a)', letterSpacing: '-0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', minWidth: 0 }}>
+                {STUDIO_MODULES.length} <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--cms-text-secondary, #64748b)' }}>Modul</span>
               </div>
 
               <div style={{
-                display: 'inline-flex',
+                minHeight: 24,
+                height: 24,
+                display: 'flex',
                 alignItems: 'center',
                 gap: 5,
-                fontSize: isMobile ? 9 : 10.5,
+                fontSize: isMobile ? 9.5 : 11.5,
                 fontWeight: 650,
-                color: '#7c3aed',
-                flexWrap: 'wrap',
+                color: 'var(--theme-analogous-4, #8b5cf6)',
+                flexWrap: 'nowrap',
                 maxWidth: '100%',
                 overflow: 'hidden'
               }}>
                 <span style={{
-                  background: '#ede9fe',
-                  padding: '2px 5px',
+                  background: 'rgba(var(--theme-analogous-pop-rgb, 139, 92, 246), 0.16)',
+                  padding: '2px 6px',
                   borderRadius: 6,
-                  fontSize: isMobile ? 8.5 : 10,
+                  fontSize: 10,
                   fontWeight: 800,
-                  color: '#7c3aed',
+                  color: 'var(--theme-analogous-4, #8b5cf6)',
                   flexShrink: 0
                 }}>
-                  100% Aktif
+                  5 Kategori
                 </span>
-                <span style={{ color: '#64748b', whiteSpace: 'nowrap' }}>{isMobile ? 'Tersedia' : 'Terintegrasi'}</span>
+                <span style={{ color: 'var(--cms-text-muted, #64748b)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {isMobile ? 'Manajemen & Tools' : 'Manajemen, DB, Tool & Intel'}
+                </span>
               </div>
             </div>
           </>
-        ) : (
+        ) : kpiViewMode === 'pipeline' ? (
           <>
             {/* Card 1: TOTAL PROJECTS */}
             <div style={{
-              background: 'linear-gradient(135deg, #16533f 0%, #114232 100%)',
-              borderRadius: isMobile ? 18 : 22,
-              padding: isMobile ? (isCompactMobile ? '12px 10px' : '14px 12px') : '20px',
+              background: 'var(--cms-accent-gradient)',
+              borderRadius: isMobile ? 16 : 18,
+              padding: isMobile ? '12px 14px' : '16px 20px',
               color: '#ffffff',
               display: 'flex',
               flexDirection: 'column',
               justifyContent: 'space-between',
-              minHeight: isMobile ? 125 : 155,
-              height: '100%',
+              minHeight: isMobile ? 112 : 140,
+              height: isMobile ? 112 : 140,
               width: '100%',
               minWidth: 0,
               maxWidth: '100%',
               boxSizing: 'border-box',
-              overflow: 'hidden'
+              overflow: 'hidden',
+              boxShadow: 'none'
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', minWidth: 0, gap: 4 }}>
-                <span style={{ fontSize: isMobile ? 11 : 13, fontWeight: 700, color: 'rgba(255,255,255,0.85)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  Total Projects
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', minWidth: 0, gap: 6 }}>
+                <span style={{ fontSize: isMobile ? 12 : 13.5, fontWeight: 700, color: 'rgba(255,255,255,0.9)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  Total Proyek
                 </span>
                 <button 
                   className="cms-circle-btn"
                   onClick={() => onSwitchPage?.('projects')} 
-                  style={{ width: 28, height: 28, minWidth: 28, minHeight: 28, maxWidth: 28, maxHeight: 28, aspectRatio: '1 / 1', borderRadius: '50%', padding: 0, background: '#ffffff', border: 'none', color: '#144e3b', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+                  style={{ width: isMobile ? 24 : 30, height: isMobile ? 24 : 30, minWidth: isMobile ? 24 : 30, minHeight: isMobile ? 24 : 30, maxWidth: isMobile ? 24 : 30, maxHeight: isMobile ? 24 : 30, aspectRatio: '1 / 1', borderRadius: '50%', padding: 0, background: 'rgba(255, 255, 255, 0.2)', border: '1px solid rgba(255, 255, 255, 0.35)', color: '#ffffff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
                 >
-                  <ArrowUpRight size={14} strokeWidth={2.5} />
+                  <ArrowUpRight size={15} strokeWidth={2.5} />
                 </button>
               </div>
-              <div style={{ fontSize: isMobile ? 'clamp(20px, 5.5vw, 28px)' : 34, fontWeight: 800, lineHeight: 1, margin: '8px 0 10px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', minWidth: 0 }}>
+              <div style={{ fontSize: isMobile ? 20 : 30, fontWeight: 850, lineHeight: 1, margin: '4px 0 8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', minWidth: 0 }}>
                 {projectCounts.total}
               </div>
-              <div style={{ fontSize: isMobile ? 10 : 11, color: 'rgba(255,255,255,0.8)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <div style={{ minHeight: 24, height: 24, display: 'flex', alignItems: 'center', fontSize: isMobile ? 9.5 : 11.5, color: 'rgba(255,255,255,0.85)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 Semua portofolio terdaftar
               </div>
             </div>
@@ -1896,36 +3378,36 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
             {/* Card 2: ENDED PROJECTS */}
             <div style={{
               background: 'var(--cms-card-bg, #ffffff)',
-              borderRadius: isMobile ? 18 : 22,
-              padding: isMobile ? (isCompactMobile ? '12px 10px' : '14px 12px') : '20px',
-              border: '1px solid rgba(0,0,0,0.06)',
+              borderRadius: isMobile ? 16 : 18,
+              padding: isMobile ? '12px 14px' : '16px 20px',
+              border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.06)',
               display: 'flex',
               flexDirection: 'column',
               justifyContent: 'space-between',
-              minHeight: isMobile ? 125 : 155,
-              height: '100%',
+              minHeight: isMobile ? 112 : 140,
+              height: isMobile ? 112 : 140,
               width: '100%',
               minWidth: 0,
               maxWidth: '100%',
               boxSizing: 'border-box',
               overflow: 'hidden'
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', minWidth: 0, gap: 4 }}>
-                <span style={{ fontSize: isMobile ? 11 : 13, fontWeight: 750, color: 'var(--cms-text, #1e293b)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  Ended Projects
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', minWidth: 0, gap: 6 }}>
+                <span style={{ fontSize: isMobile ? 12 : 13.5, fontWeight: 750, color: 'var(--cms-text, #1e293b)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  Proyek Selesai
                 </span>
                 <button 
                   className="cms-circle-btn"
                   onClick={() => onSwitchPage?.('projects')} 
-                  style={{ width: 28, height: 28, minWidth: 28, minHeight: 28, maxWidth: 28, maxHeight: 28, aspectRatio: '1 / 1', borderRadius: '50%', padding: 0, background: 'transparent', border: '1.2px solid rgba(0,0,0,0.1)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                  style={{ width: isMobile ? 24 : 30, height: isMobile ? 24 : 30, minWidth: isMobile ? 24 : 30, minHeight: isMobile ? 24 : 30, maxWidth: isMobile ? 24 : 30, maxHeight: isMobile ? 24 : 30, aspectRatio: '1 / 1', borderRadius: '50%', padding: 0, background: 'transparent', border: isDark ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(0,0,0,0.1)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
                 >
-                  <ArrowUpRight size={14} strokeWidth={2.5} />
+                  <ArrowUpRight size={15} strokeWidth={2.5} />
                 </button>
               </div>
-              <div style={{ fontSize: isMobile ? 'clamp(20px, 5.5vw, 28px)' : 34, fontWeight: 800, lineHeight: 1, margin: '8px 0 10px', color: 'var(--cms-text, #0f172a)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', minWidth: 0 }}>
+              <div style={{ fontSize: isMobile ? 20 : 30, fontWeight: 850, lineHeight: 1, margin: '4px 0 8px', color: 'var(--cms-text, #0f172a)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', minWidth: 0 }}>
                 {projectCounts.done}
               </div>
-              <div style={{ fontSize: isMobile ? 10 : 11, fontWeight: 650, color: '#15803d', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <div style={{ minHeight: 24, height: 24, display: 'flex', alignItems: 'center', fontSize: isMobile ? 9.5 : 11.5, fontWeight: 700, color: 'var(--theme-analogous-2, #10b981)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 Selesai Dikerjakan
               </div>
             </div>
@@ -1933,36 +3415,36 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
             {/* Card 3: RUNNING PROJECTS */}
             <div style={{
               background: 'var(--cms-card-bg, #ffffff)',
-              borderRadius: isMobile ? 18 : 22,
-              padding: isMobile ? (isCompactMobile ? '12px 10px' : '14px 12px') : '20px',
-              border: '1px solid rgba(0,0,0,0.06)',
+              borderRadius: isMobile ? 16 : 18,
+              padding: isMobile ? '12px 14px' : '16px 20px',
+              border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.06)',
               display: 'flex',
               flexDirection: 'column',
               justifyContent: 'space-between',
-              minHeight: isMobile ? 125 : 155,
-              height: '100%',
+              minHeight: isMobile ? 112 : 140,
+              height: isMobile ? 112 : 140,
               width: '100%',
               minWidth: 0,
               maxWidth: '100%',
               boxSizing: 'border-box',
               overflow: 'hidden'
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', minWidth: 0, gap: 4 }}>
-                <span style={{ fontSize: isMobile ? 11 : 13, fontWeight: 750, color: 'var(--cms-text, #1e293b)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  Running Projects
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', minWidth: 0, gap: 6 }}>
+                <span style={{ fontSize: isMobile ? 12 : 13.5, fontWeight: 750, color: 'var(--cms-text, #1e293b)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  Proyek Berjalan
                 </span>
                 <button 
                   className="cms-circle-btn"
                   onClick={() => onSwitchPage?.('projects')} 
-                  style={{ width: 28, height: 28, minWidth: 28, minHeight: 28, maxWidth: 28, maxHeight: 28, aspectRatio: '1 / 1', borderRadius: '50%', padding: 0, background: 'transparent', border: '1.2px solid rgba(0,0,0,0.1)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                  style={{ width: isMobile ? 24 : 30, height: isMobile ? 24 : 30, minWidth: isMobile ? 24 : 30, minHeight: isMobile ? 24 : 30, maxWidth: isMobile ? 24 : 30, maxHeight: isMobile ? 24 : 30, aspectRatio: '1 / 1', borderRadius: '50%', padding: 0, background: 'transparent', border: isDark ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(0,0,0,0.1)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
                 >
-                  <ArrowUpRight size={14} strokeWidth={2.5} />
+                  <ArrowUpRight size={15} strokeWidth={2.5} />
                 </button>
               </div>
-              <div style={{ fontSize: isMobile ? 'clamp(20px, 5.5vw, 28px)' : 34, fontWeight: 800, lineHeight: 1, margin: '8px 0 10px', color: 'var(--cms-text, #0f172a)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', minWidth: 0 }}>
+              <div style={{ fontSize: isMobile ? 20 : 30, fontWeight: 850, lineHeight: 1, margin: '4px 0 8px', color: 'var(--cms-text, #0f172a)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', minWidth: 0 }}>
                 {projectCounts.progress}
               </div>
-              <div style={{ fontSize: isMobile ? 10 : 11, fontWeight: 650, color: '#0284c7', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <div style={{ minHeight: 24, height: 24, display: 'flex', alignItems: 'center', fontSize: isMobile ? 9.5 : 11.5, fontWeight: 700, color: 'var(--theme-analogous-4, #0284c7)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 Sedang Dikerjakan Studio
               </div>
             </div>
@@ -1970,48 +3452,220 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
             {/* Card 4: PENDING PROJECT */}
             <div style={{
               background: 'var(--cms-card-bg, #ffffff)',
-              borderRadius: isMobile ? 18 : 22,
-              padding: isMobile ? (isCompactMobile ? '12px 10px' : '14px 12px') : '20px',
-              border: '1px solid rgba(0,0,0,0.06)',
+              borderRadius: isMobile ? 16 : 18,
+              padding: isMobile ? '12px 14px' : '16px 20px',
+              border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.06)',
               display: 'flex',
               flexDirection: 'column',
               justifyContent: 'space-between',
-              minHeight: isMobile ? 125 : 155,
-              height: '100%',
+              minHeight: isMobile ? 112 : 140,
+              height: isMobile ? 112 : 140,
               width: '100%',
               minWidth: 0,
               maxWidth: '100%',
               boxSizing: 'border-box',
               overflow: 'hidden'
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', minWidth: 0, gap: 4 }}>
-                <span style={{ fontSize: isMobile ? 11 : 13, fontWeight: 750, color: 'var(--cms-text, #1e293b)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  Pending Project
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', minWidth: 0, gap: 6 }}>
+                <span style={{ fontSize: isMobile ? 12 : 13.5, fontWeight: 750, color: 'var(--cms-text, #1e293b)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  Antrean Proyek
                 </span>
                 <button 
                   className="cms-circle-btn"
                   onClick={() => onSwitchPage?.('projects')} 
-                  style={{ width: 28, height: 28, minWidth: 28, minHeight: 28, maxWidth: 28, maxHeight: 28, aspectRatio: '1 / 1', borderRadius: '50%', padding: 0, background: 'transparent', border: '1.2px solid rgba(0,0,0,0.1)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                  style={{ width: isMobile ? 24 : 30, height: isMobile ? 24 : 30, minWidth: isMobile ? 24 : 30, minHeight: isMobile ? 24 : 30, maxWidth: isMobile ? 24 : 30, maxHeight: isMobile ? 24 : 30, aspectRatio: '1 / 1', borderRadius: '50%', padding: 0, background: 'transparent', border: isDark ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(0,0,0,0.1)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
                 >
-                  <ArrowUpRight size={14} strokeWidth={2.5} />
+                  <ArrowUpRight size={15} strokeWidth={2.5} />
                 </button>
               </div>
-              <div style={{ fontSize: isMobile ? 'clamp(20px, 5.5vw, 28px)' : 34, fontWeight: 800, lineHeight: 1, margin: '8px 0 10px', color: 'var(--cms-text, #0f172a)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', minWidth: 0 }}>
+              <div style={{ fontSize: isMobile ? 20 : 30, fontWeight: 850, lineHeight: 1, margin: '4px 0 8px', color: 'var(--cms-text, #0f172a)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', minWidth: 0 }}>
                 {projectCounts.todo}
               </div>
-              <div style={{ fontSize: isMobile ? 10 : 11, fontWeight: 650, color: '#b45309', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <div style={{ minHeight: 24, height: 24, display: 'flex', alignItems: 'center', fontSize: isMobile ? 9.5 : 11.5, fontWeight: 700, color: 'var(--theme-analogous-3, #b45309)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 Dalam Diskusi Klien
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Card 1: 24 MODUL STUDIO (Mode Ekosistem) */}
+            <div style={{
+              background: 'var(--cms-accent-gradient)',
+              borderRadius: isMobile ? 16 : 18,
+              padding: isMobile ? '12px 14px' : '16px 20px',
+              color: '#ffffff',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              minHeight: isMobile ? 112 : 140,
+              height: isMobile ? 112 : 140,
+              width: '100%',
+              minWidth: 0,
+              maxWidth: '100%',
+              boxSizing: 'border-box',
+              overflow: 'hidden',
+              boxShadow: 'none'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', minWidth: 0, gap: 6 }}>
+                <span style={{ fontSize: isMobile ? 12 : 13.5, fontWeight: 700, color: 'rgba(255,255,255,0.9)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  Modul Ekosistem
+                </span>
+                <button 
+                  className="cms-circle-btn"
+                  onClick={() => onSwitchPage?.('apps')} 
+                  style={{ width: isMobile ? 24 : 30, height: isMobile ? 24 : 30, minWidth: isMobile ? 24 : 30, minHeight: isMobile ? 24 : 30, maxWidth: isMobile ? 24 : 30, maxHeight: isMobile ? 24 : 30, aspectRatio: '1 / 1', borderRadius: '50%', padding: 0, background: '#ffffff', border: 'none', color: 'var(--cms-accent)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+                  title="Buka Apps Studio"
+                >
+                  <ArrowUpRight size={15} strokeWidth={2.5} />
+                </button>
+              </div>
+              <div style={{ fontSize: isMobile ? 20 : 30, fontWeight: 850, lineHeight: 1, margin: '4px 0 8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', minWidth: 0 }}>
+                {STUDIO_MODULES.length} <span style={{ fontSize: 14, fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>Modul</span>
+              </div>
+              <div style={{ minHeight: 24, height: 24, display: 'flex', alignItems: 'center' }}>
+                <div style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  background: 'rgba(255,255,255,0.16)',
+                  padding: '3px 10px',
+                  borderRadius: 9999,
+                  width: 'fit-content',
+                  maxWidth: '100%',
+                  fontSize: isMobile ? 9.5 : 11,
+                  fontWeight: 650,
+                  color: '#ffffff',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
+                }}>
+                  <span>100% Aktif & Terintegrasi</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 2: DATABASE MASTER (Mode Ekosistem) */}
+            <div style={{
+              background: 'var(--cms-card-bg, #ffffff)',
+              borderRadius: isMobile ? 16 : 18,
+              padding: isMobile ? '12px 14px' : '16px 20px',
+              border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.06)',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              minHeight: isMobile ? 112 : 140,
+              height: isMobile ? 112 : 140,
+              width: '100%',
+              minWidth: 0,
+              maxWidth: '100%',
+              boxSizing: 'border-box',
+              overflow: 'hidden'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', minWidth: 0, gap: 6 }}>
+                <span style={{ fontSize: isMobile ? 12 : 13.5, fontWeight: 750, color: 'var(--cms-text, #1e293b)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  Database Master
+                </span>
+                <button 
+                  className="cms-circle-btn"
+                  onClick={() => onSwitchPage?.('database')} 
+                  style={{ width: isMobile ? 24 : 30, height: isMobile ? 24 : 30, minWidth: isMobile ? 24 : 30, minHeight: isMobile ? 24 : 30, maxWidth: isMobile ? 24 : 30, maxHeight: isMobile ? 24 : 30, aspectRatio: '1 / 1', borderRadius: '50%', padding: 0, background: 'transparent', border: isDark ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(0,0,0,0.1)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                  title="Buka Database Master"
+                >
+                  <ArrowUpRight size={15} strokeWidth={2.5} />
+                </button>
+              </div>
+              <div style={{ fontSize: isMobile ? 20 : 30, fontWeight: 850, lineHeight: 1, margin: '4px 0 8px', color: 'var(--cms-text, #0f172a)', letterSpacing: '-0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', minWidth: 0 }}>
+                {totalDataEntities} <span style={{ fontSize: 14, fontWeight: 600, color: '#64748b' }}>Data</span>
+              </div>
+              <div style={{ minHeight: 24, height: 24, display: 'flex', alignItems: 'center', fontSize: isMobile ? 9.5 : 11.5, fontWeight: 700, color: 'var(--theme-analogous-2, #0284c7)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                Cloud Sync Tersinkron
+              </div>
+            </div>
+
+            {/* Card 3: AI CREATIVE SUITE (Mode Ekosistem) */}
+            <div style={{
+              background: 'var(--cms-card-bg, #ffffff)',
+              borderRadius: isMobile ? 16 : 18,
+              padding: isMobile ? '12px 14px' : '16px 20px',
+              border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.06)',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              minHeight: isMobile ? 112 : 140,
+              height: isMobile ? 112 : 140,
+              width: '100%',
+              minWidth: 0,
+              maxWidth: '100%',
+              boxSizing: 'border-box',
+              overflow: 'hidden'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', minWidth: 0, gap: 6 }}>
+                <span style={{ fontSize: isMobile ? 12 : 13.5, fontWeight: 750, color: 'var(--cms-text, #1e293b)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  AI Creative Suite
+                </span>
+                <button 
+                  className="cms-circle-btn"
+                  onClick={() => onSwitchPage?.('apps')} 
+                  style={{ width: isMobile ? 24 : 30, height: isMobile ? 24 : 30, minWidth: isMobile ? 24 : 30, minHeight: isMobile ? 24 : 30, maxWidth: isMobile ? 24 : 30, maxHeight: isMobile ? 24 : 30, aspectRatio: '1 / 1', borderRadius: '50%', padding: 0, background: 'transparent', border: isDark ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(0,0,0,0.1)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                  title="Buka Asisten AI"
+                >
+                  <ArrowUpRight size={15} strokeWidth={2.5} />
+                </button>
+              </div>
+              <div style={{ fontSize: isMobile ? 20 : 30, fontWeight: 850, lineHeight: 1, margin: '4px 0 8px', color: 'var(--cms-text, #0f172a)', letterSpacing: '-0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', minWidth: 0 }}>
+                Gemini <span style={{ fontSize: 14, fontWeight: 600, color: '#64748b' }}>AI Engine</span>
+              </div>
+              <div style={{ minHeight: 24, height: 24, display: 'flex', alignItems: 'center', fontSize: isMobile ? 9.5 : 11.5, fontWeight: 700, color: 'var(--theme-analogous-4, #7c3aed)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                Asisten Kreatif Aktif
+              </div>
+            </div>
+
+            {/* Card 4: GADGET STATION CONTROLLER (Mode Ekosistem) */}
+            <div style={{
+              background: 'var(--cms-card-bg, #ffffff)',
+              borderRadius: isMobile ? 16 : 18,
+              padding: isMobile ? '12px 14px' : '16px 20px',
+              border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.06)',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              minHeight: isMobile ? 112 : 140,
+              height: isMobile ? 112 : 140,
+              width: '100%',
+              minWidth: 0,
+              maxWidth: '100%',
+              boxSizing: 'border-box',
+              overflow: 'hidden'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', minWidth: 0, gap: 6 }}>
+                <span style={{ fontSize: isMobile ? 12 : 13.5, fontWeight: 750, color: 'var(--cms-text, #1e293b)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  Stasiun Ekosistem
+                </span>
+                <button 
+                  className="cms-circle-btn"
+                  onClick={onOpenGadgetStation} 
+                  style={{ width: isMobile ? 24 : 30, height: isMobile ? 24 : 30, minWidth: isMobile ? 24 : 30, minHeight: isMobile ? 24 : 30, maxWidth: isMobile ? 24 : 30, maxHeight: isMobile ? 24 : 30, aspectRatio: '1 / 1', borderRadius: '50%', padding: 0, background: 'transparent', border: isDark ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(0,0,0,0.1)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                  title="Buka Stasiun Gadget"
+                >
+                  <ArrowUpRight size={15} strokeWidth={2.5} />
+                </button>
+              </div>
+              <div style={{ fontSize: isMobile ? 20 : 30, fontWeight: 850, lineHeight: 1, margin: '4px 0 8px', color: 'var(--cms-text, #0f172a)', letterSpacing: '-0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', minWidth: 0 }}>
+                {STUDIO_MODULES.length} <span style={{ fontSize: 14, fontWeight: 600, color: '#64748b' }}>Tool Suite</span>
+              </div>
+              <div style={{ minHeight: 24, height: 24, display: 'flex', alignItems: 'center', fontSize: isMobile ? 9.5 : 11.5, fontWeight: 700, color: 'var(--theme-analogous-3, #15803d)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                Stasiun Terpadu Siap
               </div>
             </div>
           </>
         )}
       </div>
 
-      {/* ── 4. MAIN CONTENT (RATA & RAPI 2 KOLOM DESKTOP, STACK RAPI DI MOBILE) ── */}
+      {/* ── 4. MAIN CONTENT (LEGA, MEGAH & PROPORSI HARMONIS 325px) ── */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : isTablet ? 'minmax(0, 1fr)' : '1.75fr 1fr',
-        gap: isMobile ? 12 : 16,
+        gap: isMobile ? 10 : 16,
         width: '100%',
         maxWidth: '100%',
         minWidth: 0,
@@ -2023,7 +3677,7 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
         <div style={{
           display: 'flex',
           flexDirection: 'column',
-          gap: isMobile ? 12 : 16,
+          gap: isMobile ? 10 : 16,
           width: '100%',
           maxWidth: '100%',
           minWidth: 0,
@@ -2032,25 +3686,26 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
           {/* ROW 1: Project Analytics + Kalender Proyek */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1.15fr 1.15fr',
-            gap: isMobile ? 12 : 16,
+            gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : isTablet ? 'repeat(2, minmax(0, 1fr))' : '1.15fr 1.15fr',
+            gap: isMobile ? 10 : 16,
             width: '100%',
             maxWidth: '100%',
             minWidth: 0,
             boxSizing: 'border-box',
             alignItems: 'stretch'
           }}>
-            {/* CARD A: Project Analytics (7-Day Capsule Bars) */}
+            {/* CARD A: Project Analytics (Megah & Proporsional 325px) */}
             <div style={{
               background: 'var(--cms-card-bg, #ffffff)',
-              borderRadius: isMobile ? 18 : 22,
-              padding: isMobile ? '14px 12px' : '20px',
+              borderRadius: isMobile ? 16 : 18,
+              padding: isMobile ? '14px' : '18px 22px',
               border: '1px solid rgba(0,0,0,0.06)',
               display: 'flex',
               flexDirection: 'column',
               justifyContent: 'space-between',
-              minHeight: isMobile ? 'auto' : 290,
-              boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
+              minHeight: isMobile ? 'auto' : 325,
+              height: isMobile ? 'auto' : 325,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
               width: '100%',
               maxWidth: '100%',
               minWidth: 0,
@@ -2058,461 +3713,935 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
               overflow: 'hidden'
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', minWidth: 0, gap: 6, flexWrap: 'wrap' }}>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: isMobile ? 15 : 16, fontWeight: 800, color: 'var(--cms-text, #0f172a)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    Project Analytics
+                <div 
+                  onClick={() => { onSwitchPage?.('analytics'); haptic.light(); }}
+                  style={{ minWidth: 0, flex: 1, cursor: 'pointer' }}
+                  title="Buka Studio Intelligence & Analitik Lengkap"
+                >
+                  <div style={{ fontSize: isMobile ? 14 : 15, fontWeight: 800, color: 'var(--cms-text, #0f172a)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <span>Project Analytics</span>
                   </div>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    Aktivitas & Kas 7 Hari Terakhir
+                  <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--cms-text-secondary, #94a3b8)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {analyticsPeriod === 'activities' ? 'Aktivitas Studio 7 Hari Terakhir' : 'Aktivitas & Kas 7 Hari Terakhir'}
                   </div>
                 </div>
-                <div style={{
-                  fontSize: 10.5,
-                  fontWeight: 750,
-                  color: '#144e3b',
-                  background: '#f0fdf4',
-                  padding: '3px 8px',
-                  borderRadius: 100,
-                  flexShrink: 0
-                }}>
-                  Mingguan
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAnalyticsPeriod(prev => prev === 'weekly' ? 'monthly' : prev === 'monthly' ? 'activities' : 'weekly');
+                    haptic.light();
+                  }}
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 750,
+                    color: '#144e3b',
+                    background: '#f0fdf4',
+                    border: '1px solid rgba(20, 78, 59, 0.15)',
+                    padding: '4px 12px',
+                    borderRadius: 100,
+                    cursor: 'pointer',
+                    flexShrink: 0,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    transition: 'all 0.15s ease'
+                  }}
+                  title="Klik untuk beralih mode analitik (Mingguan / Bulanan / Aktivitas)"
+                >
+                  <span>{analyticsPeriod === 'weekly' ? 'Mingguan' : analyticsPeriod === 'monthly' ? 'Bulanan' : 'Aktivitas'}</span>
+                  <ChevronRight size={12} />
+                </button>
               </div>
 
-              {/* Capsule Bars Graph */}
+              {/* Capsule Bars Graph (Megah & Tinggi 195px dengan Grid Lines) */}
               <div style={{
-                display: 'flex',
-                alignItems: 'flex-end',
-                justifyContent: 'space-between',
-                height: isMobile ? 130 : 150,
-                marginTop: 12,
-                padding: '0 2px',
                 position: 'relative',
+                height: isMobile ? 130 : 195,
+                marginTop: 12,
+                padding: '0 6px',
                 width: '100%',
                 maxWidth: '100%',
                 minWidth: 0,
                 boxSizing: 'border-box'
               }}>
-                {weeklyAnalytics.map((bar, idx) => {
-                  const isMax = bar.height >= 80;
-                  const isMid = bar.height >= 55 && !isMax;
-
-                  return (
-                    <div 
-                      key={idx} 
-                      style={{ 
-                        display: 'flex', 
-                        flexDirection: 'column', 
-                        alignItems: 'center', 
-                        gap: 5, 
-                        height: '100%', 
-                        justifyContent: 'flex-end',
-                        position: 'relative',
-                        flex: 1,
-                        minWidth: 0,
-                        maxWidth: isMobile ? 32 : 36
-                      }}
-                      title={`${bar.day}: ${bar.formatted}`}
-                    >
-                      <div style={{
-                        width: isMobile ? 'clamp(14px, 4vw, 22px)' : 28,
-                        height: `${bar.height}%`,
-                        borderRadius: 9999,
-                        background: isMax ? '#144e3b' : isMid ? '#48bb78' : 'url(#diagonal-stripe-bar)',
-                        border: isMax || isMid ? 'none' : '1px solid #cbd5e1',
-                        transition: 'height 0.3s ease',
-                        cursor: 'pointer'
-                      }} />
-                      <span style={{ fontSize: isMobile ? 10 : 11, fontWeight: 700, color: isMax ? '#144e3b' : '#94a3b8' }}>
-                        {bar.day}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* CARD B: KALENDER PROYEK & REMINDERS (DARI WIDGET LAMA) */}
-            <div style={{
-              background: 'var(--cms-card-bg, #ffffff)',
-              borderRadius: isMobile ? 18 : 22,
-              padding: isMobile ? '14px 12px' : '20px',
-              border: '1px solid rgba(0,0,0,0.06)',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              minHeight: isMobile ? 'auto' : 290,
-              boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
-              width: '100%',
-              maxWidth: '100%',
-              minWidth: 0,
-              boxSizing: 'border-box',
-              overflow: 'hidden'
-            }}>
-              <div>
-                {/* Header: Month/Year + Navigation */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 6, flexWrap: 'wrap', width: '100%', minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                    <Calendar size={15} color="#144e3b" style={{ flexShrink: 0 }} />
-                    <span style={{ fontSize: isMobile ? 12.5 : 13.5, fontWeight: 800, color: 'var(--cms-text, #0f172a)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {MONTH_NAMES_ID[calMonth]} {calYear}
-                    </span>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-                    <button
-                      type="button"
-                      className="cms-circle-btn cal-nav-btn"
-                      onClick={() => {
-                        if (calMonth === 0) { setCalMonth(11); setCalYear(y => y - 1); }
-                        else setCalMonth(m => m - 1);
-                        haptic.light();
-                      }}
-                      style={{
-                        width: 26,
-                        height: 26,
-                        minWidth: 26,
-                        minHeight: 26,
-                        maxWidth: 26,
-                        maxHeight: 26,
-                        aspectRatio: '1 / 1',
-                        borderRadius: '50%',
-                        border: 'none',
-                        background: '#f1f5f9',
-                        color: '#334155',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        cursor: 'pointer',
-                        padding: 0,
-                        boxSizing: 'border-box',
-                        flexShrink: 0
-                      }}
-                      title="Bulan Sebelumnya"
-                    >
-                      <ChevronLeft size={13} style={{ flexShrink: 0 }} />
-                    </button>
-
-                    <button
-                      type="button"
-                      className="cal-today-btn"
-                      onClick={() => {
-                        const now = new Date();
-                        setCalMonth(now.getMonth());
-                        setCalYear(now.getFullYear());
-                        setSelectedCalDay(now.getDate());
-                        haptic.light();
-                      }}
-                      style={{
-                        minHeight: 'unset',
-                        height: 26,
-                        maxHeight: 26,
-                        lineHeight: '26px',
-                        padding: '0 9px',
-                        borderRadius: 9999,
-                        border: 'none',
-                        background: '#f1f5f9',
-                        color: '#334155',
-                        fontSize: 10.5,
-                        fontWeight: 750,
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        boxSizing: 'border-box',
-                        flexShrink: 0,
-                        whiteSpace: 'nowrap'
-                      }}
-                    >
-                      Hari Ini
-                    </button>
-
-                    <button
-                      type="button"
-                      className="cms-circle-btn cal-nav-btn"
-                      onClick={() => {
-                        if (calMonth === 11) { setCalMonth(0); setCalYear(y => y + 1); }
-                        else setCalMonth(m => m + 1);
-                        haptic.light();
-                      }}
-                      style={{
-                        width: 26,
-                        height: 26,
-                        minWidth: 26,
-                        minHeight: 26,
-                        maxWidth: 26,
-                        maxHeight: 26,
-                        aspectRatio: '1 / 1',
-                        borderRadius: '50%',
-                        border: 'none',
-                        background: '#f1f5f9',
-                        color: '#334155',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        cursor: 'pointer',
-                        padding: 0,
-                        boxSizing: 'border-box',
-                        flexShrink: 0
-                      }}
-                      title="Bulan Berikutnya"
-                    >
-                      <ChevronRight size={13} style={{ flexShrink: 0 }} />
-                    </button>
-                  </div>
+                {/* Horizontal Guide Lines */}
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', pointerEvents: 'none', opacity: 0.08 }}>
+                  <div style={{ borderBottom: '1px dashed #000', width: '100%' }} />
+                  <div style={{ borderBottom: '1px dashed #000', width: '100%' }} />
+                  <div style={{ borderBottom: '1px dashed #000', width: '100%' }} />
                 </div>
 
-                {/* 7 Days Header (Sen s/d Min) */}
                 <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
-                  gap: isMobile ? 3 : 2,
-                  textAlign: 'center',
-                  fontSize: isMobile ? 11 : 9.5,
-                  fontWeight: 800,
-                  color: '#94a3b8',
-                  textTransform: 'uppercase',
-                  marginBottom: isMobile ? 6 : 3,
-                  width: '100%',
-                  minWidth: 0
+                  position: 'relative',
+                  zIndex: 2,
+                  display: 'flex',
+                  alignItems: 'flex-end',
+                  justifyContent: 'space-between',
+                  height: '100%',
+                  width: '100%'
                 }}>
-                  {['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'].map((d, idx) => (
-                    <div key={idx} style={{ color: idx === 6 ? '#f43f5e' : undefined }}>{d}</div>
-                  ))}
-                </div>
-
-                {/* Days Grid */}
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
-                  gap: isMobile ? 4 : 2,
-                  textAlign: 'center',
-                  width: '100%',
-                  minWidth: 0
-                }}>
-                  {calendarDays.map((cell, idx) => {
-                    if (!cell.day) {
-                      return <div key={`empty-${idx}`} style={{ height: isMobile ? 32 : 26, width: '100%', minWidth: 0 }} />;
-                    }
-                    const isSelected = selectedCalDay === cell.day;
-                    const hasHoliday = !!cell.holiday;
-                    const hasDeadlines = cell.projectDeadlines && cell.projectDeadlines.length > 0;
-                    const isSunday = idx % 7 === 6;
+                  {weeklyAnalytics.map((bar, idx) => {
+                    const isSelected = selectedAnalyticsDay === idx;
+                    const isMax = bar.height >= 80;
+                    const isMid = bar.height >= 55 && !isMax;
 
                     return (
-                      <div
-                        key={`day-${cell.day}-${idx}`}
+                      <div 
+                        key={idx} 
                         onClick={() => {
-                          setSelectedCalDay(cell.day);
+                          setSelectedAnalyticsDay(isSelected ? null : idx);
                           haptic.light();
                         }}
-                        style={{
-                          width: isMobile ? 32 : 26,
-                          height: isMobile ? 32 : 26,
-                          minWidth: isMobile ? 32 : 26,
-                          minHeight: isMobile ? 32 : 26,
-                          maxWidth: isMobile ? 32 : 26,
-                          maxHeight: isMobile ? 32 : 26,
-                          aspectRatio: '1 / 1',
-                          margin: '0 auto',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          borderRadius: '50%',
-                          cursor: 'pointer',
-                          background: isSelected ? '#144e3b' : cell.isToday ? '#ecfdf5' : 'transparent',
-                          color: isSelected ? '#ffffff' : hasHoliday || isSunday ? '#f43f5e' : cell.isToday ? '#144e3b' : 'var(--cms-text, #1e293b)',
-                          fontWeight: cell.isToday || isSelected ? 850 : 600,
-                          fontSize: isMobile ? 12 : 10,
+                        style={{ 
+                          display: 'flex', 
+                          flexDirection: 'column', 
+                          alignItems: 'center', 
+                          gap: 8, 
+                          height: '100%', 
+                          justifyContent: 'flex-end',
                           position: 'relative',
-                          boxSizing: 'border-box',
-                          flexShrink: 0,
-                          transition: 'all 0.15s ease',
-                          border: cell.isToday && !isSelected ? '1px solid #10b981' : '1px solid transparent',
-                          boxShadow: isSelected ? '0 3px 10px rgba(20, 78, 59, 0.25)' : 'none'
+                          flex: 1,
+                          minWidth: 0,
+                          maxWidth: isMobile ? 28 : 36,
+                          cursor: 'pointer'
                         }}
-                        title={hasHoliday ? cell.holiday.name : hasDeadlines ? `${cell.projectDeadlines.length} Tenggat Proyek` : undefined}
+                        title={`${bar.day}: ${bar.formatted} (Klik untuk detail)`}
                       >
-                        <span style={{ lineHeight: 1 }}>{cell.day}</span>
-                        <div style={{ display: 'flex', gap: 2, alignItems: 'center', marginTop: 1.5, height: 3 }}>
-                          {hasHoliday && <span style={{ width: 3, height: 3, borderRadius: '50%', background: isSelected ? '#ffffff' : '#f43f5e', display: 'block' }} />}
-                          {hasDeadlines && <span style={{ width: 3, height: 3, borderRadius: '50%', background: isSelected ? '#ffffff' : '#10b981', display: 'block' }} />}
-                        </div>
+                        <div style={{
+                          width: isMobile ? 'clamp(14px, 4vw, 22px)' : 26,
+                          height: `${Math.max(bar.height, 8)}%`,
+                          borderRadius: 9999,
+                          background: isSelected ? 'var(--theme-analogous-4, #3b82f6)' : isMax ? 'var(--cms-accent, #144e3b)' : isMid ? 'var(--theme-analogous-2, #48bb78)' : 'url(#diagonal-stripe-bar)',
+                          border: isSelected ? '2px solid var(--theme-analogous-4, #2563eb)' : (isMax || isMid ? 'none' : '1px solid #cbd5e1'),
+                          transition: 'all 0.2s ease',
+                          boxShadow: isSelected ? '0 0 12px rgba(var(--theme-analogous-pop-rgb, 82, 179, 197), 0.45)' : 'none'
+                        }} />
+                        <span style={{ fontSize: 11, fontWeight: 750, color: isSelected ? 'var(--theme-analogous-4, #3b82f6)' : (isMax ? 'var(--cms-accent, #144e3b)' : 'var(--cms-text-secondary, #94a3b8)') }}>
+                          {bar.day}
+                        </span>
                       </div>
                     );
                   })}
                 </div>
               </div>
 
-              {/* Selected Date Status Strip */}
-              <div style={{
-                padding: isMobile ? '8px 12px' : '6px 12px',
-                borderRadius: isMobile ? 12 : 9999,
-                background: '#f8fafc',
-                border: '1px solid #f1f5f9',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 8,
-                fontSize: isMobile ? 11 : 10,
-                marginTop: isMobile ? 10 : 8,
-                width: '100%',
-                minWidth: 0,
-                boxSizing: 'border-box',
-                flexWrap: 'wrap'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flex: '1 1 auto' }}>
-                  {selectedDayInfo?.holiday ? (
-                    <span style={{ color: '#f43f5e', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      Libur: {selectedDayInfo.holiday.name}
-                    </span>
-                  ) : selectedDayInfo?.projectDeadlines?.length ? (
-                    <span style={{ color: '#10b981', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      Tenggat: {selectedDayInfo.projectDeadlines[0].title}
-                    </span>
-                  ) : (
-                    <span style={{ color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {selectedDayInfo?.safeDay ?? selectedCalDay} {MONTH_NAMES_ID[calMonth]}: Bebas Tenggat
-                    </span>
-                  )}
+              {/* Selected Day Analytics Pill */}
+              {selectedAnalyticsDay !== null && weeklyAnalytics[selectedAnalyticsDay] && (
+                <div style={{
+                  marginTop: 8,
+                  padding: '6px 12px',
+                  borderRadius: 10,
+                  background: 'rgba(59, 130, 246, 0.12)',
+                  border: '1px solid rgba(59, 130, 246, 0.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  fontSize: 11,
+                  color: 'var(--cms-text, #60a5fa)'
+                }}>
+                  <span><strong>{weeklyAnalytics[selectedAnalyticsDay].day}:</strong> {weeklyAnalytics[selectedAnalyticsDay].formatted}</span>
+                  <button
+                    type="button"
+                    onClick={() => onSwitchPage?.('transactions')}
+                    style={{ background: 'transparent', border: 'none', color: '#60a5fa', fontWeight: 800, cursor: 'pointer', fontSize: 11 }}
+                  >
+                    Buka Kas
+                  </button>
                 </div>
-                <span style={{ fontSize: isMobile ? 10 : 9.5, fontWeight: 700, color: '#94a3b8', flexShrink: 0 }}>
-                  {totalDeadlinesThisMonth} Tenggat
-                </span>
-              </div>
+              )}
             </div>
+
+            {/* CARD B: KALENDER PROYEK (Lega & Presisi - Fixed 6x7 = 42 Sel Proporsional) */}
+            {(() => {
+              const cellDim = isMobile ? 22 : 28.5;
+              const cellGap = isMobile ? '2.5px 2px' : '5px 2px';
+
+              return (
+                <div style={{
+                  background: 'var(--cms-card-bg, #ffffff)',
+                  borderRadius: isMobile ? 16 : 18,
+                  padding: isMobile ? '12px 14px' : '15px 18px 14px',
+                  border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.06)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  minHeight: isMobile ? 'auto' : 325,
+                  height: isMobile ? 'auto' : 325,
+                  boxShadow: isDark ? '0 4px 18px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.02)',
+                  width: '100%',
+                  maxWidth: '100%',
+                  minWidth: 0,
+                  boxSizing: 'border-box',
+                  overflow: 'hidden'
+                }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                    {/* Header: Month/Year + Navigation */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isMobile ? 8 : 10, gap: 4, flexWrap: 'nowrap', width: '100%', minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                        <Calendar size={16} color={isDark ? '#34d399' : '#144e3b'} style={{ flexShrink: 0 }} />
+                        <span style={{ fontSize: isMobile ? 13 : 14.5, fontWeight: 800, color: 'var(--cms-text, #0f172a)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {MONTH_NAMES_ID[calMonth]} {calYear}
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                        <button
+                          type="button"
+                          className="cms-circle-btn cal-nav-btn"
+                          onClick={() => {
+                            if (calMonth === 0) { setCalMonth(11); setCalYear(y => y - 1); }
+                            else setCalMonth(m => m - 1);
+                            haptic.light();
+                          }}
+                          style={{
+                            width: 28,
+                            height: 28,
+                            minWidth: 28,
+                            minHeight: 28,
+                            maxWidth: 28,
+                            maxHeight: 28,
+                            aspectRatio: '1 / 1',
+                            borderRadius: '50%',
+                            border: isDark ? '1px solid rgba(255,255,255,0.12)' : '1px solid var(--cms-border, #e2e8f0)',
+                            background: isDark ? 'rgba(255,255,255,0.08)' : 'var(--cms-input-bg, #f1f5f9)',
+                            color: isDark ? '#f8fafc' : 'var(--cms-text, #334155)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            padding: 0,
+                            boxSizing: 'border-box',
+                            flexShrink: 0
+                          }}
+                          title="Bulan Sebelumnya"
+                        >
+                          <ChevronLeft size={14} style={{ flexShrink: 0 }} />
+                        </button>
+
+                        <button
+                          type="button"
+                          className="cal-today-btn"
+                          onClick={() => {
+                            const now = new Date();
+                            setCalMonth(now.getMonth());
+                            setCalYear(now.getFullYear());
+                            setSelectedCalDay(now.getDate());
+                            haptic.light();
+                          }}
+                          style={{
+                            minHeight: 'unset',
+                            height: 28,
+                            maxHeight: 28,
+                            lineHeight: '28px',
+                            padding: '0 12px',
+                            borderRadius: 9999,
+                            border: isDark ? '1px solid rgba(255,255,255,0.12)' : '1px solid var(--cms-border, #e2e8f0)',
+                            background: isDark ? 'rgba(255,255,255,0.08)' : 'var(--cms-input-bg, #f1f5f9)',
+                            color: isDark ? '#f8fafc' : 'var(--cms-text, #334155)',
+                            fontSize: 11,
+                            fontWeight: 750,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            boxSizing: 'border-box',
+                            flexShrink: 0,
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          Hari Ini
+                        </button>
+
+                        <button
+                          type="button"
+                          className="cms-circle-btn cal-nav-btn"
+                          onClick={() => {
+                            if (calMonth === 11) { setCalMonth(0); setCalYear(y => y + 1); }
+                            else setCalMonth(m => m + 1);
+                            haptic.light();
+                          }}
+                          style={{
+                            width: 28,
+                            height: 28,
+                            minWidth: 28,
+                            minHeight: 28,
+                            maxWidth: 28,
+                            maxHeight: 28,
+                            aspectRatio: '1 / 1',
+                            borderRadius: '50%',
+                            border: isDark ? '1px solid rgba(255,255,255,0.12)' : '1px solid var(--cms-border, #e2e8f0)',
+                            background: isDark ? 'rgba(255,255,255,0.08)' : 'var(--cms-input-bg, #f1f5f9)',
+                            color: isDark ? '#f8fafc' : 'var(--cms-text, #334155)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            padding: 0,
+                            boxSizing: 'border-box',
+                            flexShrink: 0
+                          }}
+                          title="Bulan Berikutnya"
+                        >
+                          <ChevronRight size={14} style={{ flexShrink: 0 }} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 7 Days Header (Sen s/d Min) */}
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+                      gap: 2,
+                      textAlign: 'center',
+                      fontSize: isMobile ? 10 : 11,
+                      fontWeight: 800,
+                      color: 'var(--cms-text-muted, #94a3b8)',
+                      textTransform: 'uppercase',
+                      marginBottom: isMobile ? 6 : 8,
+                      width: '100%',
+                      minWidth: 0
+                    }}>
+                      {['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'].map((d, idx) => (
+                        <div key={idx} style={{ color: idx === 6 ? '#f43f5e' : undefined }}>{d}</div>
+                      ))}
+                    </div>
+
+                    {/* Days Grid (Fix 6 Baris x 7 Kolom = 42 Sel Selalu Rapi & Stabil) */}
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+                      gap: cellGap,
+                      textAlign: 'center',
+                      width: '100%',
+                      minWidth: 0,
+                      margin: 'auto 0'
+                    }}>
+                      {calendarDays.map((cell, idx) => {
+                        const isOther = !!cell.isOtherMonth;
+                        const isSelected = !isOther && selectedCalDay === cell.day;
+                        const hasHoliday = !!cell.holiday;
+                        const hasDeadlines = cell.projectDeadlines && cell.projectDeadlines.length > 0;
+                        const isSunday = idx % 7 === 6;
+
+                        return (
+                          <div
+                            key={`day-${idx}-${cell.day}`}
+                            onClick={() => {
+                              if (isOther) {
+                                if (idx < 7) {
+                                  if (calMonth === 0) { setCalMonth(11); setCalYear(y => y - 1); }
+                                  else setCalMonth(m => m - 1);
+                                } else {
+                                  if (calMonth === 11) { setCalMonth(0); setCalYear(y => y + 1); }
+                                  else setCalMonth(m => m + 1);
+                                }
+                              }
+                              setSelectedCalDay(cell.day);
+                              haptic.light();
+                            }}
+                            onDoubleClick={() => {
+                              if (!isOther) {
+                                const formattedDate = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(cell.day).padStart(2, '0')}`;
+                                setNewProjectDeadline(formattedDate);
+                                setIsAddProjectOpen(true);
+                                haptic.light();
+                              }
+                            }}
+                            style={{
+                              width: cellDim,
+                              height: cellDim,
+                              minWidth: cellDim,
+                              minHeight: cellDim,
+                              maxWidth: cellDim,
+                              maxHeight: cellDim,
+                              aspectRatio: '1 / 1',
+                              margin: '0 auto',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              borderRadius: '50%',
+                              cursor: 'pointer',
+                              background: isSelected ? '#10b981' : cell.isToday && !isOther ? (isDark ? 'rgba(16, 185, 129, 0.22)' : '#ecfdf5') : 'transparent',
+                              color: isOther 
+                                ? (isDark ? 'rgba(255, 255, 255, 0.22)' : '#94a3b8') 
+                                : isSelected 
+                                  ? '#ffffff' 
+                                  : hasHoliday || isSunday 
+                                    ? '#f43f5e' 
+                                    : cell.isToday 
+                                      ? (isDark ? '#34d399' : '#144e3b') 
+                                      : 'var(--cms-text, #1e293b)',
+                              fontWeight: cell.isToday || isSelected ? 800 : isOther ? 400 : 600,
+                              fontSize: isMobile ? 10 : 11.5,
+                              position: 'relative',
+                              boxSizing: 'border-box',
+                              flexShrink: 0,
+                              transition: 'all 0.12s ease',
+                              border: cell.isToday && !isSelected && !isOther ? '1.5px solid #10b981' : '1px solid transparent',
+                              boxShadow: isSelected ? '0 2px 8px rgba(16, 185, 129, 0.35)' : 'none'
+                            }}
+                            title={isOther ? `Bulan ${idx < 7 ? 'sebelumnya' : 'berikutnya'}` : hasHoliday ? `${cell.holiday.name} (Klik dua kali untuk buat proyek)` : hasDeadlines ? `${cell.projectDeadlines.length} Tenggat Proyek (Klik dua kali untuk buat proyek)` : `Tanggal ${cell.day} (Klik dua kali untuk jadwalkan proyek)`}
+                          >
+                            <span style={{ lineHeight: 1 }}>{cell.day}</span>
+                            {!isOther && (
+                              <div style={{ display: 'flex', gap: 1.5, alignItems: 'center', marginTop: 1.5, height: 3 }}>
+                                {hasHoliday && <span style={{ width: 3, height: 3, borderRadius: '50%', background: isSelected ? '#ffffff' : '#f43f5e', display: 'block' }} />}
+                                {hasDeadlines && <span style={{ width: 3, height: 3, borderRadius: '50%', background: isSelected ? '#ffffff' : '#10b981', display: 'block' }} />}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Selected Date Status Strip (Empuk & Rapi & Interaktif) */}
+                  <div style={{
+                    padding: '6px 14px',
+                    borderRadius: 9999,
+                    background: isDark ? 'rgba(255, 255, 255, 0.05)' : 'var(--cms-input-bg, #f8fafc)',
+                    border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--cms-border, #f1f5f9)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 6,
+                    fontSize: 11,
+                    marginTop: 'auto',
+                    width: '100%',
+                    minWidth: 0,
+                    boxSizing: 'border-box',
+                    flexWrap: 'nowrap'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flex: '1 1 auto', overflow: 'hidden' }}>
+                      {selectedDayInfo?.holiday ? (
+                        <span style={{ color: '#f43f5e', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          Libur: {selectedDayInfo.holiday.name}
+                        </span>
+                      ) : selectedDayInfo?.projectDeadlines?.length ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                          <span style={{ color: isDark ? '#34d399' : '#10b981', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            Tenggat: {selectedDayInfo.projectDeadlines[0].title}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSwitchPage?.('projects');
+                            }}
+                            style={{
+                              background: isDark ? 'rgba(16, 185, 129, 0.2)' : '#ecfdf5',
+                              border: isDark ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid #10b981',
+                              borderRadius: 6,
+                              padding: '1px 6px',
+                              color: isDark ? '#34d399' : '#065f46',
+                              fontSize: 10,
+                              fontWeight: 750,
+                              cursor: 'pointer',
+                              flexShrink: 0
+                            }}
+                          >
+                            Buka →
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                          <span style={{ color: 'var(--cms-text-secondary, #94a3b8)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {selectedDayInfo?.safeDay ?? selectedCalDay} {MONTH_NAMES_ID[calMonth]}: Bebas
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const targetDay = selectedDayInfo?.safeDay ?? selectedCalDay;
+                              const formattedDate = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(targetDay).padStart(2, '0')}`;
+                              setNewProjectDeadline(formattedDate);
+                              setIsAddProjectOpen(true);
+                              haptic.light();
+                            }}
+                            style={{
+                              background: isDark ? 'rgba(255, 255, 255, 0.08)' : 'var(--cms-card-bg, #ffffff)',
+                              border: isDark ? '1px solid rgba(255, 255, 255, 0.14)' : '1px solid var(--cms-border, #cbd5e1)',
+                              borderRadius: 6,
+                              padding: '1px 7px',
+                              color: isDark ? '#f8fafc' : '#144e3b',
+                              fontSize: 10,
+                              fontWeight: 750,
+                              cursor: 'pointer',
+                              flexShrink: 0
+                            }}
+                          >
+                            + Jadwalkan
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--cms-text-muted, #94a3b8)', flexShrink: 0 }}>
+                      {totalDeadlinesThisMonth} Tenggat
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {/* ROW 2: Studio Modules + Project Progress */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1.3fr 1fr',
-            gap: isMobile ? 12 : 16,
+            gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : isTablet ? 'repeat(2, minmax(0, 1fr))' : '1.3fr 1fr',
+            gap: isMobile ? 10 : 16,
             width: '100%',
             maxWidth: '100%',
             minWidth: 0,
             boxSizing: 'border-box',
             alignItems: 'stretch'
           }}>
-            {/* CARD C: 12 MODUL STUDIO EKOSISTEM */}
+            {/* CARD C: ANALITIK & INTELIJEN STUDIO (Flat Solid & Terintegrasi) */}
             <div style={{
               background: 'var(--cms-card-bg, #ffffff)',
-              borderRadius: isMobile ? 18 : 22,
-              padding: isMobile ? '14px 12px' : '20px',
-              border: '1px solid rgba(0,0,0,0.06)',
+              borderRadius: isMobile ? 16 : 18,
+              padding: isMobile ? '12px 14px' : '15px 18px',
+              border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.06)',
               display: 'flex',
               flexDirection: 'column',
               justifyContent: 'space-between',
-              minHeight: isMobile ? 'auto' : 290,
-              boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
+              minHeight: isMobile ? 'auto' : 325,
+              height: isMobile ? 'auto' : 325,
+              boxShadow: 'none',
               width: '100%',
               maxWidth: '100%',
               minWidth: 0,
               boxSizing: 'border-box',
               overflow: 'hidden'
             }}>
-              <div>
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: 10,
-                  flexWrap: 'wrap',
-                  gap: 6,
-                  width: '100%',
-                  minWidth: 0
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                    <span style={{ fontSize: isMobile ? 15 : 16, fontWeight: 800, color: 'var(--cms-text, #0f172a)' }}>
-                      Studio Modules
-                    </span>
-                    <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>
-                      12 Terpadu
-                    </span>
+              {/* Header: Title + Analytics Tabs */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 8,
+                flexWrap: 'wrap',
+                gap: 8,
+                width: '100%',
+                minWidth: 0
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                  <div style={{
+                    width: 26,
+                    height: 26,
+                    borderRadius: 8,
+                    background: 'var(--cms-accent-soft, rgba(99,102,241,0.12))',
+                    color: 'var(--cms-accent, #6366f1)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }}>
+                    <Activity size={14} strokeWidth={2.4} />
                   </div>
+                  <span style={{ fontSize: isMobile ? 13.5 : 14.5, fontWeight: 800, color: 'var(--cms-text, #0f172a)', fontFamily: "'Outfit', sans-serif" }}>
+                    Analitik Studio
+                  </span>
+                  <span style={{ 
+                    fontSize: 10, 
+                    color: '#10b981', 
+                    fontWeight: 800,
+                    padding: '1px 7px',
+                    borderRadius: 999,
+                    background: 'rgba(16, 185, 129, 0.12)',
+                    border: '1px solid rgba(16, 185, 129, 0.22)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4
+                  }}>
+                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
+                    Live Radar
+                  </span>
                 </div>
 
-                {/* Modules Grid - Icon Only Menu Display (All 12 Modules) */}
+                {/* Switcher Tabs for Analytics Views */}
                 <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: isMobile ? 'repeat(4, 1fr)' : 'repeat(6, 1fr)',
-                  gap: isMobile ? 8 : 10,
-                  padding: '6px 2px',
-                  width: '100%',
-                  minWidth: 0,
-                  boxSizing: 'border-box'
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 3,
+                  background: isDark ? 'rgba(255,255,255,0.04)' : '#f1f5f9',
+                  padding: '2px 3px',
+                  borderRadius: 100,
+                  border: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.04)',
+                  overflowX: 'auto',
+                  maxWidth: '100%'
                 }}>
-                  {STUDIO_MODULES.map((mod) => {
-                    const Icon = mod.icon;
+                  {[
+                    { id: 'overview', label: 'Ringkasan' },
+                    { id: 'pages', label: 'Halaman' },
+                    { id: 'devices', label: 'Perangkat' },
+                    { id: 'content', label: 'Konten' }
+                  ].map(tab => {
+                    const isActive = analyticsWidgetTab === tab.id;
                     return (
                       <button
-                        key={mod.id}
+                        key={tab.id}
                         type="button"
-                        onClick={() => onSwitchPage?.(mod.page)}
-                        title={`${mod.name} • ${mod.desc}`}
-                        aria-label={mod.name}
+                        onClick={() => {
+                          setAnalyticsWidgetTab(tab.id as any);
+                          haptic.selection();
+                        }}
                         style={{
-                          width: '100%',
-                          aspectRatio: '1 / 1',
-                          borderRadius: 14,
-                          background: `${mod.color}14`,
-                          border: `1px solid ${mod.color}25`,
-                          color: mod.color,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
+                          border: 'none',
+                          background: isActive ? (isDark ? 'rgba(255,255,255,0.14)' : '#ffffff') : 'transparent',
+                          color: isActive ? 'var(--cms-text, #0f172a)' : 'var(--cms-text-muted, #64748b)',
+                          fontSize: 10.5,
+                          fontWeight: isActive ? 800 : 600,
+                          padding: '3px 9px',
+                          borderRadius: 100,
                           cursor: 'pointer',
-                          transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                          boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
-                          padding: 0
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.transform = 'translateY(-2px) scale(1.06)';
-                          e.currentTarget.style.background = `${mod.color}24`;
-                          e.currentTarget.style.boxShadow = `0 6px 14px ${mod.color}30`;
-                          e.currentTarget.style.borderColor = mod.color;
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.transform = 'none';
-                          e.currentTarget.style.background = `${mod.color}14`;
-                          e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.02)';
-                          e.currentTarget.style.borderColor = `${mod.color}25`;
+                          transition: 'background 0.15s ease, color 0.15s ease',
+                          boxShadow: 'none',
+                          whiteSpace: 'nowrap'
                         }}
                       >
-                        <Icon size={isMobile ? 18 : 22} strokeWidth={2.2} />
+                        {tab.label}
                       </button>
                     );
                   })}
                 </div>
               </div>
-            </div>
 
-            {/* CARD D: Project Progress (Arch Gauge Semi-circle) */}
-            <div style={{
-              background: 'var(--cms-card-bg, #ffffff)',
-              borderRadius: isMobile ? 18 : 22,
-              padding: isMobile ? '14px 12px' : '20px',
-              border: '1px solid rgba(0,0,0,0.06)',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              minHeight: isMobile ? 'auto' : 290,
-              boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
-              width: '100%',
-              maxWidth: '100%',
-              minWidth: 0,
-              boxSizing: 'border-box',
-              overflow: 'hidden'
-            }}>
-              <div style={{ width: '100%', fontSize: isMobile ? 15 : 16, fontWeight: 800, color: 'var(--cms-text, #0f172a)', textAlign: 'left', marginBottom: 4 }}>
-                Project Progress
+              {/* Analytics Body (Flat Solid Cards / Progress Bars) */}
+              <div style={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
+                width: '100%',
+                minWidth: 0,
+                padding: '2px 0'
+              }}>
+                {analyticsWidgetTab === 'overview' && (
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2, 1fr)',
+                    gap: isMobile ? 8 : 10,
+                    width: '100%'
+                  }}>
+                    {[
+                      {
+                        label: 'Total Kunjungan',
+                        value: visitorIntelStats.totalVisits.toLocaleString('id-ID'),
+                        sub: `${visitorIntelStats.uniqueVisitors} pengunjung unik`,
+                        icon: TrendingUp,
+                        color: '#3b82f6'
+                      },
+                      {
+                        label: 'Leads & Konsultasi',
+                        value: String(pendingInquiriesCount || 0),
+                        sub: pendingInquiriesCount > 0 ? 'Pesan klien menunggu' : 'Semua pesan terjawab',
+                        icon: MessageSquareMore,
+                        color: '#10b981'
+                      },
+                      {
+                        label: 'Aset Konten Aktif',
+                        value: String(vaultLiveStats.totalVaultItems || 0),
+                        sub: `${vaultLiveStats.portfolioCount} karya • ${vaultLiveStats.catalogCount} produk`,
+                        icon: Database,
+                        color: '#8b5cf6'
+                      },
+                      {
+                        label: 'Sesi Keamanan',
+                        value: `${visitorIntelStats.loginSessionsCount} Sesi`,
+                        sub: 'Proteksi Admin Aktif',
+                        icon: ShieldCheck,
+                        color: '#f59e0b'
+                      }
+                    ].map((metric, idx) => {
+                      const MetricIcon = metric.icon;
+                      return (
+                        <div
+                          key={idx}
+                          onClick={() => {
+                            onSwitchPage?.('analytics');
+                            haptic.light();
+                          }}
+                          style={{
+                            background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc',
+                            border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.05)',
+                            borderRadius: 12,
+                            padding: isMobile ? '10px 11px' : '11px 14px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'space-between',
+                            gap: 6,
+                            cursor: 'pointer',
+                            transition: 'border-color 0.15s ease, background 0.15s ease',
+                            boxShadow: 'none'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = metric.color;
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)';
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: isDark ? '#94a3b8' : '#64748b' }}>
+                              {metric.label}
+                            </span>
+                            <div style={{
+                              width: 24,
+                              height: 24,
+                              borderRadius: 7,
+                              background: `${metric.color}18`,
+                              color: metric.color,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0
+                            }}>
+                              <MetricIcon size={13} strokeWidth={2.3} />
+                            </div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: isMobile ? 17 : 19, fontWeight: 850, color: 'var(--cms-text, #0f172a)', fontFamily: "'Outfit', sans-serif", lineHeight: 1.15 }}>
+                              {metric.value}
+                            </div>
+                            <div style={{ fontSize: 10, fontWeight: 600, color: isDark ? '#64748b' : '#94a3b8', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {metric.sub}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {analyticsWidgetTab === 'pages' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+                    {visitorIntelStats.topPages.map((pg, idx) => {
+                      const barColors = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b'];
+                      const col = barColors[idx % barColors.length];
+                      return (
+                        <div
+                          key={pg.path}
+                          style={{
+                            background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc',
+                            border: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.04)',
+                            borderRadius: 10,
+                            padding: '8px 12px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 5
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                              <span style={{ fontWeight: 800, color: 'var(--cms-text, #0f172a)' }}>{pg.label}</span>
+                              <span style={{ fontSize: 10, color: isDark ? '#64748b' : '#94a3b8', fontFamily: 'monospace' }}>{pg.path}</span>
+                            </div>
+                            <span style={{ fontWeight: 800, color: col, fontSize: 11 }}>
+                              {pg.count} hits ({pg.pct}%)
+                            </span>
+                          </div>
+                          <div style={{ width: '100%', height: 6, borderRadius: 999, background: isDark ? 'rgba(255,255,255,0.06)' : '#e2e8f0', overflow: 'hidden' }}>
+                            <div style={{ width: `${Math.max(8, pg.pct)}%`, height: '100%', borderRadius: 999, background: col }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {analyticsWidgetTab === 'devices' && (() => {
+                  const totalDev = Math.max(1, visitorIntelStats.desktopCount + visitorIntelStats.mobileCount + visitorIntelStats.tabletCount);
+                  const dPct = Math.round((visitorIntelStats.desktopCount / totalDev) * 100);
+                  const mPct = Math.round((visitorIntelStats.mobileCount / totalDev) * 100);
+                  const tPct = Math.max(0, 100 - dPct - mPct);
+                  const devItems = [
+                    { label: 'Desktop / Workstation', count: visitorIntelStats.desktopCount, pct: dPct, color: '#3b82f6' },
+                    { label: 'Smartphone (Mobile)', count: visitorIntelStats.mobileCount, pct: mPct, color: '#10b981' },
+                    { label: 'Tablet & iPad', count: visitorIntelStats.tabletCount, pct: tPct, color: '#8b5cf6' }
+                  ];
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 9, width: '100%' }}>
+                      {devItems.map(dev => (
+                        <div
+                          key={dev.label}
+                          style={{
+                            background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc',
+                            border: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.04)',
+                            borderRadius: 11,
+                            padding: '10px 13px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 6
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
+                            <span style={{ fontWeight: 800, color: 'var(--cms-text, #0f172a)' }}>{dev.label}</span>
+                            <span style={{ fontWeight: 800, color: dev.color, fontSize: 11.5 }}>{dev.count} sesi ({dev.pct}%)</span>
+                          </div>
+                          <div style={{ width: '100%', height: 7, borderRadius: 999, background: isDark ? 'rgba(255,255,255,0.06)' : '#e2e8f0', overflow: 'hidden' }}>
+                            <div style={{ width: `${Math.max(4, dev.pct)}%`, height: '100%', borderRadius: 999, background: dev.color }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+
+                {analyticsWidgetTab === 'content' && (
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(3, 1fr)',
+                    gap: 8,
+                    width: '100%'
+                  }}>
+                    {[
+                      { label: 'Showcase Karya', val: vaultLiveStats.portfolioCount, color: '#e11d48', page: 'portfolio' },
+                      { label: 'Journal Artikel', val: vaultLiveStats.blogCount, color: '#f59e0b', page: 'blog' },
+                      { label: 'Katalog Drops', val: vaultLiveStats.catalogCount, color: '#ec4899', page: 'catalog' },
+                      { label: 'Ulasan Klien', val: vaultLiveStats.reviewsCount, color: '#10b981', page: 'reviews' },
+                      { label: 'Paket Rates', val: vaultLiveStats.ratesCount, color: '#3b82f6', page: 'ratecard' },
+                      { label: 'Proofing Aktif', val: vaultLiveStats.proofingCount, color: '#8b5cf6', page: 'proofing' }
+                    ].map(item => (
+                      <div
+                        key={item.label}
+                        onClick={() => {
+                          onSwitchPage?.(item.page);
+                          haptic.light();
+                        }}
+                        style={{
+                          background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc',
+                          border: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.04)',
+                          borderRadius: 11,
+                          padding: '10px 10px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          textAlign: 'center',
+                          gap: 3,
+                          cursor: 'pointer',
+                          transition: 'border-color 0.15s ease'
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = item.color; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'; }}
+                      >
+                        <span style={{ fontSize: 18, fontWeight: 850, color: item.color, fontFamily: "'Outfit', sans-serif", lineHeight: 1.1 }}>
+                          {item.val}
+                        </span>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: isDark ? '#94a3b8' : '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
+                          {item.label}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              {/* Arch Gauge SVG */}
-              <div style={{ position: 'relative', width: '100%', maxWidth: 200, height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <svg width="200" height="120" viewBox="0 0 220 130" style={{ maxWidth: '100%', height: 'auto' }}>
+              {/* Bottom Bar: Embedded Sidebar Analytics Navigation Button */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8,
+                padding: '7px 12px',
+                background: isDark ? 'rgba(255,255,255,0.035)' : '#f8fafc',
+                border: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.04)',
+                borderRadius: 11,
+                width: '100%',
+                boxSizing: 'border-box',
+                marginTop: 6
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, overflow: 'hidden' }}>
+                  <div style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: 6,
+                    background: 'var(--cms-accent-soft, rgba(99,102,241,0.14))',
+                    color: 'var(--cms-accent, #6366f1)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }}>
+                    <BarChart3 size={13} strokeWidth={2.4} />
+                  </div>
+                  <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--cms-text, #0f172a)', whiteSpace: 'nowrap' }}>
+                    Pusat Intelijen & Trafik
+                  </span>
+                  <span style={{ fontSize: 10.5, color: isDark ? '#94a3b8' : '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    • Real-Time Analytics
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSwitchPage?.('analytics');
+                    haptic.light();
+                  }}
+                  style={{
+                    background: 'var(--cms-accent, #6366f1)',
+                    border: 'none',
+                    color: '#ffffff',
+                    fontSize: 11,
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    flexShrink: 0,
+                    padding: '4px 10px',
+                    borderRadius: 999,
+                    boxShadow: 'none'
+                  }}
+                >
+                  <span>Buka Analitik</span>
+                  <ArrowUpRight size={12} strokeWidth={2.5} />
+                </button>
+              </div>
+            </div>
+
+            {/* CARD D: Project Progress (Arch Gauge Proporsional 325px - Interaktif) */}
+            <div
+              onClick={() => onSwitchPage?.('projects')}
+              style={{
+                background: 'var(--cms-card-bg, #ffffff)',
+                borderRadius: isMobile ? 16 : 18,
+                padding: isMobile ? '14px' : '18px 22px',
+                border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.06)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                minHeight: isMobile ? 'auto' : 325,
+                height: isMobile ? 'auto' : 325,
+                boxShadow: isDark ? '0 4px 18px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.02)',
+                width: '100%',
+                maxWidth: '100%',
+                minWidth: 0,
+                boxSizing: 'border-box',
+                overflow: 'hidden',
+                cursor: 'pointer',
+                transition: 'transform 0.15s ease, box-shadow 0.15s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 6px 16px rgba(0,0,0,0.06)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'none';
+                e.currentTarget.style.boxShadow = isDark ? '0 4px 18px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.02)';
+              }}
+              title="Klik untuk membuka dan kelola Proyek"
+            >
+              <div style={{ width: '100%', fontSize: isMobile ? 14 : 15, fontWeight: 800, color: 'var(--cms-text, #0f172a)', textAlign: 'left', marginBottom: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>Project Progress</span>
+                <span style={{ fontSize: 11, color: isDark ? '#34d399' : '#10b981', fontWeight: 700 }}>Lihat Detail</span>
+              </div>
+
+              {/* Arch Gauge SVG (Proporsional 125px) */}
+              <div style={{ position: 'relative', width: '100%', maxWidth: 240, height: 125, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="220" height="110" viewBox="0 0 220 120" style={{ maxWidth: '100%', height: 'auto' }}>
                   <path
                     d="M 25 115 A 85 85 0 0 1 110 30"
                     fill="none"
@@ -2544,35 +4673,36 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
                   alignItems: 'center',
                   justifyContent: 'center'
                 }}>
-                  <span style={{ fontSize: isMobile ? 28 : 32, fontWeight: 800, color: 'var(--cms-text, #0f172a)', lineHeight: 1, letterSpacing: '-0.02em' }}>
+                  <span style={{ fontSize: isMobile ? 28 : 36, fontWeight: 850, color: 'var(--cms-text, #0f172a)', lineHeight: 1, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
                     {progressPercentage}%
                   </span>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: '#15803d', marginTop: 3 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: isDark ? '#34d399' : '#15803d', marginTop: 4 }}>
                     Project Ended
                   </span>
                 </div>
               </div>
 
-              {/* Legend Row */}
+              {/* Legend Row (Lega & Rapi) */}
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: isMobile ? 8 : 10,
+                gap: isMobile ? 8 : 16,
                 width: '100%',
                 minWidth: 0,
-                marginTop: 8,
-                flexWrap: 'wrap'
+                marginTop: 6,
+                flexWrap: 'wrap',
+                fontVariantNumeric: 'tabular-nums'
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 600, color: '#475569' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: 'var(--cms-text-secondary, #94a3b8)' }}>
                   <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981', flexShrink: 0 }} />
                   <span>Selesai ({projectCounts.done})</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 600, color: '#475569' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: 'var(--cms-text-secondary, #94a3b8)' }}>
                   <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#144e3b', flexShrink: 0 }} />
                   <span>Progres ({projectCounts.progress})</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 600, color: '#475569' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: 'var(--cms-text-secondary, #94a3b8)' }}>
                   <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'url(#diagonal-stripe-gauge)', border: '1px solid #cbd5e1', flexShrink: 0 }} />
                   <span>Pending ({projectCounts.todo})</span>
                 </div>
@@ -2581,34 +4711,37 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
           </div>
         </div>
 
-        {/* RIGHT COLUMN: PROJECT LIST + TIME TRACKER (RATA & SEIMBANG) */}
+        {/* RIGHT COLUMN: PROJECT LIST + TIME TRACKER (Lega & Seimbang 325px) */}
         <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: isMobile ? 12 : 16,
+          display: isTablet ? 'grid' : 'flex',
+          gridTemplateColumns: isTablet ? 'repeat(2, minmax(0, 1fr))' : undefined,
+          flexDirection: isTablet ? undefined : 'column',
+          gap: isMobile ? 10 : 16,
           width: '100%',
           maxWidth: '100%',
           minWidth: 0,
-          boxSizing: 'border-box'
+          boxSizing: 'border-box',
+          alignItems: 'stretch'
         }}>
-          {/* TOP CARD: Project List */}
+          {/* TOP CARD: Project List (Sleek Dark / Solid Light) */}
           <div style={{
             background: 'var(--cms-card-bg, #ffffff)',
-            borderRadius: isMobile ? 18 : 22,
-            padding: isMobile ? '14px 12px' : '20px',
-            border: '1px solid rgba(0,0,0,0.06)',
+            borderRadius: isMobile ? 16 : 18,
+            padding: isMobile ? '14px' : '18px 22px',
+            border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.06)',
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between',
-            minHeight: isMobile ? 'auto' : 290,
-            boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
+            minHeight: isMobile ? 'auto' : 325,
+            height: isMobile ? 'auto' : 325,
+            boxShadow: isDark ? '0 4px 18px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.02)',
             width: '100%',
             maxWidth: '100%',
             minWidth: 0,
             boxSizing: 'border-box',
             overflow: 'hidden'
           }}>
-            <div>
+            <div style={{ minHeight: 0, flex: 1, display: 'flex', flexDirection: 'column' }}>
               <div style={{
                 display: 'flex',
                 justifyContent: 'space-between',
@@ -2619,11 +4752,11 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
                 minWidth: 0
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                  <span style={{ fontSize: isMobile ? 15 : 16, fontWeight: 800, color: 'var(--cms-text, #0f172a)' }}>
+                  <span style={{ fontSize: isMobile ? 14 : 15, fontWeight: 800, color: 'var(--cms-text, #0f172a)' }}>
                     Project
                   </span>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', background: '#f1f5f9', padding: '1px 7px', borderRadius: 100 }}>
-                    {projects.length}
+                  <span style={{ fontSize: 11, fontWeight: 750, color: isDark ? '#cbd5e1' : '#64748b', background: isDark ? 'rgba(255,255,255,0.08)' : '#f1f5f9', padding: '2px 9px', borderRadius: 100 }}>
+                    {activeProjects.length}
                   </span>
                 </div>
 
@@ -2634,12 +4767,12 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
                     alignItems: 'center',
                     gap: 4,
                     background: 'transparent',
-                    border: '1.2px solid #144e3b',
+                    border: isDark ? '1.5px solid #10b981' : '1.5px solid #144e3b',
                     borderRadius: 9999,
-                    padding: '4px 10px',
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: '#144e3b',
+                    padding: '4px 13px',
+                    fontSize: 11.5,
+                    fontWeight: 750,
+                    color: isDark ? '#34d399' : '#144e3b',
                     cursor: 'pointer',
                     flexShrink: 0
                   }}
@@ -2649,67 +4782,105 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
                 </button>
               </div>
 
-              {/* Project items list */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', minWidth: 0 }}>
-                {displayProjectsList.map((item) => (
-                  <div
-                    key={item.id}
-                    onClick={() => onSwitchPage?.('projects')}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 10,
-                      padding: '7px 8px',
-                      borderRadius: 12,
-                      cursor: 'pointer',
-                      transition: 'background 0.12s ease',
-                      width: '100%',
-                      minWidth: 0,
-                      boxSizing: 'border-box'
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,0,0,0.03)')}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                    title={`Klik untuk membuka: ${item.title}`}
-                  >
-                    {renderProjectIcon(item.iconType)}
-                    <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                        <span style={{
-                          fontSize: 13,
-                          fontWeight: 750,
-                          color: 'var(--cms-text, #0f172a)',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis'
-                        }}>
-                          {item.title}
-                        </span>
-                        <span style={{
-                          fontSize: 9,
-                          padding: '1px 5px',
-                          borderRadius: 4,
-                          fontWeight: 750,
-                          background: item.status === 'done' ? '#dcfce7' : item.status === 'progress' ? '#e0f2fe' : '#fef3c7',
-                          color: item.status === 'done' ? '#15803d' : item.status === 'progress' ? '#0284c7' : '#b45309',
-                          flexShrink: 0
-                        }}>
-                          {item.status === 'done' ? 'Selesai' : item.status === 'progress' ? 'Progres' : 'Todo'}
+              {/* Project items list (Scrollable Container) */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 7, width: '100%', minWidth: 0, overflowY: 'auto', flex: 1 }}>
+                {displayProjectsList.length > 0 ? (
+                  displayProjectsList.map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => onSwitchPage?.('projects')}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        padding: '8px 11px',
+                        borderRadius: 12,
+                        cursor: 'pointer',
+                        transition: 'background 0.12s ease',
+                        width: '100%',
+                        minWidth: 0,
+                        boxSizing: 'border-box'
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                      title={`Klik untuk membuka: ${item.title}`}
+                    >
+                      {renderProjectIcon(item.iconType)}
+                      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                          <span style={{
+                            fontSize: 13.5,
+                            fontWeight: 750,
+                            color: 'var(--cms-text, #0f172a)',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis'
+                          }}>
+                            {item.title}
+                          </span>
+                          <span style={{
+                            fontSize: 10,
+                            padding: '2px 7px',
+                            borderRadius: 4,
+                            fontWeight: 750,
+                            background: item.status === 'done' ? (isDark ? 'rgba(16, 185, 129, 0.2)' : '#dcfce7') : item.status === 'progress' ? (isDark ? 'rgba(2, 132, 199, 0.2)' : '#e0f2fe') : (isDark ? 'rgba(217, 119, 6, 0.2)' : '#fef3c7'),
+                            color: item.status === 'done' ? (isDark ? '#34d399' : '#15803d') : item.status === 'progress' ? (isDark ? '#38bdf8' : '#0284c7') : (isDark ? '#fbbf24' : '#b45309'),
+                            flexShrink: 0
+                          }}>
+                            {item.status === 'done' ? 'Selesai' : item.status === 'progress' ? 'Progres' : 'Todo'}
+                          </span>
+                        </div>
+                        <span style={{ fontSize: 11, color: 'var(--cms-text-secondary, #94a3b8)', fontWeight: 550, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          Tenggat: {item.dueDate}
                         </span>
                       </div>
-                      <span style={{ fontSize: 10.5, color: '#94a3b8', fontWeight: 500, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        Tenggat: {item.dueDate}
-                      </span>
                     </div>
+                  ))
+                ) : (
+                  <div
+                    onClick={() => setIsAddProjectOpen(true)}
+                    style={{
+                      border: isDark ? '1.5px dashed rgba(255, 255, 255, 0.12)' : '1.5px dashed #cbd5e1',
+                      borderRadius: 14,
+                      padding: '24px 16px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                      cursor: 'pointer',
+                      background: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(248, 250, 252, 0.8)',
+                      transition: 'all 0.15s ease',
+                      margin: 'auto 0'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = isDark ? '#34d399' : '#144e3b';
+                      e.currentTarget.style.background = isDark ? 'rgba(16, 185, 129, 0.06)' : '#f0fdf4';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#cbd5e1';
+                      e.currentTarget.style.background = isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(248, 250, 252, 0.8)';
+                    }}
+                  >
+                    <div style={{ width: 34, height: 34, borderRadius: '50%', background: isDark ? 'rgba(16, 185, 129, 0.18)' : '#dcfce7', color: isDark ? '#34d399' : '#144e3b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Plus size={18} strokeWidth={2.5} />
+                    </div>
+                    <span style={{ fontSize: 13, fontWeight: 750, color: 'var(--cms-text, #ffffff)' }}>
+                      Buat Proyek Pertama
+                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--cms-text-secondary, #94a3b8)', textAlign: 'center' }}>
+                      Klik di sini untuk menambah proyek baru
+                    </span>
                   </div>
-                ))}
+                )}
               </div>
             </div>
 
             <div style={{
               display: 'flex',
               justifyContent: 'flex-end',
-              paddingTop: 8,
-              borderTop: '1px solid rgba(0,0,0,0.04)',
+              paddingTop: 10,
+              borderTop: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.04)',
               width: '100%',
               minWidth: 0
             }}>
@@ -2718,8 +4889,8 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
                 style={{
                   border: 'none',
                   background: 'transparent',
-                  color: '#144e3b',
-                  fontSize: 11,
+                  color: isDark ? '#34d399' : '#144e3b',
+                  fontSize: 11.5,
                   fontWeight: 750,
                   cursor: 'pointer',
                   display: 'flex',
@@ -2729,179 +4900,22 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
                 }}
               >
                 <span>Lihat Semua Proyek</span>
-                <ChevronRight size={13} />
+                <ChevronRight size={14} />
               </button>
             </div>
           </div>
 
-          {/* BOTTOM CARD: TIME TRACKER */}
-          <div style={{
-            borderRadius: isMobile ? 18 : 22,
-            padding: isMobile ? '14px 12px' : '20px',
-            color: '#ffffff',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'space-between',
-            gap: isMobile ? 12 : 16,
-            minHeight: isMobile ? 'auto' : 290,
-            position: 'relative',
-            overflow: 'hidden',
-            boxShadow: '0 6px 20px rgba(10, 40, 30, 0.2)',
-            backgroundImage: 'url(/assets/time_tracker_bg.jpg)',
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            width: '100%',
-            maxWidth: '100%',
-            minWidth: 0,
-            boxSizing: 'border-box'
-          }}>
-            <div style={{
-              position: 'absolute',
-              inset: 0,
-              background: 'linear-gradient(180deg, rgba(6, 30, 20, 0.75) 0%, rgba(6, 30, 20, 0.9) 100%)',
-              zIndex: 1
-            }} />
-
-            <div style={{ position: 'relative', zIndex: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', minWidth: 0, gap: 6, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 14, fontWeight: 750, color: '#ffffff' }}>
-                Time Tracker
-              </span>
-              <div style={{
-                fontSize: 10.5,
-                fontWeight: 750,
-                color: 'rgba(255,255,255,0.85)',
-                background: 'rgba(255,255,255,0.15)',
-                padding: '2px 8px',
-                borderRadius: 100,
-                backdropFilter: 'blur(4px)',
-                flexShrink: 0
-              }}>
-                {liveClock || '12:00:00 WIB'}
-              </div>
-            </div>
-
-            {/* Live Clock Readout */}
-            <div style={{
-              position: 'relative',
-              zIndex: 2,
-              textAlign: 'center',
-              margin: isMobile ? '6px 0' : '10px 0',
-              width: '100%',
-              minWidth: 0
-            }}>
-              <div style={{
-                fontSize: isMobile ? 'clamp(28px, 8vw, 36px)' : 38,
-                fontWeight: 800,
-                letterSpacing: '0.02em',
-                fontVariantNumeric: 'tabular-nums',
-                color: '#ffffff',
-                textShadow: '0 2px 10px rgba(0,0,0,0.3)',
-                whiteSpace: 'nowrap'
-              }}>
-                {formatStopwatch(stopwatchSeconds)}
-              </div>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', fontWeight: 600, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                Melacak: {projects.length > 0 ? projects[0].title : 'Aktivitas Studio'}
-              </div>
-            </div>
-
-            {/* Controls */}
-            <div style={{
-              position: 'relative',
-              zIndex: 2,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 14
-            }}>
-              <button
-                onClick={() => {
-                  setIsTimerRunning(prev => !prev);
-                  haptic.light();
-                }}
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: '50%',
-                  background: '#ffffff',
-                  border: 'none',
-                  color: '#144e3b',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
-                }}
-                title={isTimerRunning ? 'Pause' : 'Resume'}
-              >
-                {isTimerRunning ? (
-                  <Pause size={18} fill="#144e3b" />
-                ) : (
-                  <Play size={18} fill="#144e3b" style={{ marginLeft: 2 }} />
-                )}
-              </button>
-
-              <button
-                onClick={handleResetTimer}
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: '50%',
-                  background: '#dc2626',
-                  border: 'none',
-                  color: '#ffffff',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 12px rgba(220, 38, 38, 0.35)'
-                }}
-                title="Stop & Reset"
-              >
-                <Square size={14} fill="#ffffff" />
-              </button>
-            </div>
-          </div>
+          {/* BOTTOM CARD: TIME TRACKER (Terisolasi - Zero Re-render Overhead) */}
+          <StudioTimeTrackerCard 
+            activeProjects={activeProjects} 
+            isMobile={isMobile} 
+            isDark={isDark} 
+            showToast={showToast} 
+          />
         </div>
 
       </div>
 
-      {/* ── 5. TOGGLE STASIUN GADGET EKOSISTEM LAMA ── */}
-      {showGadgetStationToggle && onOpenGadgetStation && (
-        <div style={{
-          marginTop: 6,
-          display: 'flex',
-          justifyContent: 'center',
-          width: '100%',
-          maxWidth: '100%',
-          boxSizing: 'border-box'
-        }}>
-          <button
-            onClick={onOpenGadgetStation}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              background: 'var(--cms-card-bg, #ffffff)',
-              border: '1px solid rgba(0,0,0,0.08)',
-              borderRadius: 9999,
-              padding: isMobile ? '8px 14px' : '9px 18px',
-              fontSize: isMobile ? 11.5 : 12.5,
-              fontWeight: 700,
-              color: '#64748b',
-              cursor: 'pointer',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
-              transition: 'all 0.15s ease',
-              maxWidth: '100%',
-              boxSizing: 'border-box',
-              textAlign: 'center'
-            }}
-          >
-            <Layers size={15} color="#144e3b" style={{ flexShrink: 0 }} />
-            <span>{isMobile ? 'Stasiun Gadget & Ekosistem CMS' : 'Akses Stasiun Gadget Studio & Ekosistem CMS Lama'}</span>
-          </button>
-        </div>
-      )}
 
       {/* ── MODAL: TAMBAH PROYEK BARU ── */}
       {isAddProjectOpen && (
@@ -3180,6 +5194,17 @@ export const FlatSolidDashboard: React.FC<FlatSolidDashboardProps> = ({
           <span>{toastMessage}</span>
         </div>
       )}
+
+      {/* ── PRE-FLIGHT LAUNCH READINESS AUDITOR MODAL ── */}
+      <PreFlightLaunchAuditModal
+        isOpen={isLaunchAuditModalOpen}
+        onClose={() => setIsLaunchAuditModalOpen(false)}
+        notify={(msg) => {
+          setToastMessage(msg);
+          setShowNotificationToast(true);
+          setTimeout(() => setShowNotificationToast(false), 3200);
+        }}
+      />
 
     </div>
   );

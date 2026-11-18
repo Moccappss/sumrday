@@ -77,12 +77,83 @@ export function hexToRgbString(hex: string): string {
   return `${r}, ${g}, ${b}`;
 }
 
+import { getSolarAtmosphere } from './solarCircadianEngine';
+
 export interface AnalogousPalette {
   primary: string;       // Base H
   analogousCool: string; // H - 35° (Cool neighbor)
   analogousWarm: string; // H + 35° (Warm neighbor)
   analogousDeep: string; // H - 20° (Deep richer tone)
   analogousPop: string;  // H + 55° (Vibrant contrast accent)
+}
+
+export interface CuratedPalette {
+  id: string;
+  name: string;
+  hex: string;
+  desc: string;
+  tag: string;
+}
+
+export const CURATED_STUDIO_PALETTES: CuratedPalette[] = [
+  { id: 'terracotta', name: 'Terracotta Ember', hex: '#D95629', desc: 'Signature sumr.day — Hangat & Kreatif', tag: 'Signature' },
+  { id: 'solar', name: 'Solar Sunrise', hex: '#F59E0B', desc: 'Energi Fajar & Semangat Produktif', tag: 'Pagi' },
+  { id: 'emerald', name: 'Zen Emerald', hex: '#10B981', desc: 'Keseimbangan, Keuangan & Pertumbuhan', tag: 'Growth' },
+  { id: 'azure', name: 'Pacific Azure', hex: '#0EA5E9', desc: 'Modern Tech, Jernih & Profesional', tag: 'Modern' },
+  { id: 'indigo', name: 'Cosmic Indigo', hex: '#6366F1', desc: 'Fokus Mendalam & Elegan', tag: 'Studio' },
+  { id: 'violet', name: 'Velvet Violet', hex: '#8B5CF6', desc: 'Mewah, Artistik & Eksklusif', tag: 'Luxury' },
+  { id: 'rose', name: 'Cyber Rose', hex: '#EC4899', desc: 'Berani, Ceria & Berenergi Pop', tag: 'Vibrant' },
+  { id: 'lime', name: 'Electric Lime', hex: '#84CC16', desc: 'Segar, Unik & Cepat Tanggap', tag: 'Fresh' }
+];
+
+/**
+ * Calculates WCAG 2.1 Relative Luminance for a given HEX color
+ */
+export function getRelativeLuminance(hex: string): number {
+  let clean = hex.replace('#', '');
+  if (clean.length === 3) clean = clean.split('').map(c => c + c).join('');
+  const r = parseInt(clean.substring(0, 2), 16) / 255;
+  const g = parseInt(clean.substring(2, 4), 16) / 255;
+  const b = parseInt(clean.substring(4, 6), 16) / 255;
+
+  const sRGB = [r, g, b].map(v => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)));
+  return 0.2126 * sRGB[0] + 0.7152 * sRGB[1] + 0.0722 * sRGB[2];
+}
+
+/**
+ * Calculates WCAG 2.1 Contrast Ratio between two HEX colors (e.g., 4.5:1, 7:1)
+ */
+export function getWcagContrast(hex1: string, hex2: string): number {
+  try {
+    const l1 = getRelativeLuminance(hex1);
+    const l2 = getRelativeLuminance(hex2);
+    const lighter = Math.max(l1, l2);
+    const darker = Math.min(l1, l2);
+    return Number(((lighter + 0.05) / (darker + 0.05)).toFixed(1));
+  } catch {
+    return 4.5;
+  }
+}
+
+/**
+ * Returns human-readable readability rating and badge styles based on WCAG contrast
+ */
+export function getContrastRating(ratio: number): {
+  grade: 'AAA' | 'AA' | 'AA Large' | 'Rendah';
+  label: string;
+  badgeBg: string;
+  textColor: string;
+} {
+  if (ratio >= 7.0) {
+    return { grade: 'AAA', label: 'Kontras Sangat Nyaman (AAA)', badgeBg: 'rgba(16, 185, 129, 0.15)', textColor: '#10b981' };
+  }
+  if (ratio >= 4.5) {
+    return { grade: 'AA', label: 'Kontras Standar Tinggi (AA)', badgeBg: 'rgba(16, 185, 129, 0.12)', textColor: '#10b981' };
+  }
+  if (ratio >= 3.0) {
+    return { grade: 'AA Large', label: 'Cukup untuk Teks Besar', badgeBg: 'rgba(245, 158, 11, 0.15)', textColor: '#f59e0b' };
+  }
+  return { grade: 'Rendah', label: 'Kontras Rendah (Perlu Penyesuaian)', badgeBg: 'rgba(239, 68, 68, 0.15)', textColor: '#ef4444' };
 }
 
 /**
@@ -107,16 +178,16 @@ export const applyAccentColor = (accentColor?: string | null): string => {
   let raw = accentColor;
   if (!raw || typeof raw !== 'string') {
     try {
-      raw = localStorage.getItem('porto_accent_color') || '#64748b';
+      raw = localStorage.getItem('porto_accent_color') || '#D95629';
     } catch {
-      raw = '#64748b';
+      raw = '#D95629';
     }
   }
   let hex = (raw || '').trim();
 
   if (hex.startsWith('var')) {
     const match = hex.match(/#[0-9a-fA-F]{3,8}/);
-    hex = match ? match[0] : '#64748b';
+    hex = match ? match[0] : '#D95629';
   }
 
   if (!hex.startsWith('#') && /^[0-9a-fA-F]{3,8}$/.test(hex)) {
@@ -126,9 +197,9 @@ export const applyAccentColor = (accentColor?: string | null): string => {
   const isValidHex = /^#([0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/.test(hex);
   if (!isValidHex) {
     try {
-      hex = localStorage.getItem('porto_accent_color') || '#64748b';
+      hex = localStorage.getItem('porto_accent_color') || '#D95629';
     } catch {
-      hex = '#64748b';
+      hex = '#D95629';
     }
   }
 
@@ -223,4 +294,19 @@ export const applyAccentColor = (accentColor?: string | null): string => {
   return hex;
 };
 
+/**
+ * Activates the solar circadian theme color for the current time of day
+ */
+export function applyCircadianAccent(): { hex: string; phaseLabel: string; sunIcon: string } {
+  const atmo = getSolarAtmosphere();
+  const hex = atmo.suggestedAccentColor;
+  applyAccentColor(hex);
+  return {
+    hex,
+    phaseLabel: atmo.phaseLabel,
+    sunIcon: atmo.sunIcon
+  };
+}
+
 export default applyAccentColor;
+

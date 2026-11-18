@@ -12,7 +12,7 @@ export const ClientLoginPage: React.FC<{ initialMode?: 'login' | 'register' }> =
   const location = useLocation();
   const { data } = useLandingData();
   const { isDark } = useWebsiteTheme(data?.theme?.defaultMode);
-  const { client, login, register, isLoading } = useClientAuth();
+  const { client, login, loginWithGoogle, register, isLoading } = useClientAuth();
 
   const isRegisterRoute = location.pathname === '/register' || initialMode === 'register';
   const [mode, setMode] = useState<'login' | 'register'>(isRegisterRoute ? 'register' : 'login');
@@ -70,13 +70,11 @@ export const ClientLoginPage: React.FC<{ initialMode?: 'login' | 'register' }> =
     }
   };
 
-  const bgPage = isDark 
-    ? 'radial-gradient(ellipse at 50% 0%, #171936 0%, #0b0c16 60%, #06070a 100%)' 
-    : 'radial-gradient(ellipse at 50% 0%, #eef2ff 0%, #f8fafc 60%, #f1f5f9 100%)';
-  const bgCard = isDark ? '#13141f' : '#ffffff';
+  const bgPage = isDark ? '#06070a' : '#eef2f6';
+  const bgCard = isDark ? '#151824' : '#ffffff';
   const textPrimary = isDark ? '#ffffff' : '#0f172a';
   const textMuted = isDark ? '#94a3b8' : '#64748b';
-  const borderCol = isDark ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.08)';
+  const borderCol = isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(15, 23, 42, 0.08)';
   const inputBg = isDark ? 'rgba(255,255,255,0.04)' : '#f8fafc';
   const accentColor = data?.theme?.accentColor || '#7c3aed';
 
@@ -98,25 +96,8 @@ export const ClientLoginPage: React.FC<{ initialMode?: 'login' | 'register' }> =
       }}
     >
       <SEOHelmet
-        title={mode === 'login' ? 'Masuk ke sumr.day Client Hub ☀️' : 'Daftar Akun Baru — sumr.day'}
+        title={mode === 'login' ? 'Masuk ke sumr.day Client Hub' : 'Daftar Akun Baru - sumr.day'}
         description="Masuk ke Client Hub sumr.day untuk memantau progres undangan web, landing page, dan aset visualmu dengan santai."
-      />
-
-      {/* Background Accent Glow */}
-      <div
-        style={{
-          position: 'absolute',
-          top: '20%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          width: 500,
-          height: 500,
-          borderRadius: '50%',
-          background: `radial-gradient(circle, ${accentColor}25 0%, transparent 70%)`,
-          filter: 'blur(70px)',
-          pointerEvents: 'none',
-          zIndex: 0,
-        }}
       />
 
       {/* Top Navigation Back */}
@@ -137,8 +118,7 @@ export const ClientLoginPage: React.FC<{ initialMode?: 'login' | 'register' }> =
             padding: '8px 16px',
             borderRadius: 100,
             border: `1px solid ${borderCol}`,
-            background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.8)',
-            backdropFilter: 'blur(12px)',
+            background: isDark ? '#151824' : '#ffffff',
             color: textPrimary,
             textDecoration: 'none',
             fontFamily: "'Outfit', sans-serif",
@@ -158,12 +138,12 @@ export const ClientLoginPage: React.FC<{ initialMode?: 'login' | 'register' }> =
           width: '100%',
           maxWidth: 440,
           background: bgCard,
-          borderRadius: 28,
+          borderRadius: 24,
           border: `1px solid ${borderCol}`,
           padding: '36px 30px',
           boxShadow: isDark
-            ? '0 24px 64px rgba(0,0,0,0.6), 0 0 0 1px rgba(124,58,237,0.2)'
-            : '0 24px 64px rgba(0,0,0,0.08)',
+            ? '0 24px 64px rgba(0, 0, 0, 0.8)'
+            : '0 24px 64px rgba(15, 23, 42, 0.12)',
           position: 'relative',
           zIndex: 1,
           animation: 'cmsPopIn 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
@@ -461,6 +441,55 @@ export const ClientLoginPage: React.FC<{ initialMode?: 'login' | 'register' }> =
             )}
           </button>
         </form>
+
+        {/* Divider */}
+        <div style={{ display: 'flex', alignItems: 'center', margin: '18px 0 14px', gap: 12 }}>
+          <div style={{ flex: 1, height: 1, background: borderCol }} />
+          <span style={{ fontSize: 11, fontWeight: 800, color: textMuted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>atau</span>
+          <div style={{ flex: 1, height: 1, background: borderCol }} />
+        </div>
+
+        {/* Google Sign In Button */}
+        <button
+          type="button"
+          onClick={async () => {
+            setError('');
+            haptic.light();
+            try {
+              const res = await loginWithGoogle();
+              if (res) navigate('/');
+            } catch (err: any) {
+              setError(err.message || 'Gagal masuk dengan Google.');
+            }
+          }}
+          disabled={isLoading}
+          style={{
+            width: '100%',
+            padding: '12px',
+            borderRadius: 100,
+            border: `1px solid ${borderCol}`,
+            background: isDark ? 'rgba(255,255,255,0.04)' : '#ffffff',
+            color: textPrimary,
+            fontFamily: "'Outfit', sans-serif",
+            fontSize: 13.5,
+            fontWeight: 800,
+            cursor: isLoading ? 'default' : 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 10,
+            boxShadow: isDark ? 'none' : '0 2px 8px rgba(0,0,0,0.04)',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
+            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+          </svg>
+          <span>Masuk Google</span>
+        </button>
 
         {/* Admin Login Notice Footer */}
         <div style={{ marginTop: 24, textAlign: 'center', borderTop: `1px solid ${borderCol}`, paddingTop: 16 }}>

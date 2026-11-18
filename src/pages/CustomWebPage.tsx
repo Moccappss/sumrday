@@ -8,6 +8,23 @@ import { useScrollReveal } from '../hooks/useScrollReveal';
 import { useWebsiteTheme } from '../hooks/useWebsiteTheme';
 import { useLandingBodyFix } from '../hooks/useLandingBodyFix';
 import BookingModal from '../components/common/BookingModal';
+import { storage } from '../utils/storage';
+import PageRenderer from '../components/PageRenderer';
+import PageHeroHeader from '../components/common/PageHeroHeader';
+import { LPFloatingStickersOverlay } from '../components/landing/LPFloatingStickers';
+import LPHomeCustomWidget from '../components/landing/LPHomeCustomWidget';
+import LPClientMarquee from '../components/landing/LPClientMarquee';
+import LPStoreSpotlight from '../components/landing/LPStoreSpotlight';
+import LPRateCardSpotlight from '../components/landing/LPRateCardSpotlight';
+import LPCompanySolutions from '../components/landing/LPCompanySolutions';
+import LPPortfolio from '../components/landing/LPPortfolio';
+import LPBeforeAfterSpotlight from '../components/landing/LPBeforeAfterSpotlight';
+import LPModel3DSpotlight from '../components/landing/LPModel3DSpotlight';
+import LPFlipbookSpotlight from '../components/landing/LPFlipbookSpotlight';
+import LPProcess from '../components/landing/LPProcess';
+import LPTestimonials from '../components/landing/LPTestimonials';
+import LPBlogPreview from '../components/landing/LPBlogPreview';
+import LPAbout from '../components/landing/LPAbout';
 import { 
   Sparkles, Check, ArrowRight, ChevronDown, HelpCircle, 
   Layers, FileText, ShoppingBag, Shield, Star, ExternalLink,
@@ -384,14 +401,40 @@ const CustomWebPage: React.FC<{ pageSlug?: string }> = ({ pageSlug }) => {
     }));
   }
 
-  const textColor = isDark ? '#f8fafc' : '#0f172a';
-  const subTextColor = isDark ? '#94a3b8' : '#64748b';
-  const cardBg = isDark ? 'rgba(30, 41, 59, 0.7)' : 'rgba(255, 255, 255, 0.85)';
-  const cardBorder = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)';
+  const [builderPageBlocks, setBuilderPageBlocks] = useState<any[] | null>(null);
+  const [isCheckingBuilder, setIsCheckingBuilder] = useState(true);
 
-  if (isLoading) {
+  useEffect(() => {
+    if (!activePage && slug) {
+      setIsCheckingBuilder(true);
+      storage.getItem<Record<string, any[]>>('porto_pages', {}).then(rawPages => {
+        if (rawPages && typeof rawPages === 'object') {
+          const cleanSlug = slug.replace(/^\//, '').toLowerCase();
+          const matchedKey = Object.keys(rawPages).find(k => k.toLowerCase() === cleanSlug || k.toLowerCase() === slug.toLowerCase());
+          if (matchedKey && Array.isArray(rawPages[matchedKey]) && rawPages[matchedKey].length > 0) {
+            setBuilderPageBlocks(rawPages[matchedKey]);
+          } else {
+            setBuilderPageBlocks(null);
+          }
+        }
+      }).catch(() => {
+        setBuilderPageBlocks(null);
+      }).finally(() => {
+        setIsCheckingBuilder(false);
+      });
+    } else {
+      setIsCheckingBuilder(false);
+    }
+  }, [activePage, slug]);
+
+  const textColor = isDark ? '#ffffff' : '#0f172a';
+  const subTextColor = isDark ? '#94a3b8' : '#64748b';
+  const cardBg = isDark ? '#151824' : '#ffffff';
+  const cardBorder = isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(15, 23, 42, 0.08)';
+
+  if (isLoading || isCheckingBuilder) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: isDark ? '#08080f' : '#f8fafc', color: textColor }}>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: isDark ? '#06070a' : '#eef2f6', color: textColor }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
           <div style={{ width: 32, height: 32, borderRadius: '50%', border: `3px solid ${accentColor}`, borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
           <span style={{ fontSize: 13, fontWeight: 700 }}>Memuat Halaman...</span>
@@ -400,10 +443,28 @@ const CustomWebPage: React.FC<{ pageSlug?: string }> = ({ pageSlug }) => {
     );
   }
 
+  // If page is created via Page Builder (porto_pages)
+  if (!activePage && builderPageBlocks) {
+    const cleanKey = slug.replace(/^\//, '');
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: isDark ? '#06070a' : '#eef2f6', color: textColor }}>
+        <SEOHelmet
+          title={`${cleanKey.charAt(0).toUpperCase() + cleanKey.slice(1)} | ${data?.navbar?.logoText || 'sumr.day'}`}
+          description={data?.hero?.subtitle || 'Halaman Kustom'}
+        />
+        <LPNavbar items={globalNavItems} isDark={isDark} accentColor={accentColor} logoText={data?.navbar?.logoText} />
+        <main style={{ flex: 1, width: '100%', paddingTop: 70, boxSizing: 'border-box' }}>
+          <PageRenderer pageKey={cleanKey} />
+        </main>
+        <LPFooter data={data?.footer} isDark={isDark} accentColor={accentColor} />
+      </div>
+    );
+  }
+
   if (!activePage) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: isDark ? '#05060b' : '#f8fafc', color: textColor }}>
-        <LPNavbar items={globalNavItems} isDark={isDark} accentColor={accentColor} />
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: isDark ? '#06070a' : '#eef2f6', color: textColor }}>
+        <LPNavbar items={globalNavItems} isDark={isDark} accentColor={accentColor} logoText={data?.navbar?.logoText} />
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '120px 24px 60px', textAlign: 'center' }}>
           <div style={{ maxWidth: 460, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
             <div style={{ width: 64, height: 64, borderRadius: 20, background: `${accentColor}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: accentColor }}>
@@ -434,7 +495,7 @@ const CustomWebPage: React.FC<{ pageSlug?: string }> = ({ pageSlug }) => {
             </button>
           </div>
         </div>
-        <LPFooter data={data} isDark={isDark} accentColor={accentColor} />
+        <LPFooter data={data?.footer} isDark={isDark} accentColor={accentColor} />
       </div>
     );
   }
@@ -465,73 +526,29 @@ const CustomWebPage: React.FC<{ pageSlug?: string }> = ({ pageSlug }) => {
         />
       )}
 
-      {/* ── HERO BANNER ── */}
-      <section
+      {/* ── HERO BANNER (UNIFIED PAGE HERO HEADER) ── */}
+      <div
         style={{
-          padding: '140px 24px 60px',
-          maxWidth: 1200,
+          padding: '108px 24px 36px',
+          maxWidth: 1188,
           margin: '0 auto',
           width: '100%',
           boxSizing: 'border-box',
-          textAlign: 'center',
-          position: 'relative',
         }}
       >
-        <div style={{ maxWidth: 840, margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
-          {activePage.badge && (
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '6px 16px',
-                borderRadius: 100,
-                background: `${accentColor}18`,
-                color: accentColor,
-                border: `1px solid ${accentColor}35`,
-                fontSize: 12,
-                fontWeight: 900,
-                letterSpacing: '0.08em',
-                textTransform: 'uppercase'
-              }}
-            >
-              <Sparkles size={14} />
-              {activePage.badge}
-            </span>
-          )}
-
-          <h1
-            style={{
-              fontFamily: "'Outfit', sans-serif",
-              fontSize: 'clamp(32px, 5vw, 56px)',
-              fontWeight: 900,
-              lineHeight: 1.12,
-              letterSpacing: '-0.02em',
-              margin: 0,
-              color: textColor
-            }}
-          >
-            {activePage.title}
-          </h1>
-
-          {activePage.subtitle && (
-            <p
-              style={{
-                fontSize: 'clamp(15px, 2vw, 19px)',
-                lineHeight: 1.6,
-                color: subTextColor,
-                margin: 0,
-                maxWidth: 700
-              }}
-            >
-              {activePage.subtitle}
-            </p>
-          )}
-        </div>
-      </section>
+        <PageHeroHeader
+          isDark={isDark}
+          bgPattern={(activePage as any).bgPattern || 'grid'}
+          accentColor={accentColor}
+          badgeIcon={<Sparkles size={13} />}
+          badgeText={activePage.badge || 'HALAMAN KUSTOM'}
+          title={activePage.title}
+          description={activePage.subtitle || ''}
+        />
+      </div>
 
       {/* ── MODULAR SECTIONS ── */}
-      <main style={{ flex: 1, maxWidth: 1240, margin: '0 auto', width: '100%', padding: '0 24px 90px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 64 }}>
+      <main style={{ flex: 1, maxWidth: 1188, margin: '0 auto', width: '100%', padding: '0 24px 90px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 64 }}>
         {(activePage.sections || []).map((sec, sIdx) => {
           return (
             <section
@@ -1547,12 +1564,63 @@ const CustomWebPage: React.FC<{ pageSlug?: string }> = ({ pageSlug }) => {
                   </div>
                 </div>
               )}
+
+              {/* 26. NOTION / GOOGLE SITES FREE WIDGET */}
+              {(sec as any).type === 'home_widget' && (sec as any).widgetData && (
+                <LPHomeCustomWidget
+                  widget={(sec as any).widgetData}
+                  isDark={isDark}
+                  accentColor={accentColor}
+                />
+              )}
+
+              {/* 27. COMBINED BERANDA STUDIO SECTIONS */}
+              {(sec as any).type === 'studio_section' && (() => {
+                const sid = (sec as any).studioSectionId;
+                if (sid === 'clients') {
+                  return <LPClientMarquee clients={data?.aboutSettings?.company?.clients} isDark={isDark} accentColor={accentColor} badge={data?.aboutSettings?.company?.marqueeBadge} title={data?.aboutSettings?.company?.marqueeTitle} metric1={data?.aboutSettings?.company?.marqueeMetric1} metric2={data?.aboutSettings?.company?.marqueeMetric2} />;
+                }
+                if (sid === 'store') {
+                  return <LPStoreSpotlight isDark={isDark} accentColor={accentColor} shopSettings={data?.shopSettings} badge={data?.storeSpotlight?.badge} title={data?.storeSpotlight?.title} subtitle={data?.storeSpotlight?.subtitle} maxItems={data?.storeSpotlight?.maxItems} selectedProductIds={data?.storeSpotlight?.selectedProductIds} />;
+                }
+                if (sid === 'ratecard') {
+                  return <LPRateCardSpotlight isDark={isDark} accentColor={accentColor} badge={data?.rateCardSpotlight?.badge} title={data?.rateCardSpotlight?.title} subtitle={data?.rateCardSpotlight?.subtitle} maxItems={data?.rateCardSpotlight?.maxItems} selectedPackageIds={data?.rateCardSpotlight?.selectedPackageIds} />;
+                }
+                if (sid === 'solutions') {
+                  return <LPCompanySolutions isDark={isDark} accentColor={accentColor} badge={data?.companySolutions?.badge} title={data?.companySolutions?.title} subtitle={data?.companySolutions?.subtitle} />;
+                }
+                if (sid === 'portfolio') {
+                  return <LPPortfolio projects={data?.projects || []} landingFeaturedLabel={data?.landingFeaturedLabel || ''} isDark={isDark} accentColor={accentColor} localization={data?.localization} onSelectProject={() => {}} />;
+                }
+                if (sid === 'beforeafter') {
+                  return <LPBeforeAfterSpotlight isDark={isDark} accentColor={accentColor} beforeAfterData={data?.beforeAfterSpotlight} />;
+                }
+                if (sid === 'model3d') {
+                  return <LPModel3DSpotlight isDark={isDark} accentColor={accentColor} modelData={data?.model3DSpotlight} />;
+                }
+                if (sid === 'flipbook') {
+                  return <LPFlipbookSpotlight isDark={isDark} accentColor={accentColor} flipbookData={data?.flipbookSpotlight} />;
+                }
+                if (sid === 'process') {
+                  return <LPProcess process={data?.process || []} isDark={isDark} accentColor={accentColor} localization={data?.localization} />;
+                }
+                if (sid === 'testimonials') {
+                  return <LPTestimonials testimonials={data?.testimonials || []} isDark={isDark} accentColor={accentColor} localization={data?.localization} />;
+                }
+                if (sid === 'blog') {
+                  return <LPBlogPreview isDark={isDark} accentColor={accentColor} title={data?.blogPreview?.title || 'Artikel & Wawasan'} subtitle={data?.blogPreview?.subtitle || 'Insight dan cerita terbaru.'} maxPosts={data?.blogPreview?.maxPosts || 3} ctaLabel={data?.blogPreview?.ctaLabel || 'Lihat Semua Artikel'} />;
+                }
+                if (sid === 'about') {
+                  return <LPAbout isDark={isDark} accentColor={accentColor} localization={data?.localization} aboutSettings={data?.aboutSettings} />;
+                }
+                return null;
+              })()}
             </section>
           );
         })}
       </main>
 
-      <LPFooter data={data} isDark={isDark} accentColor={accentColor} />
+      <LPFooter data={data?.footer} isDark={isDark} accentColor={accentColor} />
 
       {/* ── LIGHTBOX CAROUSEL MODAL (GALLERY ZOOM & SLIDES) ── */}
       {lightboxData && (
@@ -1560,9 +1628,9 @@ const CustomWebPage: React.FC<{ pageSlug?: string }> = ({ pageSlug }) => {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,0.92)',
-            backdropFilter: 'blur(20px)',
-            WebkitBackdropFilter: 'blur(20px)',
+            background: 'rgba(4, 4, 8, 0.94)',
+            backdropFilter: 'none',
+            WebkitBackdropFilter: 'none',
             zIndex: 60000,
             display: 'flex',
             flexDirection: 'column',
@@ -1695,9 +1763,9 @@ const CustomWebPage: React.FC<{ pageSlug?: string }> = ({ pageSlug }) => {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,0.8)',
-            backdropFilter: 'blur(16px)',
-            WebkitBackdropFilter: 'blur(16px)',
+            background: 'rgba(4, 4, 8, 0.82)',
+            backdropFilter: 'none',
+            WebkitBackdropFilter: 'none',
             zIndex: 60000,
             display: 'flex',
             alignItems: 'center',
@@ -1846,6 +1914,9 @@ const CustomWebPage: React.FC<{ pageSlug?: string }> = ({ pageSlug }) => {
           defaultService={activePage.title}
         />
       )}
+
+      {/* Floating / Sticky Overlay Stickers (LP Image Style) */}
+      <LPFloatingStickersOverlay stickers={(activePage as any)?.floatingStickers} />
     </div>
   );
 };

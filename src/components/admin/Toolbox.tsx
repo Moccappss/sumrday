@@ -1,5 +1,5 @@
-import React from 'react';
-import { ImagePlus, Monitor, Smartphone, Video, Play, Square, Image, Box, Type, ArrowDownUp, Images, MessageSquare, Undo2, Redo2, ChevronUp, ChevronDown, Trash2, Cloud, Loader2, RotateCcw, ExternalLink, Copy, Fingerprint } from 'lucide-react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { ImagePlus, Monitor, Smartphone, Video, Play, Square, Image, Box, Type, ArrowDownUp, Images, MessageSquare, Undo2, Redo2, ChevronUp, ChevronDown, Trash2, Cloud, Loader2, RotateCcw, ExternalLink, Copy, Fingerprint, History } from 'lucide-react';
 
 /* ── thin vertical divider ──────────────────────────────── */
 const Divider = () => (
@@ -44,6 +44,39 @@ const Toolbox = ({
   onDuplicateBlock, onDuplicateSticker,
   activePage
 }) => {
+  const toolboxRef = useRef<HTMLDivElement>(null);
+  const [scrollFade, setScrollFade] = useState<{ left: boolean; right: boolean }>({ left: false, right: false });
+  const dragStateRef = useRef({ isDown: false, startX: 0, scrollLeftInit: 0, moved: false });
+
+  const updateScrollFade = useCallback(() => {
+    const el = toolboxRef.current;
+    if (!el) return;
+    const maxScroll = el.scrollWidth - el.clientWidth;
+    if (maxScroll <= 4) {
+      setScrollFade({ left: false, right: false });
+      return;
+    }
+    setScrollFade({
+      left: el.scrollLeft > 6,
+      right: el.scrollLeft < maxScroll - 6,
+    });
+  }, []);
+
+  useEffect(() => {
+    updateScrollFade();
+    window.addEventListener('resize', updateScrollFade, { passive: true });
+    return () => window.removeEventListener('resize', updateScrollFade);
+  }, [updateScrollFade, selectedBlockId, selectedStickerId, cmsMode, totalBlocks]);
+
+  const maskGradient =
+    scrollFade.left && scrollFade.right
+      ? 'linear-gradient(to right, transparent 0%, #000 22px, #000 calc(100% - 22px), transparent 100%)'
+      : scrollFade.left
+        ? 'linear-gradient(to right, transparent 0%, #000 22px, #000 100%)'
+        : scrollFade.right
+          ? 'linear-gradient(to right, #000 0%, #000 calc(100% - 22px), transparent 100%)'
+          : undefined;
+
   return (
     <>
       <style>{`
@@ -52,6 +85,7 @@ const Toolbox = ({
           width: 44px;
           height: 44px;
           flex-shrink: 0;
+          scroll-snap-align: center;
         }
         #builder-toolbox .toolbox-btn svg {
           width: 22px;
@@ -83,10 +117,20 @@ const Toolbox = ({
           box-sizing: border-box;
           overflow-x: auto;
           overflow-y: hidden;
+          touch-action: pan-x !important;
+          overscroll-behavior-x: contain !important;
           scrollbar-width: none;
           -ms-overflow-style: none;
-          -webkit-overflow-scrolling: touch;
+          -webkit-overflow-scrolling: touch !important;
           transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease, padding 0.3s ease;
+        }
+        #builder-toolbox,
+        #builder-toolbox * {
+          touch-action: pan-x !important;
+        }
+        #builder-toolbox .toolbox-btn:active:not(:disabled) {
+          transform: scale(0.9) !important;
+          opacity: 0.82 !important;
         }
         #builder-toolbox::-webkit-scrollbar { display: none; width: 0; height: 0; }
 
@@ -94,11 +138,12 @@ const Toolbox = ({
         @media (max-width: 768px) {
           #builder-toolbox {
             position: fixed !important;
-            bottom: calc(88px + env(safe-area-inset-bottom, 16px)) !important;
+            bottom: calc(96px + env(safe-area-inset-bottom, 16px)) !important;
             left: 50% !important;
             transform: ${isSidebarOpen ? 'translateY(200px) translateX(-50%)' : 'translateX(-50%)'} !important;
             border-radius: 999px !important;
-            padding: 8px 12px !important;
+            padding: 8px 16px !important;
+            scroll-padding-inline: 16px !important;
             height: 58px !important;
             max-height: 58px !important;
             max-width: 92% !important;
@@ -124,24 +169,48 @@ const Toolbox = ({
         }
       `}</style>
 
-      <div id="builder-toolbox" className="builder-toolbox-wrap"
+      <div
+        ref={toolboxRef}
+        id="builder-toolbox"
+        className="builder-toolbox-wrap"
+        onScroll={updateScrollFade}
+        onTouchStart={(e) => { e.stopPropagation(); }}
+        onTouchMove={(e) => { e.stopPropagation(); }}
+        onClickCapture={(e) => {
+          if (dragStateRef.current.moved) {
+            e.preventDefault();
+            e.stopPropagation();
+            dragStateRef.current.moved = false;
+          }
+        }}
         onMouseDown={(e) => {
-          const slider = e.currentTarget;
-          slider.dataset.isDown = 'true';
-          slider.dataset.startX = (e.pageX - slider.offsetLeft).toString();
-          slider.dataset.scrollLeftInit = slider.scrollLeft.toString();
+          const slider = toolboxRef.current;
+          if (!slider) return;
+          dragStateRef.current = {
+            isDown: true,
+            startX: e.pageX - slider.offsetLeft,
+            scrollLeftInit: slider.scrollLeft,
+            moved: false,
+          };
         }}
-        onMouseLeave={(e) => { e.currentTarget.dataset.isDown = 'false'; }}
-        onMouseUp={(e) => { e.currentTarget.dataset.isDown = 'false'; }}
+        onMouseLeave={() => { dragStateRef.current.isDown = false; }}
+        onMouseUp={() => { dragStateRef.current.isDown = false; }}
         onMouseMove={(e) => {
-          const slider = e.currentTarget;
-          if (slider.dataset.isDown !== 'true') return;
-          e.preventDefault();
+          const slider = toolboxRef.current;
+          const st = dragStateRef.current;
+          if (!st.isDown || !slider) return;
           const x = e.pageX - slider.offsetLeft;
-          const walk = (x - parseFloat(slider.dataset.startX)) * 1.5;
-          slider.scrollLeft = parseFloat(slider.dataset.scrollLeftInit) - walk;
+          const delta = x - st.startX;
+          if (Math.abs(delta) > 5) st.moved = true;
+          if (!st.moved) return;
+          e.preventDefault();
+          slider.scrollLeft = st.scrollLeftInit - delta * 1.4;
         }}
-        style={{ cursor: 'grab' }}
+        style={{
+          cursor: 'grab',
+          scrollSnapType: 'x proximity',
+          ...(maskGradient ? { maskImage: maskGradient, WebkitMaskImage: maskGradient } : {}),
+        }}
       >
 
         {/* ── Save ──────────────────────────────────────────── */}
@@ -179,12 +248,15 @@ const Toolbox = ({
 
         <Divider />
 
-        {/* ── Undo / Redo ───────────────────────────────────── */}
+        {/* ── Undo / Redo / History ────────────────────────── */}
         <TBtn onClick={onUndo} disabled={!canUndo} title="Undo (Ctrl+Z)">
           <Undo2 size={24} />
         </TBtn>
         <TBtn onClick={onRedo} disabled={!canRedo} title="Redo (Ctrl+Y)">
           <Redo2 size={24} />
+        </TBtn>
+        <TBtn onClick={() => window.dispatchEvent(new Event('cms_open_version_history'))} title="Riwayat Versi Halaman (Time Travel)">
+          <History size={22} />
         </TBtn>
 
         <Divider />

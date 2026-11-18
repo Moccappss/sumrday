@@ -3,48 +3,217 @@ import { storage } from '../../utils/storage';
 import { applyAccentColor } from '../../utils/theme';
 import { setGlobalWebsiteTheme } from '../../hooks/useWebsiteTheme';
 
+// ── Beranda Widgets Order & Visibility Config ─────────────────────────────────
+export interface BerandaSectionConfig {
+  id: string;
+  label: string;
+  enabled: boolean;
+}
+
+export const DEFAULT_COMPANY_SECTIONS: BerandaSectionConfig[] = [
+  { id: 'hero', label: 'Hero Section', enabled: true },
+  { id: 'clients', label: 'Mitra & Klien', enabled: true },
+  { id: 'updates', label: 'Pembaruan Studio', enabled: true },
+  { id: 'store', label: 'Produk & Aset Digital', enabled: true },
+  { id: 'ratecard', label: 'Paket & Rate Card', enabled: true },
+  { id: 'estimator', label: 'Estimator Biaya Proyek', enabled: false },
+  { id: 'solutions', label: 'Kapabilitas & Layanan', enabled: true },
+  { id: 'portfolio', label: 'Karya Pilihan', enabled: true },
+  { id: 'beforeafter', label: 'Transformasi Sebelum & Sesudah', enabled: true },
+  { id: 'model3d', label: 'Showcase 3D Interaktif', enabled: true },
+  { id: 'flipbook', label: 'Lookbook & Flipbook Interaktif', enabled: true },
+  { id: 'process', label: 'Alur Pengerjaan', enabled: true },
+  { id: 'testimonials', label: 'Ulasan Klien', enabled: true },
+  { id: 'blog', label: 'Artikel & Catatan', enabled: true },
+  { id: 'faq', label: 'Pertanyaan Umum (FAQ)', enabled: true },
+];
+
+export const DEFAULT_PERSONAL_SECTIONS: BerandaSectionConfig[] = [
+  { id: 'hero', label: 'Hero Section', enabled: true },
+  { id: 'store', label: 'Produk & Aset Digital', enabled: true },
+  { id: 'ratecard', label: 'Paket & Rate Card', enabled: true },
+  { id: 'estimator', label: 'Estimator Biaya Proyek', enabled: false },
+  { id: 'portfolio', label: 'Karya Pilihan', enabled: true },
+  { id: 'beforeafter', label: 'Transformasi Sebelum & Sesudah', enabled: true },
+  { id: 'model3d', label: 'Showcase 3D Interaktif', enabled: true },
+  { id: 'flipbook', label: 'Lookbook & Flipbook Interaktif', enabled: true },
+  { id: 'about', label: 'Tentang Saya', enabled: true },
+  { id: 'process', label: 'Alur Pengerjaan', enabled: true },
+  { id: 'testimonials', label: 'Ulasan Klien', enabled: true },
+  { id: 'blog', label: 'Artikel & Catatan', enabled: true },
+  { id: 'faq', label: 'Pertanyaan Umum (FAQ)', enabled: true },
+];
+
+export const getEffectiveCompanySections = (
+  sections?: BerandaSectionConfig[],
+  deletedIds?: string[]
+): BerandaSectionConfig[] => {
+  const deletedSet = new Set(Array.isArray(deletedIds) ? deletedIds : []);
+  if (!Array.isArray(sections) || (sections.length === 0 && deletedSet.size === 0)) {
+    return DEFAULT_COMPANY_SECTIONS.filter(ds => !deletedSet.has(ds.id));
+  }
+  let result = [...sections];
+  const existingIds = new Set(result.map(s => s.id));
+  const missing = DEFAULT_COMPANY_SECTIONS.filter(ds => !existingIds.has(ds.id) && !deletedSet.has(ds.id));
+
+  const portfolioIdx = result.findIndex(s => s.id === 'portfolio');
+  const model3dItem = missing.find(m => m.id === 'model3d');
+  const flipbookItem = missing.find(m => m.id === 'flipbook');
+  const otherMissing = missing.filter(m => m.id !== 'model3d' && m.id !== 'flipbook');
+
+  if (model3dItem) {
+    const itemToAdd = { ...model3dItem, enabled: true };
+    if (portfolioIdx !== -1) {
+      result.splice(portfolioIdx + 1, 0, itemToAdd);
+    } else {
+      result.push(itemToAdd);
+    }
+  }
+
+  if (flipbookItem) {
+    const itemToAdd = { ...flipbookItem, enabled: true };
+    const m3dIdx = result.findIndex(s => s.id === 'model3d');
+    if (m3dIdx !== -1) {
+      result.splice(m3dIdx + 1, 0, itemToAdd);
+    } else if (portfolioIdx !== -1) {
+      result.splice(portfolioIdx + 1, 0, itemToAdd);
+    } else {
+      result.push(itemToAdd);
+    }
+  }
+
+  result = [...result, ...otherMissing];
+
+  return result;
+};
+
+export const getEffectivePersonalSections = (
+  sections?: BerandaSectionConfig[],
+  deletedIds?: string[]
+): BerandaSectionConfig[] => {
+  const deletedSet = new Set(Array.isArray(deletedIds) ? deletedIds : []);
+  if (!Array.isArray(sections) || (sections.length === 0 && deletedSet.size === 0)) {
+    return DEFAULT_PERSONAL_SECTIONS.filter(ds => !deletedSet.has(ds.id));
+  }
+  let result = [...sections];
+  const existingIds = new Set(result.map(s => s.id));
+  const missing = DEFAULT_PERSONAL_SECTIONS.filter(ds => !existingIds.has(ds.id) && !deletedSet.has(ds.id));
+
+  const portfolioIdx = result.findIndex(s => s.id === 'portfolio');
+  const model3dItem = missing.find(m => m.id === 'model3d');
+  const flipbookItem = missing.find(m => m.id === 'flipbook');
+  const otherMissing = missing.filter(m => m.id !== 'model3d' && m.id !== 'flipbook');
+
+  if (model3dItem) {
+    const itemToAdd = { ...model3dItem, enabled: true };
+    if (portfolioIdx !== -1) {
+      result.splice(portfolioIdx + 1, 0, itemToAdd);
+    } else {
+      result.push(itemToAdd);
+    }
+  }
+
+  if (flipbookItem) {
+    const itemToAdd = { ...flipbookItem, enabled: true };
+    const m3dIdx = result.findIndex(s => s.id === 'model3d');
+    if (m3dIdx !== -1) {
+      result.splice(m3dIdx + 1, 0, itemToAdd);
+    } else if (portfolioIdx !== -1) {
+      result.splice(portfolioIdx + 1, 0, itemToAdd);
+    } else {
+      result.push(itemToAdd);
+    }
+  }
+
+  result = [...result, ...otherMissing];
+
+  return result;
+};
+
+export interface ScrollRadarSettings {
+  enabled: boolean;
+  showPercentage: boolean;
+  showTopBottomButtons: boolean;
+  showSectionLabel: boolean;
+  trackHeight: number;
+  pillWidth: number;
+  position: 'right' | 'left';
+}
+
+export const DEFAULT_SCROLL_RADAR_SETTINGS: ScrollRadarSettings = {
+  enabled: true,
+  showPercentage: true,
+  showTopBottomButtons: true,
+  showSectionLabel: true,
+  trackHeight: 240,
+  pillWidth: 26,
+  position: 'right',
+};
+
 // ── Default Data Schema ────────────────────────────────────────────────────────
 export const DEFAULT_MAIN_WEBSITE_DATA = {
+  scrollRadar: DEFAULT_SCROLL_RADAR_SETTINGS,
+  siteMode: 'company' as 'company' | 'personal',
+  companySections: DEFAULT_COMPANY_SECTIONS,
+  personalSections: DEFAULT_PERSONAL_SECTIONS,
   navbar: {
     items: [
       { id: 'nav-home', type: 'link', label: 'Beranda', url: '/' },
-      { id: 'nav-portfolio', type: 'link', label: 'Portofolio', url: '/portfolio' },
+      { id: 'nav-portfolio', type: 'link', label: 'Karya', url: '/portfolio' },
       { id: 'nav-about', type: 'link', label: 'Tentang', url: '/about' },
       { id: 'nav-catalog', type: 'link', label: 'Katalog', url: '/katalog' },
-      { id: 'nav-pricing', type: 'link', label: 'Harga', url: '/pricing' },
-      { id: 'nav-games', type: 'link', label: 'Game', url: '/games' },
-      { id: 'nav-blog', type: 'link', label: 'Blog', url: '/blog' },
-      { id: 'nav-updates', type: 'link', label: 'Update', url: '/updates' },
-      { id: 'nav-links', type: 'link', label: 'Links', url: '/links' },
+      { id: 'nav-pricing', type: 'link', label: 'Paket', url: '/pricing' },
+      { id: 'nav-games', type: 'link', label: 'Interactive', url: '/games' },
+      { id: 'nav-blog', type: 'link', label: 'Jurnal', url: '/blog' },
+      { id: 'nav-updates', type: 'link', label: 'Pembaruan', url: '/updates' },
+      { id: 'nav-links', type: 'link', label: 'Tautan', url: '/links' },
       { id: 'nav-contact', type: 'link', label: 'Kontak', url: '#contact' },
     ],
-    loginBtnLabel: 'Login',
+    loginBtnLabel: 'Masuk',
     logoText: 'sumr.day',
+    logoImage: '/logo.png' as string | null,
+  },
+  companyHero: {
+    badge: 'STUDIO KREATIF & DIGITAL',
+    headline: 'sumr.day Studio',
+    subheadline: 'Studio Desain & Pengembangan Produk Digital Modern',
+    description: 'Kami merancang dan mempublikasikan aset digital berkualitas tinggi, produk web interaktif, serta artikel wawasan terkurasi untuk mengakselerasi karya dan bisnis Anda.',
+    ctaPrimaryLabel: 'Jelajahi Pembaruan',
+    ctaPrimaryUrl: '#updates-hub',
+    ctaSecondaryLabel: 'Katalog Aset',
+    ctaSecondaryUrl: '/katalog',
+    heroImage: null as string | null,
+    stats: [
+      { id: 'st-1', label: 'Proyek Selesai', value: '120+' },
+      { id: 'st-2', label: 'Klien & Mitra', value: '50+' },
+      { id: 'st-3', label: 'Tingkat Kepuasan', value: '99.4%' },
+      { id: 'st-4', label: 'Siklus Rilis', value: 'Mingguan' }
+    ]
   },
   hero: {
-    greeting: "Hey there! ☀️ Welcome to",
+    greeting: "Halo dari",
     headline: "sumr.day",
-    subheadline: 'Creative Digital Studio • Warm Tech & Skena-Aesthetic',
-    description: 'Menghadirkan interaksi digital—mulai dari undangan web estetik, landing page modern, hingga aset visual kreatif—secara hangat, santai, dan penuh energi positif khas musim panas.',
-    ctaPrimaryLabel: 'Jelajahi Showcase ✨',
+    subheadline: 'A Little Sunshine for Your Screen',
+    description: 'Menghadirkan interaksi digital—mulai dari undangan web estetik, landing page modern, hingga aset visual kreatif—secara hangat, terukur, dan profesional.',
+    ctaPrimaryLabel: 'Lihat Karya',
     ctaPrimaryUrl: '#portfolio',
-    ctaSecondaryLabel: 'Ngobrol Santai ☀️',
+    ctaSecondaryLabel: 'Sapa Kami',
     ctaSecondaryUrl: '#contact',
     heroImage: null as string | null,
     cards: [
-      { id: 'card-1', text: 'Warm Tech & Flow', icon: 'Sparkles' },
-      { id: 'card-2', text: 'Skena-Aesthetic Vibes', icon: 'Heart' }
+      { id: 'card-1', text: 'Arsitektur Modern', icon: 'Code' },
+      { id: 'card-2', text: 'Desain Terarah', icon: 'Layers' }
     ],
     // Deprecated legacy fields
-    card1Text: 'Warm Tech & Flow',
-    card1Icon: 'Sparkles',
-    card2Text: 'Skena-Aesthetic Vibes',
-    card2Icon: 'Heart',
+    card1Text: 'Arsitektur Modern',
+    card1Icon: 'Code',
+    card2Text: 'Desain Terarah',
+    card2Icon: 'Layers',
     freelanceActive: true,
     badge: {
       active: true,
-      smallText: 'CREATIVE COLLABS',
-      largeText: 'Open for Projects ☀️',
+      smallText: 'STUDIO KREATIF',
+      largeText: 'Buka Proyek',
     },
   },
   featuredLabels: ['Pilihan Editor', 'Karya Terbaik', 'Top 10'] as string[],
@@ -122,6 +291,25 @@ export const DEFAULT_MAIN_WEBSITE_DATA = {
     { id: 'test-2', quote: 'Landing page produk kami jadi berkarakter dan hidup. Vibe musim panasnya beneran kerasa fresh.', author: 'Siti Aminah', role: 'Brand Owner, KopiNusantara', avatar: '' },
     { id: 'test-3', quote: 'Komunikasi santai tanpa ribet, hasil akhirnya rapi dan tepat waktu. Recommended studio!', author: 'Andi Wijaya', role: 'Founder, Skena Studio', avatar: '' },
   ],
+  model3dSettings: {
+    badge: 'SPATIAL & 3D SHOWCASE',
+    title: 'Eksplorasi Desain 3D Interaktif',
+    subtitle: 'Putar secara bebas 360°, amati pencahayaan material fotorealistik, dan rasakan kedalaman objek nyata langsung di browser Anda.',
+    modelUrl: '/models/armchair.glb',
+    height: '520px',
+    autoRotate: true
+  },
+  flipbookSettings: {
+    badge: 'EDITORIAL & LOOKBOOK',
+    title: 'Katalog & Brand Guidelines Interaktif',
+    subtitle: 'Buka dan rasakan pengalaman membaca dokumen panduan visual, rate card, dan studi kasus studio layaknya membuka majalah fisik.',
+    pdfUrl: '',
+    totalPages: 8,
+    bookTitle: 'sumr.day Visual Guideline Book 2026',
+    height: '620px',
+    defaultViewMode: 'double' as 'double' | 'single',
+    allowDownload: true
+  },
   theme: {
     accentColor: (() => {
       try {
@@ -134,11 +322,11 @@ export const DEFAULT_MAIN_WEBSITE_DATA = {
   },
   seo: {
     metaTitle: 'sumr.day | Creative Digital Studio',
-    metaDescription: 'A little sunshine for your screen ☀️ Creative Digital Studio berkonsep Warm Tech & Skena-Aesthetic untuk undangan web, landing page, dan aset visual impianmu.',
+    metaDescription: 'A little sunshine for your screen — Creative Digital Studio berkonsep Warm Tech & Skena-Aesthetic untuk undangan web, landing page, dan aset visual impianmu.',
     ogImage: null as string | null,
   },
   footer: {
-    description: 'A little sunshine for your screen ☀️ Studio kreatif digital berkonsep Warm Tech & Skena-Aesthetic. Siap mengubah idemu menjadi karya digital yang hangat dan menyenangkan.',
+    description: 'A little sunshine for your screen — Studio kreatif digital berkonsep Warm Tech & Skena-Aesthetic. Siap mengubah idemu menjadi karya digital yang hangat dan menyenangkan.',
     copyright: '© 2026 sumr.day | Creative Digital Studio. Crafted with warm vibes.',
     email: 'hi.sumrday@gmail.com',
     location: 'Indonesia / Remote Worldwide',
@@ -148,9 +336,9 @@ export const DEFAULT_MAIN_WEBSITE_DATA = {
     ],
     contactProjectTypes: ['Undangan Web Estetik', 'Landing Page & Website', 'Visual Identity & Branding', 'Game Interaktif & Event', 'Aset Konten Digital'] as string[],
     contactMethods: [
-      { id: 'email',    label: 'Email',     icon: '📧', value: 'hi.sumrday@gmail.com', enabled: true  },
-      { id: 'whatsapp', label: 'WhatsApp', icon: '💬', value: '',                     enabled: false },
-      { id: 'telegram', label: 'Telegram', icon: '✈️', value: '',                     enabled: false },
+      { id: 'email',    label: 'Email',     icon: 'email',    value: 'hi.sumrday@gmail.com', enabled: true  },
+      { id: 'whatsapp', label: 'WhatsApp', icon: 'whatsapp', value: '',                     enabled: false },
+      { id: 'telegram', label: 'Telegram', icon: 'telegram', value: '',                     enabled: false },
     ] as { id: string; label: string; icon: string; value: string; enabled: boolean }[],
   },
   blogPreview: {
@@ -158,7 +346,25 @@ export const DEFAULT_MAIN_WEBSITE_DATA = {
     title: 'Catatan & Wawasan',
     subtitle: 'Cerita di balik layar, eksplorasi desain, dan inspirasi hangat.',
     maxPosts: 3,
-    ctaLabel: 'Jelajahi Catatan ☀️',
+    ctaLabel: 'Jelajahi Catatan',
+  },
+  storeSpotlight: {
+    badge: 'KOLEKSI ASET DIGITAL',
+    title: 'Produk & Template Digital',
+    subtitle: 'Koleksi template web, identitas visual, dan aset grafis terkurasi untuk mempercepat peluncuran proyek Anda.',
+    maxItems: 3,
+    selectedProductIds: [] as string[],
+  },
+  companyUpdates: {
+    badge: 'RILIS & UPDATE TERBARU',
+    title: 'Sorotan Rilis & Aktivitas Studio',
+    subtitle: 'Pembaruan terpilih seputar rilis aset baru, produk digital, dan wawasan terkini dari studio.',
+    selectedUpdateId: '',
+  },
+  rateCardSpotlight: {
+    badge: 'PAKET & RATE CARD PILIHAN',
+    title: 'Investasi Terukur untuk Eksekusi Maksimal',
+    subtitle: 'Pilihan paket desain, website interaktif, dan sistem kustom dengan deliverables transparan, opsi DP 50%, serta jaminan kualitas profesional.',
   },
   updatesFeed: {
     enabled: true,
@@ -174,28 +380,28 @@ export const DEFAULT_MAIN_WEBSITE_DATA = {
   },
   pagesHeader: {
     blog: {
-      badge: 'Jurnal & Tulisan',
-      title: 'Ide, Wawasan & Catatan Hangat',
-      highlight: 'Catatan Hangat',
-      description: 'Koleksi tulisan seputar desain web, interaksi digital, estetika skena, dan inovasi kreatif.'
+      badge: 'Jurnal & Publikasi',
+      title: 'Ide, Wawasan & Catatan Proyek',
+      highlight: 'Catatan Proyek',
+      description: 'Koleksi tulisan seputar desain antarmuka, interaksi digital, arsitektur web, dan inovasi visual.'
     },
     portfolio: {
       badge: 'Karya & Showcase',
-      title: 'Koleksi Kreasi Penuh Cahaya',
-      highlight: 'Penuh Cahaya',
-      description: 'Eksplorasi undangan digital, landing page interaktif, serta identitas visual berkonsep Warm Tech.'
+      title: 'Koleksi Karya & Studi Kasus',
+      highlight: 'Studi Kasus',
+      description: 'Eksplorasi undangan digital, landing page interaktif, serta identitas visual berkualitas tinggi.'
     },
     catalog: {
-      badge: 'Menu Layanan & Produk',
-      title: 'Solusi Digital yang Menyenangkan',
-      highlight: 'Menyenangkan',
-      description: 'Pilihan paket desain, template siap pakai, dan interaksi web dengan harga bersahabat.'
+      badge: 'Katalog & Produk Digital',
+      title: 'Solusi Desain & Produk Digital Siap Pakai',
+      highlight: 'Siap Pakai',
+      description: 'Koleksi template web, aset visual, dan paket layanan desain terkurasi untuk mempercepat proyek Anda.'
     },
     about: {
-      badge: 'Tentang sumr.day',
-      title: 'Energi Musim Panas di Setiap Layar',
-      highlight: 'Musim Panas',
-      description: 'Kenali lebih dekat filosofi Warm Tech, nilai-nilai studio, dan tim di balik sumr.day.'
+      badge: 'Tentang Studio',
+      title: 'Membangun Interaksi Digital Berkarakter',
+      highlight: 'Berkarakter',
+      description: 'Kenali lebih dekat filosofi perancangan, prinsip kerja, dan pendekatan desain di balik sumr.day.'
     },
     links: {
       badge: 'Hub & Media Sosial',
@@ -204,24 +410,24 @@ export const DEFAULT_MAIN_WEBSITE_DATA = {
       description: 'Temukan saluran komunikasi, portofolio, dan media sosial resmi untuk berkolaborasi.'
     },
     games: {
-      badge: 'Interactive Fun & Activation',
-      title: 'Game Interaktif & Keseruan',
+      badge: 'Interactive & Engagement',
+      title: 'Game Interaktif untuk',
       highlight: 'Aktivasi Event Anda',
-      description: 'Tingkatkan keceriaan pengunjung di event, booth, dan festival dengan game berbasis HTML5 bernuansa fresh.'
+      description: 'Tingkatkan keterlibatan pengunjung di booth, expo, dan festival dengan game berbasis web interaktif.'
     },
     pricing: {
-      badge: 'Investasi Kreatif',
+      badge: 'Investasi Terukur',
       title: 'Paket Transparan untuk',
       highlight: 'Hasil Maksimal',
-      description: 'Pilihan paket fleksibel dan bersahabat untuk mewujudkan proyek digital impianmu.'
+      description: 'Pilihan paket fleksibel dengan deliverables transparan untuk mendukung pertumbuhan brand dan bisnis Anda.'
     }
   },
   localization: {
     portfolioSectionTitle: '— KARYA & SHOWCASE',
-    portfolioMainTitle: 'Kreasi Penuh Cahaya',
-    portfolioSeeAll: 'Lihat Semua Karya ✨',
+    portfolioMainTitle: 'Karya Pilihan & Eksplorasi Visual',
+    portfolioSeeAll: 'Lihat Semua Karya',
     aboutSectionTitle: '— TENTANG KAMI',
-    aboutMainTitle: 'Cerita di Balik sumr.day ☀️',
+    aboutMainTitle: 'Cerita di Balik sumr.day',
     processSectionTitle: '— PROSES KREATIF',
     processMainTitle: 'Bagaimana Kami Bekerja',
     testimonialSectionTitle: '— TEMAN BERBAGI CERITA',
@@ -229,11 +435,11 @@ export const DEFAULT_MAIN_WEBSITE_DATA = {
     pricingSectionTitle: '— INVESTASI',
     pricingMainTitle: 'Simpel, Santai & Transparan',
     customProjectSectionTitle: '— MULAI KOLABORASI',
-    customProjectMainTitle: 'Mari Bikin Layarmu Lebih Berwarna ☀️',
+    customProjectMainTitle: 'Mari Bikin Layarmu Lebih Berwarna',
     customProjectSubtitle: 'Punya ide undangan web, landing page estetik, atau aset visual impian? Yuk ngobrol santai bareng tim sumr.day!',
-    customProjectCta: 'Ngobrol Santai ☀️',
+    customProjectCta: 'Ngobrol Santai',
     footerReadyText: 'Siap menghadirkan sinar baru di proyek digitalmu?',
-    footerStartProject: 'Mulai Kolaborasi ☀️',
+    footerStartProject: 'Mulai Kolaborasi',
     footerLinksTitle: 'Tautan'
   },
   pagesVisibility: {
@@ -264,12 +470,61 @@ export interface ProjectData {
   images?: string[];
   attachments?: { url: string; name: string; type: string }[];
   tags?: string[];
+  tools?: string[];
+  software?: string[];
   client?: string;
   year?: string | number;
+  mediaType?: 'image' | 'video' | 'youtube' | '3d' | 'flipbook';
+  model3dUrl?: string;
+  pdfUrl?: string;
+  pdfTotalPages?: number;
   createdAt?: string | number;
 }
 
 export const DEFAULT_PORTFOLIO_PROJECTS: ProjectData[] = [
+  {
+    id: 'proj-flipbook-1',
+    name: 'sumr.day Studio Lookbook & Brand Guide 2026',
+    title: 'sumr.day Studio Lookbook & Brand Guide 2026',
+    category: 'Editorial & Brand Book',
+    featuredLabel: 'Flipbook Interaktif',
+    description: 'Buku panduan identitas visual dan arsip eksplorasi desain studio sumr.day. Disajikan dalam format flipbook digital interaktif layaknya membaca majalah fisik.',
+    coverImage: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=1200&q=80',
+    tags: ['Brand Guidelines', 'Editorial', 'Flipbook', 'Lookbook'],
+    mediaType: 'flipbook',
+    pdfUrl: '',
+    pdfTotalPages: 8,
+    tools: ['Figma', 'InDesign', 'Cloudinary PDF Engine'],
+    year: '2026'
+  },
+  {
+    id: 'proj-3d-1',
+    name: 'Modern Architectural Armchair 3D',
+    title: 'Modern Architectural Armchair 3D',
+    category: '3D & Spasial',
+    featuredLabel: 'Interaktif 3D',
+    description: 'Konsep visualisasi furnitur geometris modern (hasil export SketchUp/Blender) dengan tekstur fotorealistis dan inspeksi orbit 360°.',
+    coverImage: 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&w=1200&q=80',
+    tags: ['3D Modeling', 'SketchUp', 'Arsitektur', 'Render 3D'],
+    mediaType: '3d',
+    model3dUrl: '/models/armchair.glb',
+    tools: ['SketchUp', 'Blender', 'Google Model-Viewer'],
+    year: '2026'
+  },
+  {
+    id: 'proj-3d-2',
+    name: 'Cosmic Spatial Character & Asset',
+    title: 'Cosmic Spatial Character & Asset',
+    category: 'Visual 3D',
+    featuredLabel: 'Eksplorasi 360°',
+    description: 'Eksplorasi aset 3D sinematik bertekstur PBR tinggi untuk pengalaman portofolio interaktif dan augmented reality (AR).',
+    coverImage: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80',
+    tags: ['3D Asset', 'PBR Material', 'Blender', 'AR Ready'],
+    mediaType: '3d',
+    model3dUrl: '/models/helmet.glb',
+    tools: ['Blender', 'WebGL', 'Three.js'],
+    year: '2026'
+  },
   {
     id: 'proj-1',
     name: 'Brand Identity & Visual System',
@@ -291,36 +546,50 @@ export const DEFAULT_PORTFOLIO_PROJECTS: ProjectData[] = [
     coverImage: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80',
     tags: ['UI/UX', 'Mobile App', 'Figma'],
     year: '2026'
-  },
-  {
-    id: 'proj-3',
-    name: 'Creative Packaging & Merchandise',
-    title: 'Creative Packaging & Merchandise',
-    category: 'Print/Packaging',
-    featuredLabel: 'Top 10',
-    description: 'Eksplorasi kemasan produk ramah lingkungan dan merchandise eksklusif dengan tipografi berkarakter.',
-    coverImage: 'https://images.unsplash.com/photo-1541701494587-cb58502866ab?auto=format&fit=crop&w=1200&q=80',
-    tags: ['Packaging', 'Print', 'Branding'],
-    year: '2026'
   }
 ];
+
+// ── Debounce helper ───────────────────────────────────────────────────────────
+function debounce<T extends (...args: any[]) => void>(fn: T, delay: number): T {
+  let timer: ReturnType<typeof setTimeout>;
+  return ((...args: any[]) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), delay);
+  }) as T;
+}
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
 export const useLandingData = () => {
   const [data, setData] = useState<MainWebsiteData>(() => {
     try {
-      const cached = localStorage.getItem('porto_main_website');
-      const savedAccent = localStorage.getItem('porto_accent_color');
+      const syncData = storage.getSync('porto_main_website', null);
+      const cached = syncData || (typeof localStorage !== 'undefined' ? localStorage.getItem('porto_main_website') : null);
+      const savedAccent = typeof localStorage !== 'undefined' ? localStorage.getItem('porto_accent_color') : null;
+      const cachedLogo = typeof localStorage !== 'undefined' ? localStorage.getItem('porto_cached_logotext') : null;
       if (cached) {
-        const parsed = JSON.parse(cached);
+        const parsed = typeof cached === 'string' ? JSON.parse(cached) : cached;
         const merged = deepMerge(DEFAULT_MAIN_WEBSITE_DATA, parsed);
+        merged.companySections = getEffectiveCompanySections(merged.companySections, merged.deletedCompanySections);
+        merged.personalSections = getEffectivePersonalSections(merged.personalSections, merged.deletedPersonalSections);
+        if (!merged.model3dSettings) merged.model3dSettings = DEFAULT_MAIN_WEBSITE_DATA.model3dSettings;
+        if (!merged.flipbookSettings) merged.flipbookSettings = DEFAULT_MAIN_WEBSITE_DATA.flipbookSettings;
         if (savedAccent) merged.theme.accentColor = savedAccent;
+        if (parsed?.navbar?.logoText && parsed.navbar.logoText.trim()) {
+          merged.navbar.logoText = parsed.navbar.logoText.trim();
+          try { localStorage.setItem('porto_cached_logotext', merged.navbar.logoText); } catch (_) {}
+        } else if (cachedLogo && (!merged.navbar?.logoText || merged.navbar.logoText === 'sumr.day' || merged.navbar.logoText === 'Studio')) {
+          merged.navbar.logoText = cachedLogo;
+        }
         return merged;
       }
-      if (savedAccent) {
+      if (savedAccent || cachedLogo) {
         return {
           ...DEFAULT_MAIN_WEBSITE_DATA,
-          theme: { ...DEFAULT_MAIN_WEBSITE_DATA.theme, accentColor: savedAccent }
+          navbar: {
+            ...DEFAULT_MAIN_WEBSITE_DATA.navbar,
+            logoText: cachedLogo || DEFAULT_MAIN_WEBSITE_DATA.navbar.logoText
+          },
+          theme: { ...DEFAULT_MAIN_WEBSITE_DATA.theme, ...(savedAccent ? { accentColor: savedAccent } : {}) }
         };
       }
     } catch (e) {}
@@ -329,16 +598,24 @@ export const useLandingData = () => {
 
   const [projects, setProjects] = useState<ProjectData[]>(() => {
     try {
-      const cached = localStorage.getItem('porto_portfolio');
+      const syncProjects = storage.getSync('porto_portfolio', null);
+      if (Array.isArray(syncProjects) && syncProjects.length > 0) return syncProjects;
+      const cached = typeof localStorage !== 'undefined' ? localStorage.getItem('porto_portfolio') : null;
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch (e) {}
     return [];
   });
 
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => {
+    try {
+      return !storage.getSync('porto_main_website', null);
+    } catch {
+      return true;
+    }
+  });
 
   const load = useCallback(async () => {
     try {
@@ -352,6 +629,16 @@ export const useLandingData = () => {
       if (savedData) {
         merged = deepMerge(DEFAULT_MAIN_WEBSITE_DATA, savedData);
       }
+
+      // Synchronize siteMode and aboutSettings.mode
+      const activeSiteMode = (typeof localStorage !== 'undefined' ? localStorage.getItem('porto_site_mode') : null)
+        || savedData?.siteMode
+        || savedData?.aboutSettings?.mode
+        || merged.siteMode
+        || 'company';
+      merged.siteMode = activeSiteMode as 'company' | 'personal';
+      if (!merged.aboutSettings) merged.aboutSettings = {} as any;
+      merged.aboutSettings.mode = activeSiteMode as 'company' | 'personal';
 
       // Deduplicate navbar items
       if (merged?.navbar?.items && Array.isArray(merged.navbar.items)) {
@@ -383,12 +670,78 @@ export const useLandingData = () => {
         }
       }
 
-      setData(merged);
-      if (Array.isArray(savedProjects)) {
-        setProjects(savedProjects);
-      } else {
-        setProjects([]);
+      // Ensure companySections, personalSections and model3dSettings are synchronized and active
+      let websiteNeedsSave = false;
+      const effectiveCompany = getEffectiveCompanySections(merged.companySections, merged.deletedCompanySections);
+      if (JSON.stringify(effectiveCompany) !== JSON.stringify(merged.companySections)) {
+        merged.companySections = effectiveCompany;
+        websiteNeedsSave = true;
       }
+      const effectivePersonal = getEffectivePersonalSections(merged.personalSections, merged.deletedPersonalSections);
+      if (JSON.stringify(effectivePersonal) !== JSON.stringify(merged.personalSections)) {
+        merged.personalSections = effectivePersonal;
+        websiteNeedsSave = true;
+      }
+      if (!merged.model3dSettings) {
+        merged.model3dSettings = DEFAULT_MAIN_WEBSITE_DATA.model3dSettings;
+        websiteNeedsSave = true;
+      }
+      if (!merged.flipbookSettings) {
+        merged.flipbookSettings = DEFAULT_MAIN_WEBSITE_DATA.flipbookSettings;
+        websiteNeedsSave = true;
+      }
+      if (websiteNeedsSave) {
+        storage.setItem('porto_main_website', merged, false).catch(() => {});
+      }
+
+      if (savedData?.navbar?.logoText && savedData.navbar.logoText.trim()) {
+        try { localStorage.setItem('porto_cached_logotext', savedData.navbar.logoText.trim()); } catch (_) {}
+      }
+
+      setData(merged);
+      let finalProjects = Array.isArray(savedProjects) && savedProjects.length > 0
+        ? [...savedProjects]
+        : [...DEFAULT_PORTFOLIO_PROJECTS];
+
+      // Auto-heal any stale 404 remote model URLs to local assets
+      let needsHeal = false;
+      finalProjects = finalProjects.map(p => {
+        if (p.model3dUrl?.includes('Chair.glb') || (p.id === 'proj-3d-1' && p.model3dUrl !== '/models/armchair.glb')) {
+          needsHeal = true;
+          return { ...p, mediaType: '3d', model3dUrl: '/models/armchair.glb' };
+        }
+        if (p.model3dUrl?.includes('Astronaut.glb') || (p.id === 'proj-3d-2' && p.model3dUrl !== '/models/helmet.glb')) {
+          needsHeal = true;
+          return { ...p, mediaType: '3d', model3dUrl: '/models/helmet.glb' };
+        }
+        return p;
+      });
+
+      // Auto-seed sample 3D items if not present in existing portfolio list
+      const has3d = finalProjects.some(p => p.mediaType === '3d' || p.model3dUrl);
+      if (!has3d) {
+        const sample3d = DEFAULT_PORTFOLIO_PROJECTS.filter(p => p.mediaType === '3d');
+        if (sample3d.length > 0) {
+          finalProjects = [...sample3d, ...finalProjects];
+          needsHeal = true;
+        }
+      }
+
+      // Auto-seed sample flipbook items if not present in existing portfolio list
+      const hasFlipbook = finalProjects.some(p => p.mediaType === 'flipbook' || p.pdfUrl);
+      if (!hasFlipbook) {
+        const sampleFlip = DEFAULT_PORTFOLIO_PROJECTS.filter(p => p.mediaType === 'flipbook');
+        if (sampleFlip.length > 0) {
+          finalProjects = [...sampleFlip, ...finalProjects];
+          needsHeal = true;
+        }
+      }
+
+      if (needsHeal) {
+        storage.setItem('porto_portfolio', finalProjects).catch(() => {});
+      }
+
+      setProjects(finalProjects);
 
     } catch (err) {
       console.error('[useLandingData] Load error:', err);
@@ -420,7 +773,7 @@ export const useLandingData = () => {
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('porto_accent_color_changed', handleStorageChange);
 
-    const unsubData = storage.listenItem('porto_main_website', (d: MainWebsiteData) => {
+    const unsubData = storage.listenItem('porto_main_website', debounce((d: MainWebsiteData) => {
       if (d) {
         const accent = (typeof localStorage !== 'undefined' ? localStorage.getItem('porto_accent_color') : null) || d.theme?.accentColor;
         if (accent) {
@@ -443,6 +796,17 @@ export const useLandingData = () => {
               return true;
             });
           }
+          const activeSiteMode = (typeof localStorage !== 'undefined' ? localStorage.getItem('porto_site_mode') : null)
+            || d?.siteMode
+            || d?.aboutSettings?.mode
+            || merged.siteMode
+            || 'company';
+          merged.siteMode = activeSiteMode as 'company' | 'personal';
+          merged.companySections = getEffectiveCompanySections(merged.companySections, merged.deletedCompanySections);
+          merged.personalSections = getEffectivePersonalSections(merged.personalSections, merged.deletedPersonalSections);
+          if (!merged.model3dSettings) merged.model3dSettings = DEFAULT_MAIN_WEBSITE_DATA.model3dSettings;
+          if (!merged.flipbookSettings) merged.flipbookSettings = DEFAULT_MAIN_WEBSITE_DATA.flipbookSettings;
+
           if (accent) {
             merged.theme.accentColor = accent;
           }
@@ -450,7 +814,7 @@ export const useLandingData = () => {
         });
 
       }
-    }, null);
+    }, 150), null);
 
     const unsubSettings = storage.listenItem('porto_settings', (s: any) => {
       const activeAccent = (typeof localStorage !== 'undefined' ? localStorage.getItem('porto_accent_color') : null) || s?.accentColor;
@@ -473,9 +837,48 @@ export const useLandingData = () => {
       if (Array.isArray(p)) setProjects(p);
     }, []);
 
+    const handleSiteModeChange = (e: any) => {
+      const mode = e?.detail?.mode;
+      if (mode) {
+        setData(prev => ({
+          ...prev,
+          siteMode: mode,
+          aboutSettings: {
+            ...(prev.aboutSettings || {}),
+            mode
+          }
+        }));
+      }
+    };
+    window.addEventListener('porto_sitemode_changed', handleSiteModeChange);
+
+    const handleLogoTextUpdated = (e: any) => {
+      const nextLogoText = e?.detail?.logoText;
+      if (typeof nextLogoText === 'string' && nextLogoText.trim()) {
+        setData(prev => ({
+          ...prev,
+          navbar: {
+            ...(prev.navbar || {}),
+            logoText: nextLogoText.trim()
+          }
+        }));
+      }
+    };
+    const handleLandingDataUpdated = (e: any) => {
+      const updated = e?.detail;
+      if (updated && typeof updated === 'object') {
+        setData(prev => deepMerge(prev, updated));
+      }
+    };
+    window.addEventListener('porto_logotext_updated', handleLogoTextUpdated);
+    window.addEventListener('landing_data_updated', handleLandingDataUpdated);
+
     return () => {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('porto_accent_color_changed', handleStorageChange);
+      window.removeEventListener('porto_sitemode_changed', handleSiteModeChange);
+      window.removeEventListener('porto_logotext_updated', handleLogoTextUpdated);
+      window.removeEventListener('landing_data_updated', handleLandingDataUpdated);
       if (typeof unsubData === 'function') unsubData();
       if (typeof unsubSettings === 'function') unsubSettings();
       if (typeof unsubProjects === 'function') unsubProjects();
@@ -483,6 +886,28 @@ export const useLandingData = () => {
   }, [load]);
 
   return { data, projects, isLoading };
+};
+
+// ── Global Site Mode Switcher Helper ───────────────────────────────────────────
+export const setGlobalSiteMode = async (mode: 'company' | 'personal') => {
+  try {
+    const current = await storage.getItem('porto_main_website', DEFAULT_MAIN_WEBSITE_DATA);
+    const updated = {
+      ...current,
+      siteMode: mode,
+      aboutSettings: {
+        ...(current.aboutSettings || {}),
+        mode
+      }
+    };
+    await storage.setItem('porto_main_website', updated, true);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('porto_site_mode', mode);
+    }
+    window.dispatchEvent(new CustomEvent('porto_sitemode_changed', { detail: { mode } }));
+  } catch (err) {
+    console.error('Failed to set site mode:', err);
+  }
 };
 
 // ── Deep Merge Helper ─────────────────────────────────────────────────────────

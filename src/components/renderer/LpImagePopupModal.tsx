@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import StickerItem from './StickerItem';
 import { getOptimizedUrl } from './utils';
@@ -6,7 +7,7 @@ import { getOptimizedUrl } from './utils';
 interface LpImagePopupModalProps {
   isOpen: boolean;
   onClose: () => void;
-  popupId: string;
+  popupId?: string;
   title?: string;
   blocks: any[];
   stickers: any[];
@@ -15,11 +16,12 @@ interface LpImagePopupModalProps {
 const LpImagePopupModal: React.FC<LpImagePopupModalProps> = ({
   isOpen,
   onClose,
-  popupId,
-  title,
   blocks = [],
   stickers = []
 }) => {
+  const sortedBlocks = useMemo(() => {
+    return [...blocks].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  }, [blocks]);
   useEffect(() => {
     if (!isOpen) return;
 
@@ -39,8 +41,8 @@ const LpImagePopupModal: React.FC<LpImagePopupModalProps> = ({
 
   const stickersByBlock = useMemo(() => {
     const grouped: Record<string, any[]> = {};
-    const validBlockIds = new Set(blocks.map(b => b.id));
-    const firstBlockId = blocks[0]?.id;
+    const validBlockIds = new Set(sortedBlocks.map(b => b.id));
+    const firstBlockId = sortedBlocks[0]?.id;
 
     stickers.forEach(s => {
       if (s.visible === false || s.isHidden === true) return;
@@ -51,15 +53,17 @@ const LpImagePopupModal: React.FC<LpImagePopupModalProps> = ({
       }
     });
     return grouped;
-  }, [stickers, blocks]);
+  }, [stickers, sortedBlocks]);
 
-  if (!isOpen) return null;
+  if (!isOpen || typeof document === 'undefined') return null;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-4"
+      className="fixed inset-0 z-[9999999] flex items-center justify-center p-3 sm:p-4"
       style={{
-        backgroundColor: 'rgba(0, 0, 0, 0.68)',
+        backgroundColor: 'rgba(0, 0, 0, 0.75)',
+        backdropFilter: 'blur(10px)',
+        WebkitBackdropFilter: 'blur(10px)',
         animation: 'popupFadeIn 0.22s ease-out forwards'
       }}
       onClick={(e) => {
@@ -91,7 +95,7 @@ const LpImagePopupModal: React.FC<LpImagePopupModalProps> = ({
 
         {/* Scrollable Content (LP Image Blocks & Stickers) */}
         <div className="flex-1 overflow-y-auto overscroll-contain relative p-0" style={{ fontSize: 0, lineHeight: 0 }}>
-          {blocks.length === 0 ? (
+          {sortedBlocks.length === 0 ? (
             <div className="py-16 px-6 text-center text-white/50 flex flex-col items-center justify-center gap-2">
               <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center mb-1 text-white/40">
                 <X size={24} />
@@ -100,7 +104,7 @@ const LpImagePopupModal: React.FC<LpImagePopupModalProps> = ({
               <p className="text-xs text-white/40">Desain isi pop-up ini melalui editor CMS.</p>
             </div>
           ) : (
-            blocks.map((block, idx) => {
+            sortedBlocks.map((block, idx) => {
               if (block.isHidden) return null;
               const mediaType = block.mediaType || 'image';
 
@@ -222,7 +226,8 @@ const LpImagePopupModal: React.FC<LpImagePopupModalProps> = ({
           }
         `
       }} />
-    </div>
+    </div>,
+    document.body
   );
 };
 

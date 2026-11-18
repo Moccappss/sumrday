@@ -12,7 +12,7 @@
     ],
     "headers": [
       {
-        "source": "/sw.js",
+        "source": "/@(sw*.js|workbox-*.js)",
         "headers": [
           {
             "key": "Cache-Control",
@@ -39,8 +39,60 @@
         ]
       },
       {
+        "source": "**/*.@(jpg|jpeg|gif|png|webp|svg|woff2|woff|ttf|mp3|mp4|webm|ico|glb|gltf)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=31536000, immutable"
+          }
+        ]
+      },
+      {
+        "source": "**/*.glb",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "model/gltf-binary"
+          },
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=31536000, immutable"
+          }
+        ]
+      },
+      {
+        "source": "/@(manifest*.json|manifest.webmanifest)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=0, must-revalidate"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/manifest+json; charset=utf-8"
+          }
+        ]
+      },
+      {
+        "source": "/@(robots.txt|sitemap.xml)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=86400"
+          }
+        ]
+      },
+      {
         "source": "/**",
         "headers": [
+          {
+            "key": "Strict-Transport-Security",
+            "value": "max-age=31536000; includeSubDomains; preload"
+          },
+          {
+            "key": "X-DNS-Prefetch-Control",
+            "value": "on"
+          },
           {
             "key": "X-Frame-Options",
             "value": "SAMEORIGIN"
@@ -50,16 +102,24 @@
             "value": "nosniff"
           },
           {
+            "key": "X-XSS-Protection",
+            "value": "1; mode=block"
+          },
+          {
             "key": "Referrer-Policy",
             "value": "strict-origin-when-cross-origin"
           },
           {
             "key": "Permissions-Policy",
-            "value": "camera=(), microphone=(), geolocation=(), payment=()"
+            "value": "camera=(self), microphone=(), geolocation=(), payment=()"
           },
           {
             "key": "Cross-Origin-Opener-Policy",
-            "value": "same-origin-allow-popups"
+            "value": "unsafe-none"
+          },
+          {
+            "key": "Content-Security-Policy",
+            "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.google.com https://www.gstatic.com https://cdn.jsdelivr.net https://recaptcha.net https://www.recaptcha.net https://www.googletagmanager.com https://www.google-analytics.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https: blob:; media-src 'self' data: https: blob:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.cloudfunctions.net https://*.firebaseapp.com https://*.web.app https://api.cloudinary.com https://res.cloudinary.com https://images.unsplash.com https://api.dicebear.com https://script.google.com https://identitytoolkit.googleapis.com https://ipwho.is https://ipapi.co https://www.google-analytics.com https://analytics.google.com https://stats.g.doubleclick.net; frame-src 'self' https://*.firebaseapp.com https://*.web.app https://accounts.google.com https://apis.google.com https://github.com https://www.google.com https://script.google.com https://recaptcha.net https://www.recaptcha.net; object-src 'none'; base-uri 'self';"
           }
         ]
       }

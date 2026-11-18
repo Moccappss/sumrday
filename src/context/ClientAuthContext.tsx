@@ -3,12 +3,12 @@ import {
   ClientUser, 
   getCurrentClient, 
   loginClient as apiLogin, 
+  loginClientWithGoogle as apiLoginWithGoogle,
   registerClient as apiRegister, 
   logoutClient as apiLogout, 
   updateClientProfile as apiUpdateProfile, 
   changeClientPassword as apiChangePassword 
 } from '../services/clientAuth';
-import { syncClientLicensesToIndexedDb, clearOfflineLicenses } from '../utils/offlineLicenseDb';
 import { useToast } from './ToastContext';
 
 interface ClientAuthContextType {
@@ -16,9 +16,10 @@ interface ClientAuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<ClientUser>;
+  loginWithGoogle: () => Promise<ClientUser>;
   register: (params: { name: string; email: string; phone?: string; password: string }) => Promise<ClientUser>;
   logout: () => void;
-  updateProfile: (params: { name: string; phone?: string; avatar?: string }) => Promise<ClientUser>;
+  updateProfile: (params: { name: string; phone?: string; avatar?: string; bankDetails?: any }) => Promise<ClientUser>;
   changePassword: (oldPw: string, newPw: string) => Promise<void>;
   
   // Modals state
@@ -60,12 +61,32 @@ export const ClientAuthProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       }
     };
 
+    const handleOpenOrders = () => {
+      setIsOrdersModalOpen(true);
+    };
+
     window.addEventListener('porto_client_auth_changed', handleAuthChanged);
     window.addEventListener('storage', handleStorage);
+    window.addEventListener('porto_open_orders', handleOpenOrders);
+    window.addEventListener('porto_open_order_tracker', handleOpenOrders);
+
+    // Auto-detect URL parameter ?tracker=... or ?track=... or ?orderId=... on initial mount
+    if (typeof window !== 'undefined') {
+      const sp = new URLSearchParams(window.location.search);
+      const trackQuery = sp.get('tracker') || sp.get('track') || sp.get('orderId') || sp.get('order');
+      if (trackQuery) {
+        setTimeout(() => {
+          setIsOrdersModalOpen(true);
+          window.dispatchEvent(new CustomEvent('porto_open_order_tracker', { detail: { query: trackQuery } }));
+        }, 300);
+      }
+    }
 
     return () => {
       window.removeEventListener('porto_client_auth_changed', handleAuthChanged);
       window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('porto_open_orders', handleOpenOrders);
+      window.removeEventListener('porto_open_order_tracker', handleOpenOrders);
     };
   }, []);
 
@@ -77,14 +98,47 @@ export const ClientAuthProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       setIsAuthModalOpen(false);
 
       // 1x Read Firestore: Unduh data lisensi klien dan simpan ke IndexedDB untuk Zero-Read selanjutnya
-      syncClientLicensesToIndexedDb(user.id || user.email, user.email).catch((err) => {
-        console.warn('Background license sync to IndexedDB failed:', err);
-      });
+      import('../utils/offlineLicenseDb')
+        .then(({ syncClientLicensesToIndexedDb }) =>
+          syncClientLicensesToIndexedDb(user.id || user.email, user.email)
+        )
+        .catch((err) => {
+          console.warn('Background license sync to IndexedDB failed:', err);
+        });
 
       showToast('Masuk Berhasil', `Selamat datang kembali, ${user.name}!`, 'success', 4000);
       return user;
     } catch (err: any) {
       showToast('Gagal Masuk', err.message || 'Email atau kata sandi tidak sesuai.', 'error');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [showToast]);
+
+  const loginWithGoogle = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const user = await apiLoginWithGoogle();
+      if (!user) return null as any;
+      setClient(user);
+      setIsAuthModalOpen(false);
+
+      import('../utils/offlineLicenseDb')
+        .then(({ syncClientLicensesToIndexedDb }) =>
+          syncClientLicensesToIndexedDb(user.id || user.email, user.email)
+        )
+        .catch((err) => {
+          console.warn('Background license sync to IndexedDB failed:', err);
+        });
+
+      showToast('Masuk Berhasil', `Selamat datang kembali, ${user.name}!`, 'success', 4000);
+      return user;
+    } catch (err: any) {
+      if (err?.code === 'auth/popup-closed-by-user') {
+        return null as any;
+      }
+      showToast('Gagal Masuk', err.message || 'Gagal masuk dengan akun Google.', 'error');
       throw err;
     } finally {
       setIsLoading(false);
@@ -99,9 +153,13 @@ export const ClientAuthProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       setIsAuthModalOpen(false);
 
       // Sinkronisasi inisial ke IndexedDB
-      syncClientLicensesToIndexedDb(user.id || user.email, user.email).catch(() => {});
+      import('../utils/offlineLicenseDb')
+        .then(({ syncClientLicensesToIndexedDb }) =>
+          syncClientLicensesToIndexedDb(user.id || user.email, user.email)
+        )
+        .catch(() => {});
 
-      showToast('Pendaftaran Berhasil', `Selamat datang di keluarga sumr.day, ${user.name}! ☀️`, 'success', 5000);
+      showToast('Pendaftaran Berhasil', `Selamat datang di keluarga sumr.day, ${user.name}!`, 'success', 5000);
       return user;
     } catch (err: any) {
       showToast('Gagal Mendaftar', err.message || 'Terjadi kesalahan saat membuat akun.', 'error');
@@ -115,7 +173,9 @@ export const ClientAuthProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const prevName = client?.name || 'Pelanggan';
     const cId = client?.id || client?.email;
     if (cId) {
-      clearOfflineLicenses(cId, client?.email);
+      import('../utils/offlineLicenseDb')
+        .then(({ clearOfflineLicenses }) => clearOfflineLicenses(cId, client?.email))
+        .catch(() => {});
     }
     apiLogout();
     setClient(null);
@@ -124,7 +184,7 @@ export const ClientAuthProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     showToast('Sampai Jumpa', `Anda telah keluar dari akun ${prevName}.`, 'info', 3500);
   }, [client, showToast]);
 
-  const updateProfile = useCallback(async (params: { name: string; phone?: string; avatar?: string }) => {
+  const updateProfile = useCallback(async (params: { name: string; phone?: string; avatar?: string; bankDetails?: any }) => {
     setIsLoading(true);
     try {
       const updated = await apiUpdateProfile(params);
@@ -184,6 +244,7 @@ export const ClientAuthProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         isAuthenticated: !!client,
         isLoading,
         login,
+        loginWithGoogle,
         register,
         logout,
         updateProfile,

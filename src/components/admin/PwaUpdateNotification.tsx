@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { RefreshCw, X, Sparkles } from 'lucide-react';
 
 export const PwaUpdateNotification: React.FC = () => {
@@ -6,9 +6,27 @@ export const PwaUpdateNotification: React.FC = () => {
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null);
   const [isReloading, setIsReloading] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const userInitiatedReloadRef = useRef(false);
+  const updateSWRef = useRef<((reloadPage?: boolean) => Promise<void>) | null>(null);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+    if (typeof window === 'undefined') return;
+
+    // 1. Listen to VitePWA custom update event
+    const handlePwaUpdateReady = (e: Event) => {
+      const customEvent = e as CustomEvent<{ updateSW?: (reload?: boolean) => Promise<void> }>;
+      if (customEvent.detail?.updateSW) {
+        updateSWRef.current = customEvent.detail.updateSW;
+      }
+      setUpdateAvailable(true);
+    };
+    window.addEventListener('porto_pwa_update_ready', handlePwaUpdateReady);
+
+    if (!('serviceWorker' in navigator)) {
+      return () => {
+        window.removeEventListener('porto_pwa_update_ready', handlePwaUpdateReady);
+      };
+    }
 
     const handleWaitingWorker = (registration: ServiceWorkerRegistration) => {
       if (registration.waiting) {
@@ -33,22 +51,47 @@ export const PwaUpdateNotification: React.FC = () => {
           }
         });
       }
-    });
+    }).catch(() => {});
 
-    // Listen to controller change (once new SW activates, reload)
+    // Listen to controller change: ONLY reload if user explicitly initiated it!
     let refreshing = false;
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (!refreshing) {
+    const handleControllerChange = () => {
+      if (userInitiatedReloadRef.current && !refreshing) {
         refreshing = true;
         window.location.reload();
       }
-    });
+    };
+    navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
+
+    return () => {
+      window.removeEventListener('porto_pwa_update_ready', handlePwaUpdateReady);
+      navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange);
+    };
   }, []);
 
   const handleApplyUpdate = () => {
+    // Anti-loop lock
+    const now = Date.now();
+    const lastReload = Number(sessionStorage.getItem('pwa_user_reload_ts') || 0);
+    if (now - lastReload < 8000) {
+      setDismissed(true);
+      return;
+    }
+    sessionStorage.setItem('pwa_user_reload_ts', String(now));
+
     setIsReloading(true);
-    if (waitingWorker) {
+    userInitiatedReloadRef.current = true;
+
+    if (updateSWRef.current) {
+      updateSWRef.current(true).catch(() => {
+        window.location.reload();
+      });
+    } else if (waitingWorker) {
       waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+      // Fallback reload if controllerchange doesn't fire within 600ms
+      setTimeout(() => {
+        window.location.reload();
+      }, 600);
     } else {
       window.location.reload();
     }

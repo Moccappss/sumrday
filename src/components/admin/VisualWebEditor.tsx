@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { 
-  Monitor, Smartphone, Tablet, Sun, Moon, Save, ExternalLink, 
-  Sparkles, RefreshCw, Upload, Plus, Trash2, Edit3, Check, Palette, 
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import {
+  Monitor, Smartphone, Tablet, Sun, Moon, Save, ExternalLink,
+  Sparkles, RefreshCw, Upload, Plus, Trash2, Edit3, Check, Palette,
   Layers, CheckCircle2, ChevronDown, ChevronRight, Eye, ArrowUpRight, Camera,
   Globe, FileText, ShoppingBag, User, Link2, FolderPlus, Menu,
   X, Settings, ShieldCheck, MessageSquare, Sliders, ArrowRight,
@@ -12,24 +12,49 @@ import {
   Cpu, Monitor as ScreenIcon, Package, Code2, Layout, MoreVertical, Search,
   Wand2, Zap, FileDown, FileUp, Bold, Italic, Heading2, Heading3, Quote, List, ListOrdered, Code, MessageCircle,
   Video, Users, FileCode, HelpCircle, Copy, CheckCheck, Clock, Music, AlertTriangle, Info, Target, Gamepad2, LayoutGrid,
-  Receipt, Heart
+  Receipt, Heart, Megaphone, SlidersHorizontal, ArrowUp, ArrowDown, EyeOff, Database
 } from 'lucide-react';
 import { storage } from '../../utils/storage';
 import { uploadToCloudinary } from '../../utils/cloudinary';
 import { googleSync } from '../../utils/googleSync';
 import { applyAccentColor } from '../../utils/theme';
-import { DEFAULT_MAIN_WEBSITE_DATA, deepMerge, type MainWebsiteData } from '../landing/useLandingData';
+import {
+  DEFAULT_MAIN_WEBSITE_DATA, deepMerge, setGlobalSiteMode, type MainWebsiteData,
+  DEFAULT_COMPANY_SECTIONS, DEFAULT_PERSONAL_SECTIONS,
+  getEffectiveCompanySections, getEffectivePersonalSections,
+  type BerandaSectionConfig
+} from '../landing/useLandingData';
 import { OFFLINE_WEBSITE_TEMPLATES, buildOfflineWebsite, type OfflineWebsiteTemplate } from '../../utils/offlineTemplates';
 import { generateAiWebsite } from '../../utils/ai';
 import { DEFAULT_CONCIERGE_SETTINGS, type ConciergeSettings } from '../chat/LiveChatWidget';
 import MediaGalleryModal from './MediaGalleryModal';
 import { subscribeToGames, saveGameInstance, deleteGameInstance } from '../../services/gameService';
 import { GameInstance } from '../../types/gameLicense';
+import LPCompanyHero from '../landing/LPCompanyHero';
+import LPHero from '../landing/LPHero';
+import LPAbout from '../landing/LPAbout';
+import DesignProjectEstimator from '../landing/DesignProjectEstimator';
+import LPCompanyUpdatesHub from '../landing/LPCompanyUpdatesHub';
 import LPUpdatesFeed from '../landing/LPUpdatesFeed';
 import LPPortfolio from '../landing/LPPortfolio';
 import LPBlogPreview from '../landing/LPBlogPreview';
 import LPFooter from '../landing/LPFooter';
+import LPClientMarquee from '../landing/LPClientMarquee';
+import LPStoreSpotlight from '../landing/LPStoreSpotlight';
+import LPRateCardSpotlight from '../landing/LPRateCardSpotlight';
+import LPCompanySolutions from '../landing/LPCompanySolutions';
+import LPProcess from '../landing/LPProcess';
+import LPTestimonials from '../landing/LPTestimonials';
+import LPModel3DSpotlight from '../landing/LPModel3DSpotlight';
+import LPFlipbookSpotlight from '../landing/LPFlipbookSpotlight';
+import LPBeforeAfterSpotlight from '../landing/LPBeforeAfterSpotlight';
+import LPFaqSection from '../landing/LPFaqSection';
+import LPHomeCustomWidget, { createDefaultHomeWidget, HomeWidgetType, HomeCustomWidgetData } from '../landing/LPHomeCustomWidget';
+import { LPFloatingStickersEditorLayer, createDefaultFloatingSticker, FloatingStickerItem } from '../landing/LPFloatingStickers';
+import PageHeroHeader from '../common/PageHeroHeader';
 import { UpdatesFeedManager } from './blog/UpdatesFeedManager';
+import { ClientVoiceManager } from './content-stash/ClientVoiceManager';
+import RateCardManager from './content-stash/RateCardManager';
 
 export const DEFAULT_BOOKING_SETTINGS = {
   platform: 'WhatsApp',
@@ -141,7 +166,7 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
           theme: { ...DEFAULT_MAIN_WEBSITE_DATA.theme, accentColor: savedAccent }
         };
       }
-    } catch (e) {}
+    } catch (e) { }
     return DEFAULT_MAIN_WEBSITE_DATA;
   });
   const [biodata, setBiodata] = useState<any>({
@@ -186,7 +211,7 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
   const [bioLinks, setBioLinks] = useState<any[]>([]);
   const [games, setGames] = useState<GameInstance[]>([]);
   const [editingGameModal, setEditingGameModal] = useState<GameInstance | null>(null);
-  
+
   // Navigation & Viewport States
   const [activePage, setActivePage] = useState<ActivePageKey>('home');
   const [device, setDevice] = useState<DeviceMode>('desktop');
@@ -202,16 +227,25 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
-  
+
   // UI & Loading States
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'synced' | 'draft' | 'syncing'>('synced');
-  
+
   // Modals & Panels
   const [showColorPicker, setShowColorPicker] = useState(false);
+  const [homeWidgetPickerIdx, setHomeWidgetPickerIdx] = useState<number | null>(null);
+  const [showFooterEditorPanel, setShowFooterEditorPanel] = useState(false);
+  const isDraftModeRef = useRef(false);
+  const [customWidgetPickerIdx, setCustomWidgetPickerIdx] = useState<number | null>(null);
+  const [selectedFloatingStickerId, setSelectedFloatingStickerId] = useState<string | null>(null);
+  const [selectedCustomStickerId, setSelectedCustomStickerId] = useState<string | null>(null);
+  const [floatingStickerGalleryTargetId, setFloatingStickerGalleryTargetId] = useState<string | null>(null);
+  const berandaCanvasRef = useRef<HTMLDivElement>(null);
+  const customCanvasRef = useRef<HTMLDivElement>(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showSettingsDrawer, setShowSettingsDrawer] = useState(false);
   const [settingsActiveTab, setSettingsActiveTab] = useState<'seo' | 'identity' | 'contact' | 'consultation' | 'concierge' | 'backup'>('seo');
@@ -246,9 +280,20 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
   // 3. Booking & Consultation Settings State
   const [bookingSettings, setBookingSettings] = useState<any>(DEFAULT_BOOKING_SETTINGS);
 
+  // 3.5 Updates Feed in Beranda & Announcement Ticker State
+  const [showHomeUpdatesManager, setShowHomeUpdatesManager] = useState(false);
+  const [socialUpdates, setSocialUpdates] = useState<any[]>([]);
+
+  // 3.6 Beranda Section Reordering & Ulasan Database Modal States
+  const [showSectionsModal, setShowSectionsModal] = useState(false);
+  const [showReviewsModal, setShowReviewsModal] = useState(false);
+  const [showClientsModal, setShowClientsModal] = useState(false);
+  const [newClientInput, setNewClientInput] = useState({ name: '', industry: '', logo: '' });
+  const [isUploadingClientLogo, setIsUploadingClientLogo] = useState(false);
+
   // 4. Blog Markdown Rich Body Editor State
   const [blogEditorTab, setBlogEditorTab] = useState<'edit' | 'preview'>('edit');
-  
+
   // Interactive Popup Modal Editors
   const [editingProjectModal, setEditingProjectModal] = useState<any>(null);
   const [editingProductModal, setEditingProductModal] = useState<any>(null);
@@ -1233,15 +1278,20 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showTemplateModal, showSettingsDrawer, showHistoryModal, isGalleryOpen, iconPickerTarget, editingProjectModal, editingProductModal, editingBlogModal, showColorPicker, showMobilePageSelector, showMobileMoreMenu]);
 
+  useEffect(() => {
+    isDraftModeRef.current = isDirty || syncStatus === 'draft';
+  }, [isDirty, syncStatus]);
+
   // Load initial data & checkpoints
   useEffect(() => {
     let isMounted = true;
     const loadAllData = async () => {
       try {
         const [
-          savedData, savedProjects, savedProducts, savedBlogs, savedLinks, savedCheckpoints, savedBio, savedConcierge, savedBooking
+          savedData, savedDraft, savedProjects, savedProducts, savedBlogs, savedLinks, savedCheckpoints, savedBio, savedConcierge, savedBooking
         ] = await Promise.all([
           storage.getItem('porto_main_website', null),
+          storage.getItem('porto_main_website_draft', null),
           storage.getItem('porto_portfolio', []),
           storage.getItem('porto_catalog', []),
           storage.getItem('porto_blog', []),
@@ -1254,9 +1304,15 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
 
         if (!isMounted) return;
 
+        const hasDraft = Boolean(savedDraft && savedDraft.data);
+        const activeMainData = hasDraft ? savedDraft.data : savedData;
         let mergedData = DEFAULT_MAIN_WEBSITE_DATA;
-        if (savedData) {
-          mergedData = deepMerge(DEFAULT_MAIN_WEBSITE_DATA, savedData);
+        if (activeMainData) {
+          mergedData = deepMerge(DEFAULT_MAIN_WEBSITE_DATA, activeMainData);
+        }
+        if (hasDraft) {
+          isDraftModeRef.current = true;
+          setSyncStatus('draft');
         }
 
         // Deduplicate navbar items
@@ -1283,24 +1339,34 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
         if (mergedData.theme?.defaultMode) {
           setIsDark(mergedData.theme.defaultMode === 'dark');
         }
-        if (savedBio) {
-          setBiodata((prev: any) => ({ ...prev, ...savedBio }));
+        const effBio = hasDraft && savedDraft.biodata ? savedDraft.biodata : savedBio;
+        const effConcierge = hasDraft && savedDraft.conciergeSettings ? savedDraft.conciergeSettings : savedConcierge;
+        const effBooking = hasDraft && savedDraft.bookingSettings ? savedDraft.bookingSettings : savedBooking;
+        const effProjects = hasDraft && Array.isArray(savedDraft.projects) ? savedDraft.projects : savedProjects;
+        const effProducts = hasDraft && Array.isArray(savedDraft.products) ? savedDraft.products : savedProducts;
+        const effBlogs = hasDraft && Array.isArray(savedDraft.blogPosts) ? savedDraft.blogPosts : savedBlogs;
+        const effLinks = hasDraft && Array.isArray(savedDraft.bioLinks) ? savedDraft.bioLinks : savedLinks;
+
+        if (effBio) {
+          setBiodata((prev: any) => ({ ...prev, ...effBio }));
         }
-        if (savedConcierge) {
-          setConciergeSettings(savedConcierge);
+        if (effConcierge) {
+          setConciergeSettings(effConcierge);
         }
-        if (savedBooking) {
+        if (effBooking) {
           setBookingSettings((prev: any) => ({
             ...prev,
-            ...savedBooking,
-            customServices: (savedBooking.customServices && savedBooking.customServices.length > 0) ? savedBooking.customServices : prev.customServices
+            ...effBooking,
+            customServices: (effBooking.customServices && effBooking.customServices.length > 0) ? effBooking.customServices : prev.customServices
           }));
         }
-        if (Array.isArray(savedProjects)) setProjects(savedProjects);
-        if (Array.isArray(savedProducts)) setProducts(savedProducts);
-        if (Array.isArray(savedBlogs)) setBlogPosts(savedBlogs);
-        if (Array.isArray(savedLinks)) setBioLinks(savedLinks);
+        if (Array.isArray(effProjects)) setProjects(effProjects);
+        if (Array.isArray(effProducts)) setProducts(effProducts);
+        if (Array.isArray(effBlogs)) setBlogPosts(effBlogs);
+        if (Array.isArray(effLinks)) setBioLinks(effLinks);
         if (Array.isArray(savedCheckpoints)) setCheckpoints(savedCheckpoints);
+        const savedUpdates = await storage.getItem('porto_social_updates', []);
+        if (Array.isArray(savedUpdates)) setSocialUpdates(savedUpdates);
 
       } catch (err) {
         console.error('Failed to load visual editor data:', err);
@@ -1313,7 +1379,7 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
 
     // Real-time synchronization listeners to ensure Canvas data is identical to client website & database
     const unsubMain = storage.listenItem('porto_main_website', (d: any) => {
-      if (d && isMounted) {
+      if (d && isMounted && !isDraftModeRef.current) {
         setData(prev => {
           const merged = deepMerge(prev, d);
           const savedAccent = (typeof localStorage !== 'undefined' ? localStorage.getItem('porto_accent_color') : null) || d.theme?.accentColor;
@@ -1343,6 +1409,10 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
       if (newBio && isMounted) setBiodata((prev: any) => ({ ...prev, ...newBio }));
     });
 
+    const unsubUpdates = storage.listenItem('porto_social_updates', (newU: any) => {
+      if (Array.isArray(newU) && isMounted) setSocialUpdates(newU);
+    });
+
     const handleAccentChange = (e: any) => {
       const col = e?.detail?.color || (typeof localStorage !== 'undefined' ? localStorage.getItem('porto_accent_color') : null);
       if (col && isMounted) {
@@ -1357,29 +1427,45 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
       if (isMounted) setGames(data || []);
     });
 
-    return () => { 
-      isMounted = false; 
+    return () => {
+      isMounted = false;
       if (typeof unsubMain === 'function') unsubMain();
       if (typeof unsubPortfolio === 'function') unsubPortfolio();
       if (typeof unsubCatalog === 'function') unsubCatalog();
       if (typeof unsubBlog === 'function') unsubBlog();
       if (typeof unsubLinks === 'function') unsubLinks();
       if (typeof unsubBio === 'function') unsubBio();
+      if (typeof unsubUpdates === 'function') unsubUpdates();
       if (typeof unsubGames === 'function') unsubGames();
       window.removeEventListener('porto_accent_color_changed', handleAccentChange);
       window.removeEventListener('storage', handleAccentChange);
     };
   }, []);
 
+  // Compute latest social update for Announcement Ticker and Spotlight
+  const latestUpdate = useMemo(() => {
+    if (!socialUpdates || socialUpdates.length === 0) return null;
+    const sorted = [...socialUpdates].sort((a, b) => {
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+      const dateA = new Date(a.customDate || a.createdAt).getTime();
+      const dateB = new Date(b.customDate || b.createdAt).getTime();
+      return dateB - dateA;
+    });
+    return sorted[0];
+  }, [socialUpdates]);
+
   // Update Field Helper
   const updateField = useCallback((path: string, value: any) => {
     setData((prev) => {
-      const copy = JSON.parse(JSON.stringify(prev));
       const keys = path.split('.');
+      const copy: any = Array.isArray(prev) ? [...prev] : { ...prev };
       let current = copy;
       for (let i = 0; i < keys.length - 1; i++) {
-        if (!current[keys[i]]) current[keys[i]] = {};
-        current = current[keys[i]];
+        const k = keys[i];
+        const nextVal = current[k];
+        current[k] = Array.isArray(nextVal) ? [...nextVal] : { ...(nextVal || {}) };
+        current = current[k];
       }
       current[keys[keys.length - 1]] = value;
       return copy;
@@ -1391,12 +1477,14 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
   // Update Biodata Field Helper
   const updateBioField = useCallback((path: string, value: any) => {
     setBiodata((prev: any) => {
-      const copy = JSON.parse(JSON.stringify(prev || {}));
       const keys = path.split('.');
+      const copy: any = { ...(prev || {}) };
       let current = copy;
       for (let i = 0; i < keys.length - 1; i++) {
-        if (!current[keys[i]]) current[keys[i]] = {};
-        current = current[keys[i]];
+        const k = keys[i];
+        const nextVal = current[k];
+        current[k] = Array.isArray(nextVal) ? [...nextVal] : { ...(nextVal || {}) };
+        current = current[k];
       }
       current[keys[keys.length - 1]] = value;
       return copy;
@@ -1404,6 +1492,270 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
     setIsDirty(true);
     setSyncStatus('draft');
   }, []);
+
+  // Handle Toggle Website Mode (Perusahaan vs Pribadi)
+  const handleSiteModeToggle = (newMode: 'company' | 'personal') => {
+    updateField('siteMode', newMode);
+    updateField('aboutSettings.mode', newMode);
+    notify(newMode === 'company' ? 'Mode Perusahaan aktif (Draft — klik Publish untuk live)' : 'Mode Pribadi aktif (Draft — klik Publish untuk live)');
+  };
+
+  // Section Reorder, Add, Delete, Duplicate & Visibility Handlers (Notion / Google Sites Style)
+  const getCurrentBerandaSections = () => {
+    const isComp = data.siteMode === 'company';
+    return isComp
+      ? [...getEffectiveCompanySections(data.companySections, (data as any).deletedCompanySections)]
+      : [...getEffectivePersonalSections(data.personalSections, (data as any).deletedPersonalSections)];
+  };
+
+  const handleMoveSection = (index: number, direction: 'up' | 'down') => {
+    const isComp = data.siteMode === 'company';
+    const fieldKey = isComp ? 'companySections' : 'personalSections';
+    const currentList = getCurrentBerandaSections();
+
+    let targetIdx = direction === 'up' ? index - 1 : index + 1;
+    while (targetIdx >= 0 && targetIdx < currentList.length && currentList[targetIdx]?.enabled === false) {
+      targetIdx += direction === 'up' ? -1 : 1;
+    }
+    if (targetIdx < 0 || targetIdx >= currentList.length) return;
+
+    const temp = currentList[index];
+    currentList[index] = currentList[targetIdx];
+    currentList[targetIdx] = temp;
+
+    updateField(fieldKey, currentList);
+    notify('Urutan widget berhasil diubah', 'success');
+  };
+
+  const handleToggleSection = (index: number) => {
+    const isComp = data.siteMode === 'company';
+    const fieldKey = isComp ? 'companySections' : 'personalSections';
+    const currentList = getCurrentBerandaSections();
+
+    if (currentList[index]) {
+      const nextState = currentList[index].enabled === false ? true : false;
+      currentList[index] = {
+        ...currentList[index],
+        enabled: nextState
+      };
+      if (currentList[index].id === 'estimator') {
+        try {
+          if (nextState) localStorage.setItem('sumr_estimator_explicit_enabled', 'true');
+          else localStorage.setItem('sumr_estimator_explicit_enabled', 'false');
+        } catch { }
+      }
+      updateField(fieldKey, currentList);
+      notify(`Widget "${currentList[index].label}" ${nextState ? 'diaktifkan' : 'dinonaktifkan'}`, 'info');
+    }
+  };
+
+  const handleUpdateSectionLabel = (index: number, newLabel: string) => {
+    if (!newLabel || !newLabel.trim()) return;
+    const isComp = data.siteMode === 'company';
+    const fieldKey = isComp ? 'companySections' : 'personalSections';
+    const currentList = getCurrentBerandaSections();
+
+    if (currentList[index]) {
+      currentList[index] = {
+        ...currentList[index],
+        label: newLabel.trim()
+      };
+      updateField(fieldKey, currentList);
+      notify(`Judul widget diperbarui menjadi "${newLabel.trim()}"`, 'success');
+    }
+  };
+
+  const handleAddHomeWidget = (type: HomeWidgetType, insertAfterIdx?: number | null) => {
+    if (type === 'sticker') {
+      const currentStickers: FloatingStickerItem[] = [...((data as any).floatingStickers || [])];
+      const newSticker = createDefaultFloatingSticker({
+        x: 78 - (currentStickers.length % 4) * 12,
+        y: 18 + (currentStickers.length % 4) * 10,
+      });
+      updateField('floatingStickers' as any, [...currentStickers, newSticker]);
+      setSelectedFloatingStickerId(newSticker.id);
+      setHomeWidgetPickerIdx(null);
+      notify('Stiker melayang sticky (LP Image) ditambahkan! Seret ke mana saja di kanvas.', 'success');
+      return;
+    }
+
+    const isComp = data.siteMode === 'company';
+    const fieldKey = isComp ? 'companySections' : 'personalSections';
+    const currentList = getCurrentBerandaSections();
+
+    const labelMap: Record<HomeWidgetType, string> = {
+      text: 'Blok Teks & Heading',
+      callout: 'Callout / Info',
+      image: 'Banner Gambar',
+      video: 'Video / YouTube',
+      cta: 'Tombol Aksi (CTA)',
+      spacer: 'Pemisah / Spacer',
+      sticker: 'Stiker Interaktif (LP Image)',
+    };
+
+    const id = `widget_${type}_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
+    const widgetObj = createDefaultHomeWidget(type, id);
+    const nextHomeWidgets = { ...((data as any).homeWidgets || {}), [id]: widgetObj };
+
+    const newSec = { id, label: labelMap[type], enabled: true };
+    const nextList = [...currentList];
+    if (typeof insertAfterIdx === 'number' && insertAfterIdx >= 0 && insertAfterIdx < nextList.length) {
+      nextList.splice(insertAfterIdx + 1, 0, newSec);
+    } else {
+      nextList.push(newSec);
+    }
+
+    updateField('homeWidgets', nextHomeWidgets);
+    updateField(fieldKey, nextList);
+    setHomeWidgetPickerIdx(null);
+    notify(`Widget "${labelMap[type]}" ditambahkan ke Beranda`, 'success');
+  };
+
+  const handleRestoreBuiltinSection = (secToRestore: { id: string; label: string }, insertAfterIdx?: number | null) => {
+    const isComp = data.siteMode === 'company';
+    const fieldKey = isComp ? 'companySections' : 'personalSections';
+    const deletedKey = isComp ? 'deletedCompanySections' : 'deletedPersonalSections';
+    const currentList = getCurrentBerandaSections();
+
+    const filteredDeleted = ((data as any)[deletedKey] || []).filter((id: string) => id !== secToRestore.id);
+    updateField(deletedKey, filteredDeleted);
+
+    const existingIdx = currentList.findIndex((s) => s.id === secToRestore.id);
+    if (existingIdx === -1) {
+      const nextList = [...currentList];
+      const item = { id: secToRestore.id, label: secToRestore.label, enabled: true };
+      if (typeof insertAfterIdx === 'number' && insertAfterIdx >= 0 && insertAfterIdx < nextList.length) {
+        nextList.splice(insertAfterIdx + 1, 0, item);
+      } else {
+        nextList.push(item);
+      }
+      updateField(fieldKey, nextList);
+    } else {
+      const nextList = currentList.map((s) =>
+        s.id === secToRestore.id ? { ...s, enabled: true } : s
+      );
+      updateField(fieldKey, nextList);
+    }
+    if (secToRestore.id === 'estimator') {
+      try {
+        localStorage.setItem('sumr_estimator_explicit_enabled', 'true');
+      } catch { }
+    }
+    setHomeWidgetPickerIdx(null);
+    notify(`Widget "${secToRestore.label}" ditambahkan kembali`, 'success');
+  };
+
+  const handleDeleteSection = (index: number) => {
+    const isComp = data.siteMode === 'company';
+    const fieldKey = isComp ? 'companySections' : 'personalSections';
+    const deletedKey = isComp ? 'deletedCompanySections' : 'deletedPersonalSections';
+    const currentList = getCurrentBerandaSections();
+    const target = currentList[index];
+    if (!target) return;
+
+    const nextList = currentList.filter((_, i) => i !== index);
+    if (target.id.startsWith('widget_') || (data as any).homeWidgets?.[target.id]) {
+      const nextHomeWidgets = { ...((data as any).homeWidgets || {}) };
+      delete nextHomeWidgets[target.id];
+      updateField('homeWidgets', nextHomeWidgets);
+    } else {
+      const prevDeleted: string[] = Array.isArray((data as any)[deletedKey]) ? (data as any)[deletedKey] : [];
+      if (!prevDeleted.includes(target.id)) {
+        updateField(deletedKey, [...prevDeleted, target.id]);
+      }
+    }
+
+    updateField(fieldKey, nextList);
+    notify(`Widget "${target.label}" dihapus dari Beranda`, 'info');
+  };
+
+  const handleDuplicateWidget = (index: number) => {
+    const isComp = data.siteMode === 'company';
+    const fieldKey = isComp ? 'companySections' : 'personalSections';
+    const currentList = getCurrentBerandaSections();
+    const target = currentList[index];
+    const sourceWidget = target ? (data as any).homeWidgets?.[target.id] : null;
+    if (!target || !sourceWidget) return;
+
+    const newId = `widget_${sourceWidget.type}_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
+    const clonedWidget: HomeCustomWidgetData = {
+      ...JSON.parse(JSON.stringify(sourceWidget)),
+      id: newId,
+    };
+    const nextHomeWidgets = { ...((data as any).homeWidgets || {}), [newId]: clonedWidget };
+    const nextList = [...currentList];
+    nextList.splice(index + 1, 0, { id: newId, label: `${target.label} (Salinan)`, enabled: true });
+
+    updateField('homeWidgets', nextHomeWidgets);
+    updateField(fieldKey, nextList);
+    notify(`Widget "${target.label}" diduplikasi`, 'success');
+  };
+
+  const handleUpdateHomeWidget = (widgetId: string, updatedWidget: HomeCustomWidgetData) => {
+    const nextHomeWidgets = { ...((data as any).homeWidgets || {}), [widgetId]: updatedWidget };
+    updateField('homeWidgets', nextHomeWidgets);
+  };
+
+  const handleResetSections = () => {
+    const isComp = data.siteMode === 'company';
+    if (isComp) {
+      updateField('deletedCompanySections', []);
+      updateField('companySections', DEFAULT_COMPANY_SECTIONS);
+    } else {
+      updateField('deletedPersonalSections', []);
+      updateField('personalSections', DEFAULT_PERSONAL_SECTIONS);
+    }
+    notify('Tata letak widget dikembalikan ke bawaan', 'info');
+  };
+
+  const handleClearAllSections = () => {
+    const isComp = data.siteMode === 'company';
+    if (isComp) {
+      updateField('deletedCompanySections', DEFAULT_COMPANY_SECTIONS.map((s) => s.id));
+      updateField('companySections', []);
+    } else {
+      updateField('deletedPersonalSections', DEFAULT_PERSONAL_SECTIONS.map((s) => s.id));
+      updateField('personalSections', []);
+    }
+    setHomeWidgetPickerIdx(null);
+    notify('Semua section dihapus dari kanvas. Klik + untuk menambah kembali.', 'info');
+  };
+
+  // Mitra Kerja Sama Handlers
+  const handleAddClient = () => {
+    if (!newClientInput.name.trim()) {
+      notify('Masukkan nama mitra / klien', 'error');
+      return;
+    }
+    const current = data.aboutSettings?.company?.clients || [];
+    const item = {
+      id: `c_${Date.now()}`,
+      name: newClientInput.name.trim(),
+      industry: newClientInput.industry.trim() || 'Mitra Bisnis',
+      logo: newClientInput.logo.trim() || undefined
+    };
+    const updated = [...current, item];
+    updateField('aboutSettings.company.clients', updated);
+    setNewClientInput({ name: '', industry: '', logo: '' });
+    notify('Mitra baru berhasil ditambahkan', 'success');
+  };
+
+  const handleRemoveClient = (idx: number) => {
+    const current = data.aboutSettings?.company?.clients || [];
+    const updated = current.filter((_: any, i: number) => i !== idx);
+    updateField('aboutSettings.company.clients', updated);
+    notify('Mitra berhasil dihapus', 'info');
+  };
+
+  const handleMoveClient = (idx: number, dir: 'up' | 'down') => {
+    const current = [...(data.aboutSettings?.company?.clients || [])];
+    const targetIdx = dir === 'up' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= current.length) return;
+    const temp = current[idx];
+    current[idx] = current[targetIdx];
+    current[targetIdx] = temp;
+    updateField('aboutSettings.company.clients', current);
+  };
 
   // Save Checkpoint (Draft Point)
   const handleCreateCheckpoint = async (name?: string) => {
@@ -1642,8 +1994,13 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
 
   // Unified Image URL Applier
   const applyImageUrl = (type: string, url: string, id?: string, index?: number) => {
-    if (type === 'hero') {
+    if (type === 'hero' || type === 'company_hero_cover') {
+      updateField('companyHero.coverImage', url);
       updateField('hero.heroImage', url);
+    } else if (type === 'company_hero_story1') {
+      updateField('companyHero.storyImage1', url);
+    } else if (type === 'company_hero_story2') {
+      updateField('companyHero.storyImage2', url);
     } else if (type === 'home_about_image') {
       updateField('profile.image', url);
     } else if (type === 'about_avatar') {
@@ -1654,6 +2011,17 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
       const newT = [...(data.testimonials || [])];
       newT[index].avatar = url;
       updateField('testimonials', newT);
+    } else if (type === 'navbar_logo') {
+      updateField('navbar.logoImage', url);
+      try {
+        storage.getItem('porto_settings', {}).then((st: any) => {
+          storage.setItem('porto_settings', { ...st, cmsLogo: url || null }, true).catch(() => { });
+        });
+        if (url) {
+          updateField('seo.faviconUrl', url);
+        }
+        window.dispatchEvent(new CustomEvent('porto_logo_updated', { detail: { logo: url } }));
+      } catch (e) { }
     } else if (type === 'company_logo') {
       updateField('aboutSettings.company.logoUrl', url);
     } else if (type === 'company_cover') {
@@ -1763,32 +2131,46 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
 
   const handleRemoveImage = (type: string, id?: string, index?: number) => {
     confirm('Hapus / kosongkan gambar ini?', () => {
+      if (type === 'navbar_logo') {
+        updateField('navbar.logoImage', '');
+        try {
+          storage.getItem('porto_settings', {}).then((st: any) => {
+            storage.setItem('porto_settings', { ...st, cmsLogo: null }, true).catch(() => { });
+          });
+          window.dispatchEvent(new CustomEvent('porto_logo_updated', { detail: { logo: null } }));
+        } catch (e) { }
+        notify('Logo navbar berhasil dihapus.');
+        return;
+      }
       applyImageUrl(type, '', id, index);
-      notify('🗑️ Gambar berhasil dihapus / dikosongkan.');
+      notify('Gambar berhasil dihapus / dikosongkan.');
     });
   };
 
-  // Save Draft (Local Working State)
+  // Save Draft (Isolasi ke Draft Storage — belum menimpa website live client)
   const handleSaveDraft = async () => {
     setIsSaving(true);
     try {
-      await Promise.all([
-        storage.setItem('porto_main_website', data),
-        storage.setItem('porto_biodata', biodata),
-        storage.setItem('porto_portfolio', projects),
-        storage.setItem('porto_catalog', products),
-        storage.setItem('porto_blog', blogPosts),
-        storage.setItem('porto_links', bioLinks),
-        storage.setItem('porto_booking_settings', bookingSettings),
-        storage.setItem('porto_concierge_settings', conciergeSettings)
-      ]);
-      await handleCreateCheckpoint('Draft Terakhir Disimpan');
+      const draftPayload = {
+        data: JSON.parse(JSON.stringify(data)),
+        biodata: JSON.parse(JSON.stringify(biodata)),
+        projects: JSON.parse(JSON.stringify(projects)),
+        products: JSON.parse(JSON.stringify(products)),
+        blogPosts: JSON.parse(JSON.stringify(blogPosts)),
+        bioLinks: JSON.parse(JSON.stringify(bioLinks)),
+        bookingSettings: JSON.parse(JSON.stringify(bookingSettings)),
+        conciergeSettings: JSON.parse(JSON.stringify(conciergeSettings)),
+        savedAt: new Date().toISOString(),
+      };
+      await storage.setItem('porto_main_website_draft', draftPayload);
+      isDraftModeRef.current = true;
+      await handleCreateCheckpoint(`Draft Tersimpan ${new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`);
       setIsDirty(false);
-      setSyncStatus('synced');
-      notify('💾 Draft website berhasil disimpan!');
+      setSyncStatus('draft');
+      notify('Draft tersimpan! Klik Publish untuk menayangkan perubahan ke website live.');
     } catch (err) {
       console.error(err);
-      notify('❌ Gagal menyimpan draft.', 'error');
+      notify('Gagal menyimpan draft.', 'error');
     } finally {
       setIsSaving(false);
     }
@@ -1798,12 +2180,13 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
   const handlePublishLive = async () => {
     setIsPublishing(true);
     setSyncStatus('syncing');
-    notify('🚀 Memulai proses publikasi & sinkronisasi Google Drive...');
+    notify('Memulai proses publikasi & sinkronisasi ke Website Live...');
 
     try {
-      // 1. Commit all data to local database
+      // 1. Commit all data to live database & clear pending draft
       await Promise.all([
         storage.setItem('porto_main_website', data),
+        storage.setItem('porto_main_website_draft', null),
         storage.setItem('porto_biodata', biodata),
         storage.setItem('porto_portfolio', projects),
         storage.setItem('porto_catalog', products),
@@ -1812,6 +2195,15 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
         storage.setItem('porto_booking_settings', bookingSettings),
         storage.setItem('porto_concierge_settings', conciergeSettings)
       ]);
+
+      setGlobalSiteMode(data?.siteMode === 'company' ? 'company' : 'personal');
+
+      const logoText = (data?.navbar?.logoText || '').trim();
+      if (logoText && typeof localStorage !== 'undefined') {
+        localStorage.setItem('porto_cached_logotext', logoText);
+        window.dispatchEvent(new CustomEvent('porto_logotext_updated', { detail: { logoText } }));
+      }
+      window.dispatchEvent(new CustomEvent('landing_data_updated', { detail: data }));
 
       // 2. Backup to Google Drive via Apps Script
       try {
@@ -1823,33 +2215,54 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
       // 3. Create permanent publish checkpoint
       await handleCreateCheckpoint(`Publikasi Live ${new Date().toLocaleDateString('id-ID')}`);
 
+      isDraftModeRef.current = false;
       setIsDirty(false);
       setSyncStatus('synced');
-      notify('🎉 SELURUH WEBSITE BERHASIL DIPUBLIKASIKAN & DISINKRONKAN KE DRIVE!');
+      notify('Website berhasil dipublikasikan ke Live & disinkronkan!');
     } catch (err) {
       console.error('Publish error:', err);
-      notify('❌ Gagal mempublikasikan website.', 'error');
+      setSyncStatus('draft');
+      notify('Gagal mempublikasikan website.', 'error');
     } finally {
       setIsPublishing(false);
     }
   };
 
-  // Image Upload to Cloudinary Handler
+  // Image Upload to Cloudinary Handler with Zero-Failure Local Fallback
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !uploadTargetRef.current) return;
 
-    notify('⏳ Mengunggah foto ke Cloudinary...');
+    notify('⏳ Mengunggah foto...');
     try {
-      const res: any = await uploadToCloudinary(file, 'image');
-      if (res?.url) {
-        const { type, id, index } = uploadTargetRef.current;
-        applyImageUrl(type, res.url, id, index);
-        notify('✅ Foto berhasil diunggah via Cloudinary!');
+      let finalUrl = '';
+      try {
+        const res: any = await uploadToCloudinary(file, 'image');
+        if (res?.url) finalUrl = res.url;
+      } catch (cloudErr) {
+        console.warn('Cloudinary upload fallback to local data url:', cloudErr);
       }
-    } catch (err) {
+
+      if (!finalUrl) {
+        // Zero-failure fallback: read as Data URL
+        finalUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      }
+
+      if (finalUrl) {
+        const { type, id, index } = uploadTargetRef.current;
+        applyImageUrl(type, finalUrl, id, index);
+        notify('Foto berhasil diunggah!');
+      }
+    } catch (err: any) {
       console.error(err);
-      notify('❌ Gagal mengunggah foto.', 'error');
+      notify('Gagal mengunggah foto: ' + (err?.message || 'Format tidak didukung'), 'error');
+    } finally {
+      if (e.target) e.target.value = '';
     }
   };
 
@@ -1903,7 +2316,9 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
   const isMobile = effectiveDevice === 'mobile';
   const isTablet = effectiveDevice === 'tablet';
   const isMobileOrTablet = isMobile || isTablet || isRealMobileScreen;
-  const targetWidth = isRealMobileScreen ? '100%' : (device === 'desktop' ? '100%' : device === 'tablet' ? '768px' : '390px');
+  const targetWidth = isRealMobileScreen
+    ? '100%'
+    : (device === 'desktop' ? '100%' : device === 'tablet' ? 'min(860px, calc(100% - 24px))' : 'min(440px, calc(100% - 24px))');
 
   const editorThemeTokens: Record<string, string> = {
     '--cms-bg': isDark ? '#08080f' : '#ffffff',
@@ -2109,175 +2524,81 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                 }}
                 style={{
                   display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                height: 36,
-                padding: '0 14px',
-                borderRadius: 100,
-                background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
-                border: `1px solid ${isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)'}`,
-                color: textColor,
-                cursor: 'pointer',
-                fontFamily: "'Outfit', sans-serif",
-                fontSize: 13,
-                fontWeight: 800,
-                transition: 'all 0.2s',
-              }}
-            >
-              <span style={{ display: 'flex', alignItems: 'center', color: accentColor }}>
-                {PAGES.find(p => p.key === activePage)?.icon}
-              </span>
-              <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {PAGES.find(p => p.key === activePage)?.label}
-              </span>
-              <ChevronDown size={14} style={{ color: subTextColor, transform: showDesktopPageList ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
-            </button>
-
-            {/* Desktop Page Selector Dropdown Popover */}
-            {showDesktopPageList && (
-              <div
-                onClick={(e) => e.stopPropagation()}
-                data-cms-theme={isDark ? 'dark' : 'light'}
-                data-theme={isDark ? 'dark' : 'light'}
-                style={{
-                  ...editorThemeTokens,
-                  position: 'absolute',
-                  top: 44,
-                  left: 0,
-                  width: 300,
-                  maxHeight: 460,
-                  overflowY: 'auto',
-                  borderRadius: 20,
-                  background: isDark ? '#0f172a' : '#ffffff',
-                  border: `1px solid ${isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.1)'}`,
-                  boxShadow: '0 20px 50px rgba(0,0,0,0.25)',
-                  padding: '12px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 10,
-                  zIndex: 35000,
-                } as React.CSSProperties}
+                  alignItems: 'center',
+                  gap: 8,
+                  height: 36,
+                  padding: '0 14px',
+                  borderRadius: 100,
+                  background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+                  border: `1px solid ${isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)'}`,
+                  color: textColor,
+                  cursor: 'pointer',
+                  fontFamily: "'Outfit', sans-serif",
+                  fontSize: 13,
+                  fontWeight: 800,
+                  transition: 'all 0.2s',
+                }}
               >
-                {/* Header */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 6, borderBottom: `1px solid ${cardBorder}` }}>
-                  <span style={{ fontSize: 11, fontWeight: 900, color: subTextColor, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    Daftar Halaman Website
-                  </span>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: accentColor, background: `${accentColor}15`, padding: '2px 7px', borderRadius: 100 }}>
-                    {PAGES.length} Halaman
-                  </span>
-                </div>
+                <span style={{ display: 'flex', alignItems: 'center', color: accentColor }}>
+                  {PAGES.find(p => p.key === activePage)?.icon}
+                </span>
+                <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {PAGES.find(p => p.key === activePage)?.label}
+                </span>
+                <ChevronDown size={14} style={{ color: subTextColor, transform: showDesktopPageList ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+              </button>
 
-                {/* Group 1: Halaman Utama (Default Pages with ON/OFF Switches) */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 6, paddingRight: 4 }}>
-                    <span style={{ fontSize: 10.5, fontWeight: 800, color: subTextColor, textTransform: 'uppercase' }}>
-                      Halaman Utama
+              {/* Desktop Page Selector Dropdown Popover */}
+              {showDesktopPageList && (
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  data-cms-theme={isDark ? 'dark' : 'light'}
+                  data-theme={isDark ? 'dark' : 'light'}
+                  style={{
+                    ...editorThemeTokens,
+                    position: 'absolute',
+                    top: 44,
+                    left: 0,
+                    width: 300,
+                    maxHeight: 460,
+                    overflowY: 'auto',
+                    borderRadius: 20,
+                    background: isDark ? '#0f172a' : '#ffffff',
+                    border: `1px solid ${isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.1)'}`,
+                    boxShadow: '0 20px 50px rgba(0,0,0,0.25)',
+                    padding: '12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 10,
+                    zIndex: 35000,
+                  } as React.CSSProperties}
+                >
+                  {/* Header */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 6, borderBottom: `1px solid ${cardBorder}` }}>
+                    <span style={{ fontSize: 11, fontWeight: 900, color: subTextColor, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Daftar Halaman Website
                     </span>
-                    <span style={{ fontSize: 9.5, color: subTextColor }}>Visibilitas Web</span>
-                  </div>
-
-                  {BUILTIN_PAGES.map((p) => {
-                    const isSel = activePage === p.key;
-                    const isPageActive = data.pagesVisibility?.[p.key] !== false; // Default true
-
-                    return (
-                      <div
-                        key={p.key}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: '5px 8px',
-                          borderRadius: 10,
-                          background: isSel ? `${accentColor}18` : 'transparent',
-                          transition: 'all 0.15s ease',
-                          gap: 8,
-                        }}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActivePage(p.key as ActivePageKey);
-                            setShowDesktopPageList(false);
-                          }}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 8,
-                            border: 'none',
-                            background: 'transparent',
-                            color: isSel ? accentColor : (isPageActive ? textColor : subTextColor),
-                            cursor: 'pointer',
-                            fontSize: 12.5,
-                            fontWeight: isSel ? 850 : 600,
-                            textAlign: 'left',
-                            flex: 1,
-                            minWidth: 0,
-                            padding: 0
-                          }}
-                        >
-                          <span style={{ opacity: isPageActive ? 1 : 0.45 }}>{p.icon}</span>
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', opacity: isPageActive ? 1 : 0.6 }}>{p.label}</span>
-                        </button>
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                          {/* Toggle ON/OFF Switch */}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const cur = data.pagesVisibility || { home: true, portfolio: true, about: true, catalog: true, pricing: true, games: true, blog: true, updates: true, links: true };
-                              const next = { ...cur, [p.key]: !isPageActive };
-                              updateField('pagesVisibility', next);
-                              notify(`Halaman "${p.label}" ${!isPageActive ? 'diaktifkan (ON)' : 'dinonaktifkan (OFF)'}`);
-                            }}
-                            title={isPageActive ? 'Klik untuk mematikan / menyembunyikan halaman ini dari navigasi publik' : 'Klik untuk mengaktifkan kembali halaman ini'}
-                            style={{
-                              padding: '2px 7px',
-                              borderRadius: 100,
-                              border: isPageActive ? `1px solid ${accentColor}50` : '1px solid rgba(239, 68, 68, 0.35)',
-                              background: isPageActive ? `${accentColor}18` : 'rgba(239, 68, 68, 0.12)',
-                              color: isPageActive ? accentColor : '#ef4444',
-                              fontSize: 10,
-                              fontWeight: 850,
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 3,
-                              transition: 'all 0.2s'
-                            }}
-                          >
-                            <span style={{ width: 5, height: 5, borderRadius: '50%', background: isPageActive ? '#10b981' : '#ef4444' }} />
-                            <span>{isPageActive ? 'ON' : 'OFF'}</span>
-                          </button>
-                          {isSel && <div style={{ width: 6, height: 6, borderRadius: '50%', background: accentColor }} />}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Group 2: Halaman Kustom Mandiri */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, paddingTop: 4, borderTop: `1px solid ${cardBorder}` }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 6, paddingRight: 4 }}>
-                    <span style={{ fontSize: 10.5, fontWeight: 800, color: subTextColor, textTransform: 'uppercase' }}>
-                      Halaman Kustom ({customPagesList.length})
+                    <span style={{ fontSize: 11, fontWeight: 800, color: accentColor, background: `${accentColor}15`, padding: '2px 7px', borderRadius: 100 }}>
+                      {PAGES.length} Halaman
                     </span>
                   </div>
 
-                  {customPagesList.length === 0 ? (
-                    <div style={{ padding: '12px 8px', textAlign: 'center', fontSize: 11.5, color: subTextColor, fontStyle: 'italic' }}>
-                      Belum ada halaman kustom.
+                  {/* Group 1: Halaman Utama (Default Pages with ON/OFF Switches) */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 6, paddingRight: 4 }}>
+                      <span style={{ fontSize: 10.5, fontWeight: 800, color: subTextColor, textTransform: 'uppercase' }}>
+                        Halaman Utama
+                      </span>
+                      <span style={{ fontSize: 9.5, color: subTextColor }}>Visibilitas Web</span>
                     </div>
-                  ) : (
-                    customPagesList.map((cp: any) => {
-                      const isSel = activePage === cp.key;
-                      const isNavActive = cp.showInNavbar !== false;
+
+                    {BUILTIN_PAGES.map((p) => {
+                      const isSel = activePage === p.key;
+                      const isPageActive = data.pagesVisibility?.[p.key] !== false; // Default true
 
                       return (
                         <div
-                          key={cp.key}
+                          key={p.key}
                           style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -2292,7 +2613,7 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                           <button
                             type="button"
                             onClick={() => {
-                              setActivePage(cp.key as ActivePageKey);
+                              setActivePage(p.key as ActivePageKey);
                               setShowDesktopPageList(false);
                             }}
                             style={{
@@ -2301,7 +2622,7 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                               gap: 8,
                               border: 'none',
                               background: 'transparent',
-                              color: isSel ? accentColor : textColor,
+                              color: isSel ? accentColor : (isPageActive ? textColor : subTextColor),
                               cursor: 'pointer',
                               fontSize: 12.5,
                               fontWeight: isSel ? 850 : 600,
@@ -2311,78 +2632,192 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                               padding: 0
                             }}
                           >
-                            <FileCode size={15} color={isSel ? accentColor : subTextColor} />
-                            <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cp.label}</span>
-                              <span style={{ fontSize: 10, color: subTextColor }}>/p/{cp.slug}</span>
-                            </div>
+                            <span style={{ opacity: isPageActive ? 1 : 0.45 }}>{p.icon}</span>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', opacity: isPageActive ? 1 : 0.6 }}>{p.label}</span>
                           </button>
 
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                            {/* Toggle ON/OFF Switch */}
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                const updated = (data.customPages || []).map((p: any) =>
-                                  p.id === cp.key ? { ...p, showInNavbar: !isNavActive } : p
-                                );
-                                updateField('customPages', updated);
-                                notify(`Menu navigasi "${cp.label}" ${!isNavActive ? 'ditampilkan (ON)' : 'disembunyikan (OFF)'}`);
+                                const cur = data.pagesVisibility || { home: true, portfolio: true, about: true, catalog: true, pricing: true, games: true, blog: true, updates: true, links: true };
+                                const next = { ...cur, [p.key]: !isPageActive };
+                                updateField('pagesVisibility', next);
+                                notify(`Halaman "${p.label}" ${!isPageActive ? 'diaktifkan (ON)' : 'dinonaktifkan (OFF)'}`);
                               }}
-                              title={isNavActive ? 'Klik untuk menyembunyikan dari menu navigasi' : 'Klik untuk menampilkan di menu navigasi'}
+                              title={isPageActive ? 'Klik untuk mematikan / menyembunyikan halaman ini dari navigasi publik' : 'Klik untuk mengaktifkan kembali halaman ini'}
                               style={{
                                 padding: '2px 7px',
                                 borderRadius: 100,
-                                border: isNavActive ? `1px solid ${accentColor}50` : '1px solid rgba(239, 68, 68, 0.35)',
-                                background: isNavActive ? `${accentColor}18` : 'rgba(239, 68, 68, 0.12)',
-                                color: isNavActive ? accentColor : '#ef4444',
+                                border: isPageActive ? `1px solid ${accentColor}50` : '1px solid rgba(239, 68, 68, 0.35)',
+                                background: isPageActive ? `${accentColor}18` : 'rgba(239, 68, 68, 0.12)',
+                                color: isPageActive ? accentColor : '#ef4444',
                                 fontSize: 10,
                                 fontWeight: 850,
                                 cursor: 'pointer',
                                 display: 'inline-flex',
                                 alignItems: 'center',
-                                gap: 3
+                                gap: 3,
+                                transition: 'all 0.2s'
                               }}
                             >
-                              <span style={{ width: 5, height: 5, borderRadius: '50%', background: isNavActive ? '#10b981' : '#ef4444' }} />
-                              <span>{isNavActive ? 'ON' : 'OFF'}</span>
+                              <span style={{ width: 5, height: 5, borderRadius: '50%', background: isPageActive ? '#10b981' : '#ef4444' }} />
+                              <span>{isPageActive ? 'ON' : 'OFF'}</span>
                             </button>
-                            {isSel && <div style={{ width: 6, height: 6, borderRadius: '50%', background: accentColor }} />}
                           </div>
                         </div>
                       );
-                    })
-                  )}
-                </div>
+                    })}
+                  </div>
 
-                {/* Bottom Add Action */}
-                <button
-                  onClick={() => {
-                    setShowDesktopPageList(false);
-                    setShowNewPageModal(true);
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 6,
-                    padding: '9px 12px',
-                    borderRadius: 12,
-                    border: `1px dashed ${accentColor}60`,
-                    background: `${accentColor}12`,
-                    color: accentColor,
-                    cursor: 'pointer',
-                    fontSize: 12.5,
-                    fontWeight: 800,
-                    marginTop: 4
-                  }}
-                >
-                  <Plus size={15} />
-                  <span>Buat Halaman Baru</span>
-                </button>
-              </div>
-            )}
-          </div>
+                  {/* Group 2: Halaman Kustom Mandiri */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3, paddingTop: 4, borderTop: `1px solid ${cardBorder}` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 6, paddingRight: 4 }}>
+                      <span style={{ fontSize: 10.5, fontWeight: 800, color: subTextColor, textTransform: 'uppercase' }}>
+                        Halaman Kustom ({customPagesList.length})
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowDesktopPageList(false);
+                          setShowNewPageModal(true);
+                        }}
+                        title="Tambah Halaman Kustom Baru"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: 24,
+                          height: 24,
+                          borderRadius: 999,
+                          border: 'none',
+                          background: `${accentColor}1c`,
+                          color: accentColor,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <Plus size={13} />
+                      </button>
+                    </div>
+
+                    {customPagesList.length === 0 ? (
+                      <div style={{ padding: '10px 8px', textAlign: 'center', fontSize: 11.5, color: subTextColor, fontStyle: 'italic' }}>
+                        Belum ada halaman kustom.
+                      </div>
+                    ) : (
+                      customPagesList.map((cp: any) => {
+                        const isSel = activePage === cp.key;
+                        const isNavActive = cp.showInNavbar !== false;
+
+                        return (
+                          <div
+                            key={cp.key}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '5px 8px',
+                              borderRadius: 10,
+                              background: isSel ? `${accentColor}18` : 'transparent',
+                              transition: 'all 0.15s ease',
+                              gap: 8,
+                            }}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActivePage(cp.key as ActivePageKey);
+                                setShowDesktopPageList(false);
+                              }}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 8,
+                                border: 'none',
+                                background: 'transparent',
+                                color: isSel ? accentColor : textColor,
+                                cursor: 'pointer',
+                                fontSize: 12.5,
+                                fontWeight: isSel ? 850 : 600,
+                                textAlign: 'left',
+                                flex: 1,
+                                minWidth: 0,
+                                padding: 0
+                              }}
+                            >
+                              <FileCode size={15} color={isSel ? accentColor : subTextColor} />
+                              <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cp.label}</span>
+                                <span style={{ fontSize: 10, color: subTextColor }}>/p/{cp.slug}</span>
+                              </div>
+                            </button>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const updated = (data.customPages || []).map((p: any) =>
+                                    p.id === cp.key ? { ...p, showInNavbar: !isNavActive } : p
+                                  );
+                                  updateField('customPages', updated);
+                                  notify(`Menu navigasi "${cp.label}" ${!isNavActive ? 'ditampilkan (ON)' : 'disembunyikan (OFF)'}`);
+                                }}
+                                title={isNavActive ? 'Klik untuk menyembunyikan dari menu navigasi' : 'Klik untuk menampilkan di menu navigasi'}
+                                style={{
+                                  padding: '2px 7px',
+                                  borderRadius: 100,
+                                  border: isNavActive ? `1px solid ${accentColor}50` : '1px solid rgba(239, 68, 68, 0.35)',
+                                  background: isNavActive ? `${accentColor}18` : 'rgba(239, 68, 68, 0.12)',
+                                  color: isNavActive ? accentColor : '#ef4444',
+                                  fontSize: 10,
+                                  fontWeight: 850,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 3
+                                }}
+                              >
+                                <span style={{ width: 5, height: 5, borderRadius: '50%', background: isNavActive ? '#10b981' : '#ef4444' }} />
+                                <span>{isNavActive ? 'ON' : 'OFF'}</span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {/* Bottom Add Action */}
+                  <button
+                    onClick={() => {
+                      setShowDesktopPageList(false);
+                      setShowNewPageModal(true);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      padding: '9px 12px',
+                      borderRadius: 12,
+                      border: `1px dashed ${accentColor}60`,
+                      background: `${accentColor}12`,
+                      color: accentColor,
+                      cursor: 'pointer',
+                      fontSize: 12.5,
+                      fontWeight: 800,
+                      marginTop: 4
+                    }}
+                  >
+                    <Plus size={15} />
+                    <span>Buat Halaman Baru</span>
+                  </button>
+                </div>
+              )}
+            </div>
 
             {/* Draft/Sync Status Badge */}
             <div style={{
@@ -2391,14 +2826,14 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
               gap: 5,
               padding: '3px 8px',
               borderRadius: 100,
-              background: isDirty ? 'rgba(245, 158, 11, 0.12)' : 'rgba(16, 185, 129, 0.12)',
-              border: `1px solid ${isDirty ? 'rgba(245, 158, 11, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`,
+              background: (isDirty || syncStatus === 'draft') ? 'rgba(245, 158, 11, 0.12)' : 'rgba(16, 185, 129, 0.12)',
+              border: `1px solid ${(isDirty || syncStatus === 'draft') ? 'rgba(245, 158, 11, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`,
               fontSize: 11,
               fontWeight: 750,
-              color: isDirty ? '#f59e0b' : '#10b981',
+              color: (isDirty || syncStatus === 'draft') ? '#f59e0b' : '#10b981',
             }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: isDirty ? '#f59e0b' : '#10b981' }} />
-              <span>{isDirty ? 'Mode Draft' : 'Tersinkron'}</span>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: (isDirty || syncStatus === 'draft') ? '#f59e0b' : '#10b981' }} />
+              <span>{(isDirty || syncStatus === 'draft') ? 'Mode Draft' : 'Tersinkron'}</span>
             </div>
           </div>
         )}
@@ -2434,7 +2869,7 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
             </button>
             <button
               onClick={() => setDevice('tablet')}
-              title="Tablet (768px)"
+              title="Tablet (860px)"
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -2452,7 +2887,7 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
             </button>
             <button
               onClick={() => setDevice('mobile')}
-              title="Ponsel (390px)"
+              title="Ponsel (440px)"
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -2497,7 +2932,7 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                 padding: 0,
               }}
             >
-              <Save size={14} />
+              {isSaving ? <RefreshCw size={14} className="cms-spin" /> : <Save size={14} />}
             </button>
 
             {/* Publish Live */}
@@ -2653,7 +3088,7 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                     <span>Pengaturan Website (SEO, Tema, Kontak)</span>
                   </button>
 
-                  {/* Dark/Light mode */}
+                  {/* Dark/Light mode (Icon Only Switch Mode) */}
                   <button
                     onClick={() => {
                       const newMode = isDark ? 'light' : 'dark';
@@ -2661,23 +3096,24 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                       updateField('theme.defaultMode', newMode);
                       setShowMobileMoreMenu(false);
                     }}
+                    title={isDark ? 'Ganti ke Mode Terang' : 'Ganti ke Mode Gelap'}
+                    aria-label="Toggle Dark/Light Mode"
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: 8,
-                      padding: '8px 10px',
-                      borderRadius: 10,
-                      border: 'none',
-                      background: 'transparent',
-                      color: textColor,
+                      justifyContent: 'center',
+                      width: 40,
+                      height: 40,
+                      borderRadius: 12,
+                      border: `1px solid ${isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)'}`,
+                      background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                      color: isDark ? '#f59e0b' : '#6366f1',
                       cursor: 'pointer',
-                      fontSize: 12.5,
-                      fontWeight: 700,
-                      textAlign: 'left',
+                      padding: 0,
+                      flexShrink: 0
                     }}
                   >
-                    {isDark ? <Sun size={15} color="#f59e0b" /> : <Moon size={15} color="#6366f1" />}
-                    <span>{isDark ? 'Mode Terang' : 'Mode Gelap'}</span>
+                    {isDark ? <Sun size={17} strokeWidth={2.2} /> : <Moon size={17} strokeWidth={2.2} />}
                   </button>
                 </div>
               )}
@@ -2809,7 +3245,7 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                 padding: 0,
               }}
             >
-              <Save size={16} />
+              {isSaving ? <RefreshCw size={16} className="cms-spin" /> : <Save size={16} />}
             </button>
 
             {/* 6. Publish Live Button */}
@@ -2849,7 +3285,7 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
           alignItems: 'center',
           justifyContent: 'center',
           overflow: 'hidden',
-          padding: isRealMobileScreen || device === 'desktop' ? 0 : '16px',
+          padding: isRealMobileScreen || device === 'desktop' ? 0 : '8px',
           boxSizing: 'border-box',
           position: 'relative',
         }}
@@ -2861,8 +3297,8 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
             ...editorThemeTokens,
             width: isRealMobileScreen ? '100%' : targetWidth,
             maxWidth: isRealMobileScreen || device === 'desktop' ? '100%' : targetWidth,
-            height: isRealMobileScreen || device === 'desktop' ? '100%' : (isMobile ? 'min(720px, calc(100% - 16px))' : 'min(780px, calc(100% - 16px))'),
-            maxHeight: isRealMobileScreen || device === 'desktop' ? '100%' : 'calc(100% - 16px)',
+            height: isRealMobileScreen || device === 'desktop' ? '100%' : (isMobile ? 'min(860px, calc(100% - 8px))' : 'min(900px, calc(100% - 8px))'),
+            maxHeight: isRealMobileScreen || device === 'desktop' ? '100%' : 'calc(100% - 8px)',
             margin: isRealMobileScreen || device === 'desktop' ? 0 : 'auto',
             borderRadius: isRealMobileScreen || device === 'desktop' ? 0 : (isMobile ? 38 : 24),
             boxShadow: isRealMobileScreen || device === 'desktop'
@@ -2906,12 +3342,13 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
 
           {/* ── ON-CANVAS EDITABLE NAVBAR (ADAPTS ACCURATELY TO REAL DESKTOP / TABLET / MOBILE VIEW) ── */}
           <div
+            data-no-3d="true"
             style={{
               position: 'sticky',
               top: 0,
               zIndex: 120,
               width: '100%',
-              padding: isMobileOrTablet ? '12px 18px' : '12px 28px',
+              padding: isMobile ? '8px 12px' : (isTablet ? '10px 18px' : '12px 28px'),
               boxSizing: 'border-box',
               background: isDark ? 'rgba(8, 8, 15, 0.92)' : 'rgba(255, 255, 255, 0.92)',
               backdropFilter: 'blur(20px)',
@@ -2920,29 +3357,163 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              gap: 12,
+              gap: isMobile ? 6 : 12,
             }}
           >
-            {/* Left: Editable Logo Text */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span
-                contentEditable
-                suppressContentEditableWarning
-                onBlur={(e) => updateField('navbar.logoText', e.currentTarget.textContent || 'sumr.day')}
-                style={{
-                  fontFamily: "'Outfit', sans-serif",
-                  fontSize: isMobileOrTablet ? 19 : 22,
-                  fontWeight: 900,
-                  color: textColor,
-                  outline: 'none',
-                  cursor: 'text',
-                  letterSpacing: '-0.02em',
-                }}
-                title="Klik untuk mengedit Nama Brand / Logo"
-              >
-                {data?.navbar?.logoText || data?.hero?.headline || 'sumr.day'}
-              </span>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: accentColor, display: 'inline-block' }} />
+            {/* Left: Editable Logo & Text */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 10, flexWrap: 'nowrap', minWidth: 0 }}>
+              {/* Logo Preview & Upload / Delete Controls */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 3 : 6, flexShrink: 0 }}>
+                <div
+                  style={{
+                    width: isMobile ? 28 : 34,
+                    height: isMobile ? 28 : 34,
+                    borderRadius: '50%',
+                    background: isDark ? 'rgba(255,255,255,0.06)' : '#FAF7F2',
+                    border: `1.5px solid ${accentColor}40`,
+                    boxShadow: `0 2px 8px ${accentColor}25`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    overflow: 'hidden',
+                    flexShrink: 0,
+                  }}
+                  title="Logo Navbar Saat Ini"
+                >
+                  {data?.navbar?.logoImage ? (
+                    <img
+                      src={data.navbar.logoImage}
+                      alt="Logo Navbar"
+                      style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                      onError={(e) => {
+                        (e.currentTarget as HTMLElement).style.display = 'none';
+                      }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: '50%',
+                        background: accentColor,
+                        boxShadow: `0 0 10px ${accentColor}`,
+                      }}
+                    />
+                  )}
+                </div>
+
+                {/* Inline Action Buttons for Logo */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button
+                    type="button"
+                    onClick={() => triggerUpload({ type: 'navbar_logo' })}
+                    title="Upload Logo Baru (PNG/SVG/JPG)"
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: 8,
+                      border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`,
+                      background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                      color: accentColor,
+                      fontSize: 10.5,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      whiteSpace: 'nowrap',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <Camera size={11} />
+                    {!isMobileOrTablet && <span>Upload</span>}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => openMediaPicker({ type: 'navbar_logo' })}
+                    title="Pilih dari Galeri Media"
+                    style={{
+                      padding: isMobileOrTablet ? '5px 7px' : '4px 8px',
+                      borderRadius: 8,
+                      border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`,
+                      background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                      color: subTextColor,
+                      fontSize: 10.5,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      whiteSpace: 'nowrap',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <ImageIcon size={11} />
+                    {!isMobileOrTablet && <span>Galeri</span>}
+                  </button>
+
+                  {(data?.navbar?.logoImage || data?.navbar?.logoImage === undefined) && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveImage('navbar_logo')}
+                      title="Hapus Logo Navbar"
+                      style={{
+                        padding: isMobileOrTablet ? '5px 7px' : '4px 6px',
+                        borderRadius: 8,
+                        border: '1px solid rgba(239,68,68,0.25)',
+                        background: 'rgba(239,68,68,0.08)',
+                        color: '#ef4444',
+                        fontSize: 10.5,
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 3,
+                        whiteSpace: 'nowrap',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <Trash2 size={11} />
+                      {!isMobileOrTablet && <span>Hapus</span>}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Editable Logo Brand Text */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const nextText = (e.currentTarget.textContent || '').trim() || 'sumr.day';
+                    updateField('navbar.logoText', nextText);
+                    try { localStorage.setItem('porto_cached_logotext', nextText); } catch (_) { }
+                    window.dispatchEvent(new CustomEvent('porto_logotext_updated', { detail: { logoText: nextText } }));
+                  }}
+                  style={{
+                    fontFamily: "'Outfit', sans-serif",
+                    fontSize: isMobile ? 15 : (isTablet ? 18 : 21),
+                    fontWeight: 800,
+                    color: textColor,
+                    outline: 'none',
+                    cursor: 'text',
+                    letterSpacing: '-0.02em',
+                    padding: isMobile ? '1px 5px' : '2px 6px',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    maxWidth: isMobile ? 135 : (isTablet ? 240 : undefined),
+                    display: 'inline-block',
+                    borderRadius: 8,
+                    border: `1px dashed ${isDark ? 'rgba(255,255,255,0.16)' : 'rgba(15,23,42,0.16)'}`,
+                  }}
+                  title="Klik untuk mengganti Nama Brand / Logo Navbar Website"
+                >
+                  {data?.navbar?.logoText || data?.hero?.headline || 'sumr.day'}
+                </span>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: accentColor, display: 'inline-block', flexShrink: 0 }} />
+              </div>
             </div>
 
             {/* Desktop Horizontal Menu */}
@@ -2957,7 +3528,8 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                   borderRadius: 18,
                   border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)'}`,
                   maxWidth: '100%',
-                  overflowX: 'auto',
+                  flexWrap: 'wrap',
+                  overflow: 'visible',
                 }}
               >
                 {(data?.navbar?.items || []).map((item: any, idx: number) => {
@@ -3049,8 +3621,12 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                             onClick={(e) => {
                               e.stopPropagation();
                               const newItems = [...(data?.navbar?.items || [])];
-                              const curSub = newItems[idx].subItems || [];
-                              newItems[idx].subItems = [...curSub, { id: `sub-${Date.now()}`, label: 'Sub Menu Baru', url: '#section' }];
+                              const curSub = newItems[idx]?.subItems || [];
+                              newItems[idx] = {
+                                ...newItems[idx],
+                                type: 'dropdown',
+                                subItems: [...curSub, { id: `sub-${Date.now()}`, label: 'Sub Menu Baru', url: '#section' }],
+                              };
                               updateField('navbar.items', newItems);
                               setOpenDropdownIdx(idx);
                               notify('📂 Sub-menu ditambahkan!');
@@ -3095,8 +3671,9 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                           style={{
                             position: 'absolute',
                             top: 'calc(100% + 8px)',
-                            left: 0,
-                            minWidth: 200,
+                            left: idx >= (data?.navbar?.items?.length || 0) - 2 ? 'auto' : 0,
+                            right: idx >= (data?.navbar?.items?.length || 0) - 2 ? 0 : 'auto',
+                            minWidth: 210,
                             background: isDark ? 'rgba(15, 23, 42, 0.96)' : 'rgba(255, 255, 255, 0.96)',
                             backdropFilter: 'blur(24px)',
                             WebkitBackdropFilter: 'blur(24px)',
@@ -3180,8 +3757,12 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                           <button
                             onClick={() => {
                               const newItems = [...(data?.navbar?.items || [])];
-                              const curSub = newItems[idx].subItems || [];
-                              newItems[idx].subItems = [...curSub, { id: `sub-${Date.now()}`, label: 'Sub-Link Baru', url: '#section' }];
+                              const curSub = newItems[idx]?.subItems || [];
+                              newItems[idx] = {
+                                ...newItems[idx],
+                                type: 'dropdown',
+                                subItems: [...curSub, { id: `sub-${Date.now()}`, label: 'Sub-Link Baru', url: '#section' }],
+                              };
                               updateField('navbar.items', newItems);
                             }}
                             style={{
@@ -3279,19 +3860,21 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
               </div>
             ) : (
               /* Mobile / Tablet Real Controls (Editable Login Button + Real Hamburger Button) */
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                 <div
                   style={{
-                    padding: '6px 14px',
+                    padding: '6px 12px',
                     borderRadius: 100,
                     background: accentColor,
                     color: '#ffffff',
                     fontFamily: "'Outfit', sans-serif",
-                    fontSize: 12,
+                    fontSize: 11.5,
                     fontWeight: 800,
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: 4,
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
                     boxShadow: `0 4px 12px ${accentColor}35`,
                   }}
                 >
@@ -3299,7 +3882,7 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                     contentEditable
                     suppressContentEditableWarning
                     onBlur={(e) => updateField('navbar.loginBtnLabel', e.currentTarget.textContent || 'Login')}
-                    style={{ outline: 'none', cursor: 'text' }}
+                    style={{ outline: 'none', cursor: 'text', whiteSpace: 'nowrap' }}
                     title="Klik untuk mengedit label login"
                   >
                     {data?.navbar?.loginBtnLabel || 'Login'}
@@ -3620,6 +4203,9 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
 
           {/* ── SCROLLABLE VISUAL PAGE CONTENT ── */}
           <div
+            className="visual-web-editor-canvas"
+            data-admin-canvas="true"
+            data-preview-device={effectiveDevice}
             data-cms-theme={isDark ? 'dark' : 'light'}
             data-theme={isDark ? 'dark' : 'light'}
             style={{
@@ -3627,991 +4213,1349 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
               flex: 1,
               overflowY: 'auto',
               overflowX: 'hidden',
+              containerType: 'inline-size',
               scrollBehavior: 'smooth',
               background: isDark ? '#08080f' : '#ffffff',
               color: isDark ? '#f8fafc' : '#0f172a',
+              paddingBottom: 'calc(100px + env(safe-area-inset-bottom, 24px))',
             } as React.CSSProperties}
           >
+            {/* Scoped force-visible override for canvas: prevents any child from being stuck at opacity:0 */}
+            <style>{`
+              .visual-web-editor-canvas [data-reveal],
+              .visual-web-editor-canvas [data-reveal="true"],
+              .visual-web-editor-canvas [data-reveal-type],
+              .visual-web-editor-canvas .fade-in-scroll,
+              .visual-web-editor-canvas [data-reveal]:not([data-reveal="revealed"]):not(.is-revealed),
+              .visual-web-editor-canvas [data-reveal="true"]:not([data-reveal="revealed"]):not(.is-revealed),
+              .visual-web-editor-canvas [data-reveal-type]:not([data-reveal="revealed"]):not(.is-revealed),
+              .visual-web-editor-canvas .fade-in-scroll:not(.is-revealed),
+              [data-admin-canvas="true"] [data-reveal],
+              [data-admin-canvas="true"] [data-reveal="true"],
+              [data-admin-canvas="true"] [data-reveal-type],
+              [data-admin-canvas="true"] .fade-in-scroll,
+              [data-admin-canvas="true"] [data-reveal]:not([data-reveal="revealed"]):not(.is-revealed),
+              [data-admin-canvas="true"] [data-reveal="true"]:not([data-reveal="revealed"]):not(.is-revealed),
+              [data-admin-canvas="true"] [data-reveal-type]:not([data-reveal="revealed"]):not(.is-revealed),
+              [data-admin-canvas="true"] .fade-in-scroll:not(.is-revealed) {
+                opacity: 1 !important;
+                transform: none !important;
+                filter: none !important;
+                visibility: visible !important;
+                transition: none !important;
+              }
+              .visual-web-editor-canvas[data-preview-device="mobile"] *,
+              .visual-web-editor-canvas[data-preview-device="tablet"] * {
+                min-width: 0;
+              }
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lp-update-spotlight-card,
+              .visual-web-editor-canvas[data-preview-device="tablet"] .lp-update-spotlight-card {
+                flex-direction: column !important;
+                max-width: 100% !important;
+              }
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lp-update-spotlight-media,
+              .visual-web-editor-canvas[data-preview-device="tablet"] .lp-update-spotlight-media {
+                width: calc(100% - 24px) !important;
+                max-width: 100% !important;
+                min-width: unset !important;
+                height: 200px !important;
+                min-height: unset !important;
+                margin: 12px 12px 0 12px !important;
+              }
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lp-update-spotlight-body,
+              .visual-web-editor-canvas[data-preview-device="tablet"] .lp-update-spotlight-body {
+                padding: 14px 16px 16px 16px !important;
+              }
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lp-blog-featured-card,
+              .visual-web-editor-canvas[data-preview-device="tablet"] .lp-blog-featured-card {
+                flex-direction: column !important;
+              }
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lp-blog-featured-media,
+              .visual-web-editor-canvas[data-preview-device="tablet"] .lp-blog-featured-media {
+                width: 100% !important;
+                aspect-ratio: 16 / 9 !important;
+                min-height: unset !important;
+                max-height: 220px !important;
+              }
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lp-blog-featured-body,
+              .visual-web-editor-canvas[data-preview-device="tablet"] .lp-blog-featured-body {
+                padding: 18px 18px 20px !important;
+              }
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lp-hero-grid,
+              .visual-web-editor-canvas[data-preview-device="tablet"] .lp-hero-grid {
+                grid-template-columns: minmax(0, 1fr) !important;
+                padding: 36px 18px 28px !important;
+                gap: 28px !important;
+              }
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lp-hero-content-col,
+              .visual-web-editor-canvas[data-preview-device="tablet"] .lp-hero-content-col {
+                align-items: center !important;
+                text-align: center !important;
+              }
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lp-hero-status-row,
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lp-hero-cta-group,
+              .visual-web-editor-canvas[data-preview-device="tablet"] .lp-hero-status-row,
+              .visual-web-editor-canvas[data-preview-device="tablet"] .lp-hero-cta-group {
+                justify-content: center !important;
+              }
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lpch-hero-grid,
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lpch-split,
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lpch-bento,
+              .visual-web-editor-canvas[data-preview-device="tablet"] .lpch-hero-grid,
+              .visual-web-editor-canvas[data-preview-device="tablet"] .lpch-split,
+              .visual-web-editor-canvas[data-preview-device="tablet"] .lpch-bento {
+                grid-template-columns: minmax(0, 1fr) !important;
+              }
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lpch-tall,
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lpch-right,
+              .visual-web-editor-canvas[data-preview-device="tablet"] .lpch-tall,
+              .visual-web-editor-canvas[data-preview-device="tablet"] .lpch-right {
+                grid-column: span 1 !important;
+              }
+              .visual-web-editor-canvas[data-preview-device="mobile"] #about,
+              .visual-web-editor-canvas[data-preview-device="mobile"] #process,
+              .visual-web-editor-canvas[data-preview-device="mobile"] #blog-preview,
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lp-portfolio-section {
+                padding: 48px 16px !important;
+              }
+              .visual-web-editor-canvas[data-preview-device="mobile"] #contact {
+                padding: 52px 16px calc(48px + env(safe-area-inset-bottom, 16px)) !important;
+              }
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lp-footer-collab-banner {
+                padding: 24px 18px !important;
+                border-radius: 20px !important;
+                margin-bottom: 36px !important;
+                text-align: center !important;
+                justify-content: center !important;
+              }
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lp-footer-main-grid {
+                grid-template-columns: minmax(0, 1fr) !important;
+                gap: 28px !important;
+                margin-bottom: 36px !important;
+                padding-bottom: 36px !important;
+              }
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lp-footer-form-row {
+                grid-template-columns: minmax(0, 1fr) !important;
+                gap: 12px !important;
+              }
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lp-footer-bottom-bar {
+                flex-direction: column !important;
+                justify-content: center !important;
+                text-align: center !important;
+                gap: 12px !important;
+              }
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lpcm-header {
+                flex-direction: column !important;
+                align-items: flex-start !important;
+              }
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lpcm-title {
+                font-size: 1.15rem !important;
+              }
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lp-store-flash-sale-banner {
+                border-radius: 14px !important;
+                padding: 10px 14px !important;
+                flex-direction: column !important;
+                gap: 6px !important;
+                max-width: 92% !important;
+                text-align: center !important;
+              }
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lp-store-grid-3,
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lp-estimator-grid {
+                grid-template-columns: minmax(0, 1fr) !important;
+              }
+              .visual-web-editor-canvas[data-preview-device="tablet"] .lp-store-grid-3 {
+                grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+              }
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lp-hero-cards-grid {
+                gap: 8px !important;
+              }
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lp-verified-badge {
+                right: 8px !important;
+                bottom: 12px !important;
+                padding: 8px 12px !important;
+              }
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lp-blog-header-row {
+                margin-bottom: 28px !important;
+              }
+              .visual-web-editor-canvas[data-preview-device="mobile"] .lp-blog-regular-media {
+                height: 160px !important;
+              }
+            `}</style>
             {/* ════════════════ PAGE 1: BERANDA (HOME) ════════════════ */}
             {activePage === 'home' && (
               <>
-                {/* 1.1 HERO SECTION */}
-                <section
-                  id="hero"
-                  style={{
-                    minHeight: isMobileOrTablet ? 'auto' : '85vh',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: isMobileOrTablet ? '40px 16px' : '80px 24px 60px',
-                    background: isDark ? '#08080f' : '#ffffff',
-                    position: 'relative',
-                    overflow: 'hidden',
-                  }}
-                >
-                  <div style={{ maxWidth: 1240, width: '100%', margin: '0 auto', display: 'grid', gridTemplateColumns: isMobileOrTablet ? '1fr' : 'repeat(auto-fit, minmax(320px, 1fr))', gap: isMobileOrTablet ? 28 : 48, alignItems: 'center' }}>
-                    
-                    {/* Left: Text Details */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                      {/* Status Badge */}
-                      <div style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        padding: '6px 14px',
-                        borderRadius: 100,
-                        background: isDark ? 'rgba(16, 185, 129, 0.12)' : 'rgba(16, 185, 129, 0.08)',
-                        color: '#10b981',
-                        fontSize: 12,
-                        fontWeight: 750,
-                        width: 'fit-content',
-                        border: '1px solid rgba(16, 185, 129, 0.25)',
-                      }}>
-                        <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#10b981' }} />
-                        <span
-                          contentEditable
-                          suppressContentEditableWarning
-                          onBlur={(e) => updateField('hero.badge.largeText', e.currentTarget.textContent || 'Open for Projects ☀️')}
-                          style={{ outline: 'none', cursor: 'text' }}
-                          title="Klik untuk mengedit status"
-                        >
-                          {data.hero?.badge?.largeText || 'Open for Projects ☀️'}
-                        </span>
+                {/* â”€â”€ Mode Switcher: Pill Toggle â”€â”€ */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  margin: isMobileOrTablet ? '16px 14px 20px' : '20px 24px 24px',
+                  padding: '10px 14px',
+                  background: cardBg,
+                  borderRadius: 14,
+                  border: `1.5px solid ${cardBorder}`,
+                  flexWrap: 'wrap',
+                  gap: 10,
+                }}>
+                  {/* Left: icon + label */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{
+                      width: 32, height: 32, borderRadius: 9,
+                      background: `${accentColor}18`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      color: accentColor, flexShrink: 0,
+                    }}>
+                      {data.siteMode === 'company' ? <Building2 size={15} /> : <User size={15} />}
+                    </div>
+                    <div>
+                      <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 13, fontWeight: 800, color: textColor, lineHeight: 1.2 }}>
+                        Tipe Beranda &amp; Identitas
                       </div>
-
-                      {/* Greeting */}
-                      <div
-                        contentEditable
-                        suppressContentEditableWarning
-                        onBlur={(e) => updateField('hero.greeting', e.currentTarget.textContent || "Hey there! ☀️ Welcome to")}
-                        style={{
-                          fontFamily: "'Inter', sans-serif",
-                          fontSize: 15,
-                          fontWeight: 600,
-                          color: accentColor,
-                          outline: 'none',
-                          cursor: 'text',
-                        }}
-                        title="Klik untuk mengedit sapaan"
-                      >
-                        {data.hero?.greeting || "Hey there! ☀️ Welcome to"}
-                      </div>
-
-                      {/* Headline / Nama */}
-                      <h1
-                        contentEditable
-                        suppressContentEditableWarning
-                        onBlur={(e) => updateField('hero.headline', e.currentTarget.textContent || 'sumr.day')}
-                        style={{
-                          fontFamily: "'Outfit', sans-serif",
-                          fontSize: isMobileOrTablet ? '32px' : 'clamp(36px, 5vw, 60px)',
-                          fontWeight: 900,
-                          color: textColor,
-                          margin: 0,
-                          lineHeight: 1.1,
-                          letterSpacing: '-0.03em',
-                          outline: 'none',
-                          cursor: 'text',
-                        }}
-                        title="Klik untuk mengedit nama headline"
-                      >
-                        {data.hero?.headline || 'sumr.day'}
-                      </h1>
-
-                      {/* Subheadline / Profesi */}
-                      <h2
-                        contentEditable
-                        suppressContentEditableWarning
-                        onBlur={(e) => updateField('hero.subheadline', e.currentTarget.textContent || 'Creative Digital Studio • Warm Tech & Skena-Aesthetic')}
-                        style={{
-                          fontFamily: "'Outfit', sans-serif",
-                          fontSize: isMobileOrTablet ? '18px' : 'clamp(20px, 2.8vw, 30px)',
-                          fontWeight: 750,
-                          color: accentColor,
-                          margin: 0,
-                          outline: 'none',
-                          cursor: 'text',
-                        }}
-                        title="Klik untuk mengedit profesi"
-                      >
-                        {data.hero?.subheadline || 'Creative Digital Studio • Warm Tech & Skena-Aesthetic'}
-                      </h2>
-
-                      {/* Deskripsi */}
-                      <p
-                        contentEditable
-                        suppressContentEditableWarning
-                        onBlur={(e) => updateField('hero.description', e.currentTarget.textContent || '')}
-                        style={{
-                          fontFamily: "'Inter', sans-serif",
-                          fontSize: isMobileOrTablet ? 14 : 15.5,
-                          color: subTextColor,
-                          lineHeight: 1.7,
-                          margin: 0,
-                          outline: 'none',
-                          cursor: 'text',
-                        }}
-                        title="Klik untuk mengedit deskripsi bio"
-                      >
-                        {data.hero?.description || 'Menghadirkan interaksi digital—mulai dari undangan web estetik, landing page modern, hingga aset visual kreatif—secara hangat, santai, dan penuh energi positif khas musim panas.'}
-                      </p>
-
-                      {/* CTA Buttons */}
-                      <div style={{ display: 'flex', gap: 12, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                        <div style={{
-                          padding: '10px 20px',
-                          borderRadius: 100,
-                          background: accentColor,
-                          color: '#ffffff',
-                          fontFamily: "'Outfit', sans-serif",
-                          fontSize: 13,
-                          fontWeight: 750,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 6,
-                        }}>
-                          <span
-                            contentEditable
-                            suppressContentEditableWarning
-                            onBlur={(e) => updateField('hero.ctaPrimaryLabel', e.currentTarget.textContent || 'Jelajahi Showcase ✨')}
-                            style={{ outline: 'none' }}
-                          >
-                            {data.hero?.ctaPrimaryLabel || 'Jelajahi Showcase ✨'}
-                          </span>
-                          <ArrowUpRight size={14} />
-                        </div>
-
-                        <div style={{
-                          padding: '10px 20px',
-                          borderRadius: 100,
-                          background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                          border: `1px solid ${cardBorder}`,
-                          color: textColor,
-                          fontFamily: "'Outfit', sans-serif",
-                          fontSize: 13,
-                          fontWeight: 750,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 6,
-                        }}>
-                          <span
-                            contentEditable
-                            suppressContentEditableWarning
-                            onBlur={(e) => updateField('hero.ctaSecondaryLabel', e.currentTarget.textContent || 'Ngobrol Santai ☀️')}
-                            style={{ outline: 'none' }}
-                          >
-                            {data.hero?.ctaSecondaryLabel || 'Ngobrol Santai ☀️'}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Bento Cards / Badges Row */}
-                      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min((data.hero?.cards || []).length || 2, 3)}, 1fr)`, gap: 10, marginTop: 14, paddingTop: 14, borderTop: `1px solid ${cardBorder}` }}>
-                        {(data.hero?.cards && data.hero.cards.length > 0 ? data.hero.cards : [
-                          { id: 'card-1', text: 'Warm Tech & Flow', icon: 'Sparkles' },
-                          { id: 'card-2', text: 'Skena-Aesthetic Vibes', icon: 'Heart' }
-                        ]).map((card: any, cIdx: number) => (
-                          <div key={card.id || cIdx} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', borderRadius: 14, border: `1px solid ${cardBorder}` }}>
-                            <Sparkles size={14} color={accentColor} />
-                            <span
-                              contentEditable
-                              suppressContentEditableWarning
-                              onBlur={(e) => {
-                                const currentCards = data.hero?.cards ? [...data.hero.cards] : [
-                                  { id: 'card-1', text: 'Warm Tech & Flow', icon: 'Sparkles' },
-                                  { id: 'card-2', text: 'Skena-Aesthetic Vibes', icon: 'Heart' }
-                                ];
-                                currentCards[cIdx].text = e.currentTarget.textContent || '';
-                                updateField('hero.cards', currentCards);
-                              }}
-                              style={{ fontSize: 12, fontWeight: 700, color: textColor, outline: 'none' }}
-                            >
-                              {card.text}
-                            </span>
-                          </div>
-                        ))}
+                      <div style={{ fontSize: 10.5, color: subTextColor, marginTop: 1 }}>
+                        {data.siteMode === 'company' ? 'Mode Perusahaan aktif' : 'Mode Pribadi aktif'}
                       </div>
                     </div>
-
-                    {/* Right: Hero Image with Cloudinary Button */}
-                    <div style={{ position: 'relative', display: 'flex', justifyContent: 'center' }}>
-                      <div
-                        style={{
-                          width: isMobileOrTablet ? '100%' : 'clamp(280px, 80%, 420px)',
-                          aspectRatio: '1 / 1',
-                          borderRadius: isMobileOrTablet ? 24 : 36,
-                          background: `radial-gradient(circle, ${accentColor}25 0%, transparent 70%)`,
-                          border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
-                          overflow: 'hidden',
-                          position: 'relative',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          boxShadow: '0 25px 50px rgba(0,0,0,0.3)',
-                        }}
-                      >
-                        {data.hero?.heroImage && typeof data.hero?.heroImage === 'string' && data.hero.heroImage.trim().length > 5 ? (
-                          <img
-                            src={data.hero?.heroImage}
-                            alt="Hero"
-                            onError={(e) => {
-                              e.currentTarget.style.display = 'none';
-                            }}
-                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                          />
-                        ) : (
-                          <div style={{ color: subTextColor, fontSize: 13, textAlign: 'center', padding: 20 }}>
-                            <Camera size={36} style={{ margin: '0 auto 8px', opacity: 0.5 }} />
-                            <div>Belum ada foto Hero</div>
-                          </div>
-                        )}
-
-                        {/* Multi-Action Image Toolbar (Upload / Gallery / Delete) */}
-                        <div
-                          style={{
-                            position: 'absolute',
-                            bottom: 12,
-                            right: 12,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 4,
-                            background: 'rgba(0,0,0,0.8)',
-                            backdropFilter: 'blur(10px)',
-                            padding: '4px 8px',
-                            borderRadius: 100,
-                            border: '1px solid rgba(255,255,255,0.2)',
-                            zIndex: 10,
-                          }}
-                        >
-                          <button
-                            onClick={() => triggerUpload({ type: 'hero' })}
-                            title="Upload Foto Baru (Cloudinary)"
-                            style={{ background: 'none', border: 'none', color: '#fff', fontSize: 11, fontWeight: 750, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: '4px 6px' }}
-                          >
-                            <Camera size={12} />
-                            <span>Upload</span>
-                          </button>
-                          <button
-                            onClick={() => openMediaPicker({ type: 'hero' })}
-                            title="Pilih dari Galeri Media"
-                            style={{ background: 'none', border: 'none', color: '#fff', fontSize: 11, fontWeight: 750, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: '4px 6px', borderLeft: '1px solid rgba(255,255,255,0.2)' }}
-                          >
-                            <ImageIcon size={12} />
-                            <span>Galeri</span>
-                          </button>
-                          {data.hero?.heroImage && (
-                            <button
-                              onClick={() => handleRemoveImage('hero')}
-                              title="Hapus Foto Hero"
-                              style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '4px 6px', borderLeft: '1px solid rgba(255,255,255,0.2)' }}
-                            >
-                              <Trash2 size={12} />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
                   </div>
-                </section>
 
-                {/* 1.15 FEATURED PORTFOLIO SHOWCASE (EXACT MATCH WITH LPPortfolio.tsx ON CLIENT WEBSITE) */}
-                <div style={{ position: 'relative', borderTop: `1px solid ${cardBorder}` }}>
+                  {/* Center: pill toggle */}
                   <div style={{
-                    maxWidth: 1240,
-                    margin: '0 auto',
-                    padding: '24px 24px 0',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    flexWrap: 'wrap',
-                    gap: 12,
+                    display: 'flex', alignItems: 'center',
+                    background: isDark ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.055)',
+                    padding: 3, borderRadius: 100,
+                    border: `1px solid ${cardBorder}`,
+                    gap: 2,
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: accentColor }} />
-                      <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: 13, fontWeight: 800, color: accentColor }}>
-                        Showcase Karya Unggulan (Sinkronisasi Live Client)
-                      </span>
-                    </div>
                     <button
-                      onClick={() => setActivePage('portfolio')}
+                      type="button"
+                      onClick={() => handleSiteModeToggle('personal')}
                       style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        padding: '6px 14px',
-                        borderRadius: 100,
-                        background: `${accentColor}18`,
-                        border: `1px solid ${accentColor}40`,
-                        color: accentColor,
-                        fontFamily: "'Outfit', sans-serif",
-                        fontSize: 12,
-                        fontWeight: 750,
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        padding: '6px 14px', borderRadius: 100, border: 'none',
+                        background: data.siteMode !== 'company'
+                          ? accentColor
+                          : 'transparent',
+                        color: data.siteMode !== 'company' ? '#fff' : subTextColor,
+                        fontFamily: "'Outfit', sans-serif", fontSize: 12, fontWeight: 700,
                         cursor: 'pointer',
+                        transition: 'all 0.2s cubic-bezier(0.16,1,0.3,1)',
+                        boxShadow: data.siteMode !== 'company' ? `0 2px 8px ${accentColor}40` : 'none',
+                        whiteSpace: 'nowrap',
                       }}
                     >
-                      <span>Kelola & Tambah Karya (/portfolio)</span>
-                      <ArrowUpRight size={13} />
+                      <User size={13} />
+                      <span>Pribadi</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSiteModeToggle('company')}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        padding: '6px 14px', borderRadius: 100, border: 'none',
+                        background: data.siteMode === 'company'
+                          ? accentColor
+                          : 'transparent',
+                        color: data.siteMode === 'company' ? '#fff' : subTextColor,
+                        fontFamily: "'Outfit', sans-serif", fontSize: 12, fontWeight: 700,
+                        cursor: 'pointer',
+                        transition: 'all 0.2s cubic-bezier(0.16,1,0.3,1)',
+                        boxShadow: data.siteMode === 'company' ? `0 2px 8px ${accentColor}40` : 'none',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      <Building2 size={13} />
+                      <span>Perusahaan</span>
                     </button>
                   </div>
 
-                  <LPPortfolio
-                    projects={projects || []}
-                    landingFeaturedLabel={data?.landingFeaturedLabel || ''}
-                    isDark={isDark}
-                    accentColor={accentColor}
-                    localization={data?.localization}
-                  />
+                  {/* Right: icon-only controls + Floating Sticker Pill */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {((data as any).floatingStickers?.length || 0) > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const list = (data as any).floatingStickers || [];
+                          if (selectedFloatingStickerId) {
+                            setSelectedFloatingStickerId(null);
+                          } else if (list[0]?.id) {
+                            setSelectedFloatingStickerId(list[0].id);
+                          }
+                        }}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 5,
+                          height: 30, padding: '0 10px', borderRadius: 8, flexShrink: 0,
+                          background: selectedFloatingStickerId ? accentColor : `${accentColor}15`,
+                          border: `1px solid ${accentColor}45`,
+                          color: selectedFloatingStickerId ? '#fff' : accentColor,
+                          fontSize: 11.5, fontWeight: 800, cursor: 'pointer',
+                        }}
+                        title="Kelola Stiker Melayang di Kanvas"
+                      >
+                        <Sparkles size={13} />
+                        <span>{(data as any).floatingStickers.length}</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setHomeWidgetPickerIdx((v) => (v === -1 ? null : -1))}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+                        background: accentColor, border: 'none',
+                        color: '#fff', cursor: 'pointer',
+                        boxShadow: `0 2px 10px ${accentColor}40`,
+                        transition: 'all 0.15s ease',
+                      }}
+                      title="Tambah Widget atau Section"
+                    >
+                      <Plus size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleResetSections}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+                        background: 'transparent', border: `1px solid ${cardBorder}`,
+                        color: subTextColor, cursor: 'pointer', transition: 'all 0.15s ease',
+                      }}
+                      title="Reset Urutan Widget"
+                    >
+                      <RotateCcw size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowSectionsModal(true)}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+                        background: `${accentColor}15`, border: `1.5px solid ${accentColor}45`,
+                        color: accentColor, cursor: 'pointer', transition: 'all 0.2s ease',
+                      }}
+                      title="Ringkasan Tata Letak"
+                    >
+                      <SlidersHorizontal size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleClearAllSections}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+                        background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.28)',
+                        color: '#ef4444', cursor: 'pointer', transition: 'all 0.15s ease',
+                      }}
+                      title="Hapus Semua Section dari Kanvas"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
                 </div>
 
-                {/* 1.2 HOME ABOUT SECTION (EXACT MATCH WITH LPAbout.tsx) */}
-                <section
-                  id="home-about"
-                  style={{
-                    padding: isMobileOrTablet ? '50px 16px' : '90px 24px',
-                    background: isDark ? '#0b0f19' : '#f8fafc',
-                    position: 'relative',
-                    overflow: 'hidden',
-                    borderTop: `1px solid ${cardBorder}`,
-                  }}
-                >
-                  <div style={{ maxWidth: 1240, margin: '0 auto' }}>
-                    
-                    {/* Bento visual + text grid */}
-                    <div style={{ display: 'grid', gridTemplateColumns: isMobileOrTablet ? '1fr' : 'repeat(auto-fit, minmax(320px, 1fr))', gap: isMobileOrTablet ? 28 : 48, alignItems: 'center', marginBottom: 64 }}>
-                      
-                      {/* Visual Bento Image with Ambient Glow */}
-                      <div style={{ display: 'flex', justifyContent: 'center' }}>
-                        <div
-                          style={{
-                            width: '100%',
-                            maxWidth: 480,
-                            aspectRatio: '4/3',
-                            borderRadius: 28,
-                            position: 'relative',
-                            overflow: 'hidden',
-                            padding: 10,
-                            background: isDark
-                              ? 'linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(168, 85, 247, 0.08) 100%)'
-                              : 'linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%)',
-                            boxShadow: isDark
-                              ? '0 20px 50px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.08)'
-                              : '0 20px 50px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)',
-                          }}
-                        >
-                          <div
-                            style={{
-                              width: '100%',
-                              height: '100%',
-                              borderRadius: 20,
-                              overflow: 'hidden',
-                              position: 'relative',
-                              background: isDark ? '#111827' : '#e2e8f0',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                            }}
-                          >
-                            {data.profile?.image ? (
-                              <img src={data.profile?.image} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                            ) : (
-                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, color: accentColor }}>
-                                <div style={{ width: 64, height: 64, borderRadius: '50%', background: `${accentColor}18`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                  <User size={32} />
-                                </div>
-                                <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: 16, fontWeight: 700 }}>Foto Tentang Saya</span>
+
+                {/* Redesigned Notion / Google Sites Widget & Section Picker (Floating Viewport Modal) */}
+                {homeWidgetPickerIdx !== null && (
+                  <div
+                    onClick={() => setHomeWidgetPickerIdx(null)}
+                    style={{
+                      position: 'fixed',
+                      inset: 0,
+                      zIndex: 10000,
+                      background: 'rgba(15, 23, 42, 0.5)',
+                      backdropFilter: 'blur(4px)',
+                      display: 'flex',
+                      alignItems: isMobileOrTablet ? 'flex-start' : 'center',
+                      justifyContent: 'center',
+                      padding: isMobileOrTablet ? '56px 10px 84px' : 16,
+                    }}
+                  >
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        width: '100%',
+                        maxWidth: 880,
+                        maxHeight: isMobileOrTablet ? 'calc(100dvh - 148px)' : '82vh',
+                        overflowY: 'auto',
+                        padding: isMobileOrTablet ? '14px 12px' : '20px 22px',
+                        borderRadius: isMobileOrTablet ? 18 : 22,
+                        background: isDark ? '#0f1422' : '#ffffff',
+                        border: `1px solid ${cardBorder}`,
+                        boxShadow: isDark ? '0 24px 60px rgba(0,0,0,0.6)' : '0 24px 56px rgba(15,23,42,0.18)',
+                      }}
+                    >
+                      {/* Header */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: isMobileOrTablet ? 12 : 16 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                          <div style={{
+                            width: isMobileOrTablet ? 28 : 32, height: isMobileOrTablet ? 28 : 32, borderRadius: 9,
+                            background: `${accentColor}1a`, color: accentColor,
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                          }}>
+                            <Plus size={isMobileOrTablet ? 14 : 16} />
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: isMobileOrTablet ? 13 : 14, fontWeight: 850, color: textColor }}>
+                              Tambah Widget &amp; Section Beranda
+                            </div>
+                            {!isMobileOrTablet && (
+                              <div style={{ fontSize: 11.5, color: subTextColor }}>
+                                Pilih blok konten bebas atau section studio untuk dipasang ke halaman Beranda
                               </div>
                             )}
-
-                            {/* Multi-Action Image Toolbar for Bento Image */}
-                            <div
-                              style={{
-                                position: 'absolute',
-                                bottom: 12,
-                                right: 12,
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 4,
-                                background: 'rgba(0,0,0,0.8)',
-                                backdropFilter: 'blur(10px)',
-                                padding: '4px 8px',
-                                borderRadius: 100,
-                                border: '1px solid rgba(255,255,255,0.2)',
-                                zIndex: 10,
-                              }}
-                            >
-                              <button
-                                onClick={() => triggerUpload({ type: 'home_about_image' })}
-                                title="Upload Foto Baru (Cloudinary)"
-                                style={{ background: 'none', border: 'none', color: '#fff', fontSize: 11, fontWeight: 750, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: '4px 6px' }}
-                              >
-                                <Camera size={12} />
-                                <span>Upload</span>
-                              </button>
-                              <button
-                                onClick={() => openMediaPicker({ type: 'home_about_image' })}
-                                title="Pilih dari Galeri Media"
-                                style={{ background: 'none', border: 'none', color: '#fff', fontSize: 11, fontWeight: 750, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: '4px 6px', borderLeft: '1px solid rgba(255,255,255,0.2)' }}
-                              >
-                                <ImageIcon size={12} />
-                                <span>Galeri</span>
-                              </button>
-                              {data.profile?.image && (
-                                <button
-                                  onClick={() => handleRemoveImage('home_about_image')}
-                                  title="Hapus Foto Tentang"
-                                  style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '4px 6px', borderLeft: '1px solid rgba(255,255,255,0.2)' }}
-                                >
-                                  <Trash2 size={12} />
-                                </button>
-                              )}
-                            </div>
                           </div>
                         </div>
-                      </div>
-
-                      {/* Text block */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                        <div style={{
-                          fontFamily: "'Inter', sans-serif",
-                          fontSize: 12,
-                          fontWeight: 700,
-                          color: accentColor,
-                          letterSpacing: '0.14em',
-                          textTransform: 'uppercase',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 8,
-                        }}>
-                          <Sparkles size={14} />
-                          <span
-                            contentEditable
-                            suppressContentEditableWarning
-                            onBlur={(e) => updateField('localization.aboutSectionTitle', e.currentTarget.textContent || 'TENTANG SAYA')}
-                            style={{ outline: 'none' }}
-                          >
-                            {data.localization?.aboutSectionTitle || 'TENTANG SAYA'}
-                          </span>
-                        </div>
-
-                        <h2
-                          contentEditable
-                          suppressContentEditableWarning
-                          onBlur={(e) => updateField('localization.aboutMainTitle', e.currentTarget.textContent || 'Desainer & developer yang fokus pada kesederhanaan, keindahan, dan dampak nyata.')}
-                          style={{
-                            fontFamily: "'Outfit', sans-serif",
-                            fontSize: isMobileOrTablet ? 24 : 'clamp(28px, 3.4vw, 42px)',
-                            fontWeight: 850,
-                            color: textColor,
-                            lineHeight: 1.18,
-                            margin: 0,
-                            letterSpacing: '-0.02em',
-                            outline: 'none',
-                          }}
-                        >
-                          {data.localization?.aboutMainTitle || data.profile?.bio?.split('.')[0] + '.' || "Desainer & developer yang fokus pada kesederhanaan, keindahan, dan dampak nyata."}
-                        </h2>
-
-                        <p
-                          contentEditable
-                          suppressContentEditableWarning
-                          onBlur={(e) => updateField('profile.bio', e.currentTarget.textContent || '')}
-                          style={{
-                            fontFamily: "'Inter', sans-serif",
-                            fontSize: 15,
-                            color: subTextColor,
-                            lineHeight: 1.8,
-                            margin: 0,
-                            outline: 'none',
-                          }}
-                        >
-                          {data.profile?.bio || 'Membangun karya desain yang tidak hanya memanjakan mata tetapi juga memberikan dampak nyata bagi bisnis dan audiens.'}
-                        </p>
-
-                        <div style={{ paddingTop: 8 }}>
-                          <button
-                            onClick={() => setActivePage('about')}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 8,
-                              padding: '12px 24px',
-                              background: accentColor,
-                              color: '#ffffff',
-                              border: 'none',
-                              cursor: 'pointer',
-                              borderRadius: 100,
-                              fontFamily: "'Outfit', sans-serif",
-                              fontWeight: 700,
-                              fontSize: 14,
-                              boxShadow: `0 8px 24px ${accentColor}35`,
-                            }}
-                          >
-                            <span>Pelajari Lebih Lengkap (/about)</span>
-                            <ArrowUpRight size={16} />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* 1.2.2 COLORFUL SERVICES & TOOLKIT CARDS (HOME SKILLS) */}
-                    <div style={{ textAlign: 'center', marginBottom: 36 }}>
-                      <div style={{
-                        fontFamily: "'Inter', sans-serif",
-                        fontSize: 12,
-                        fontWeight: 700,
-                        color: accentColor,
-                        letterSpacing: '0.14em',
-                        textTransform: 'uppercase',
-                        marginBottom: 10,
-                      }}>
-                        — LAYANAN & KEAHLIAN
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                        <h2 style={{
-                          fontFamily: "'Outfit', sans-serif",
-                          fontSize: isMobileOrTablet ? 24 : 'clamp(28px, 3.5vw, 42px)',
-                          fontWeight: 850,
-                          color: textColor,
-                          margin: 0,
-                          letterSpacing: '-0.02em',
-                        }}>
-                          Layanan & Toolkit Profesional
-                        </h2>
                         <button
-                          onClick={() => {
-                            const newSkills = [...(data.profile?.skills || []), { id: `sk-${Date.now()}`, name: 'Layanan Baru', description: 'Deskripsi singkat layanan...', icon: 'Sparkles' }];
-                            updateField('profile.skills', newSkills);
-                            notify('✨ Kartu Layanan baru ditambahkan!');
+                          type="button"
+                          onClick={() => setHomeWidgetPickerIdx(null)}
+                          title="Tutup"
+                          style={{
+                            width: 28, height: 28, borderRadius: 999, border: `1px solid ${cardBorder}`,
+                            background: 'transparent', color: subTextColor, cursor: 'pointer',
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                           }}
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+
+                      {/* Group 1: Blok Konten & Stiker (14 Widget, Label 1-2 Kata, Tinggi Setara) */}
+                      <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.07em', color: subTextColor, marginBottom: 7 }}>
+                        Widget &amp; Blok Bebas
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: isMobileOrTablet ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))', gap: isMobileOrTablet ? 6 : 8, marginBottom: isMobileOrTablet ? 14 : 18 }}>
+                        {[
+                          { type: 'text' as HomeWidgetType, label: 'Teks', icon: Heading2, color: '#3b82f6' },
+                          { type: 'callout' as HomeWidgetType, label: 'Info Box', icon: Quote, color: '#8b5cf6' },
+                          { type: 'sticker' as HomeWidgetType, label: 'Stiker', icon: Tag, color: '#ec4899' },
+                          { type: 'image' as HomeWidgetType, label: 'Gambar', icon: ImageIcon, color: '#10b981' },
+                          { type: 'video' as HomeWidgetType, label: 'Video', icon: Video, color: '#ef4444' },
+                          { type: 'cta' as HomeWidgetType, label: 'Tombol CTA', icon: Zap, color: '#f59e0b' },
+                          { type: 'spacer' as HomeWidgetType, label: 'Pemisah', icon: Sliders, color: '#64748b' },
+                          { type: 'quote' as HomeWidgetType, label: 'Kutipan', icon: MessageSquare, color: '#06b6d4' },
+                          { type: 'stats' as HomeWidgetType, label: 'Statistik', icon: Award, color: '#14b8a6' },
+                          { type: 'faq' as HomeWidgetType, label: 'FAQ', icon: HelpCircle, color: '#6366f1' },
+                          { type: 'checklist' as HomeWidgetType, label: 'Checklist', icon: CheckCircle2, color: '#22c55e' },
+                          { type: 'gallery' as HomeWidgetType, label: 'Galeri', icon: LayoutGrid, color: '#a855f7' },
+                          { type: 'embed' as HomeWidgetType, label: 'Embed Link', icon: Link2, color: '#0ea5e9' },
+                          { type: 'promo' as HomeWidgetType, label: 'Promo', icon: Sparkles, color: '#f97316' },
+                        ].map((item) => {
+                          const ItemIcon = item.icon;
+                          return (
+                            <button
+                              key={item.type}
+                              type="button"
+                              onClick={() => handleAddHomeWidget(item.type, homeWidgetPickerIdx >= 0 ? homeWidgetPickerIdx : undefined)}
+                              style={{
+                                textAlign: 'left',
+                                padding: isMobileOrTablet ? '8px 9px' : '9px 11px',
+                                minHeight: 44,
+                                height: '100%',
+                                borderRadius: 12,
+                                border: `1px solid ${cardBorder}`,
+                                background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(15,23,42,0.02)',
+                                color: textColor,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 8,
+                                transition: 'border-color 0.15s ease, background 0.15s ease',
+                              }}
+                            >
+                              <div style={{
+                                width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+                                background: `${item.color}18`, color: item.color,
+                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                              }}>
+                                <ItemIcon size={14} />
+                              </div>
+                              <span style={{ fontSize: 12, fontWeight: 800, color: textColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {item.label}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Group 2: Semua Section Beranda */}
+                      {(() => {
+                        const isComp = data.siteMode === 'company';
+                        const defaults = isComp ? DEFAULT_COMPANY_SECTIONS : DEFAULT_PERSONAL_SECTIONS;
+                        const currentSections = getCurrentBerandaSections();
+                        const activeMap = new Map(currentSections.map((s) => [s.id, s]));
+
+                        const sectionIconMap: Record<string, any> = {
+                          hero: Layout,
+                          clients: Users,
+                          updates: Megaphone,
+                          store: ShoppingBag,
+                          ratecard: DollarSign,
+                          estimator: SlidersHorizontal,
+                          solutions: Sparkles,
+                          portfolio: Briefcase,
+                          beforeafter: Sliders,
+                          model3d: Package,
+                          flipbook: FileText,
+                          process: Layers,
+                          testimonials: Star,
+                          blog: MessageSquare,
+                          about: User,
+                        };
+
+                        const sectionShortLabel: Record<string, string> = {
+                          hero: 'Hero',
+                          clients: 'Mitra',
+                          updates: 'Update',
+                          store: 'Katalog',
+                          ratecard: 'Harga',
+                          estimator: 'Kalkulator',
+                          solutions: 'Layanan',
+                          portfolio: 'Karya',
+                          beforeafter: 'Before After',
+                          model3d: 'Model 3D',
+                          flipbook: 'Flipbook',
+                          process: 'Alur Kerja',
+                          testimonials: 'Testimoni',
+                          blog: 'Artikel',
+                          about: 'Tentang',
+                          skills: 'Keahlian',
+                          experience: 'Pengalaman',
+                          education: 'Pendidikan',
+                          awards: 'Penghargaan',
+                        };
+
+                        return (
+                          <div style={{ paddingTop: 14, borderTop: `1px dashed ${cardBorder}` }}>
+                            <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.07em', color: subTextColor, marginBottom: 7 }}>
+                              Section Beranda
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: isMobileOrTablet ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))', gap: isMobileOrTablet ? 6 : 8 }}>
+                              {defaults.map((secItem) => {
+                                const existing = activeMap.get(secItem.id);
+                                const isActiveOnPage = Boolean(existing && existing.enabled !== false);
+                                const SecIcon = sectionIconMap[secItem.id] || LayoutGrid;
+                                const shortLabel = sectionShortLabel[secItem.id] || secItem.label.split(' ').slice(0, 2).join(' ');
+
+                                return (
+                                  <button
+                                    key={secItem.id}
+                                    type="button"
+                                    onClick={() => {
+                                      if (!existing) {
+                                        handleRestoreBuiltinSection(secItem, homeWidgetPickerIdx >= 0 ? homeWidgetPickerIdx : undefined);
+                                      } else if (existing.enabled === false) {
+                                        const idx = currentSections.findIndex((s) => s.id === secItem.id);
+                                        if (idx !== -1) handleToggleSection(idx);
+                                        setHomeWidgetPickerIdx(null);
+                                      } else {
+                                        setHomeWidgetPickerIdx(null);
+                                        const el = document.getElementById(`admin-section-${secItem.id}`);
+                                        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                      }
+                                    }}
+                                    style={{
+                                      textAlign: 'left',
+                                      padding: isMobileOrTablet ? '8px 9px' : '9px 11px',
+                                      minHeight: 44,
+                                      height: '100%',
+                                      borderRadius: 12,
+                                      border: `1px solid ${isActiveOnPage ? `${accentColor}40` : cardBorder}`,
+                                      background: isActiveOnPage
+                                        ? `${accentColor}0d`
+                                        : (isDark ? 'rgba(255,255,255,0.025)' : 'rgba(15,23,42,0.02)'),
+                                      color: textColor,
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'space-between',
+                                      gap: 6,
+                                    }}
+                                  >
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                                      <div style={{
+                                        width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+                                        background: isActiveOnPage ? `${accentColor}22` : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)'),
+                                        color: isActiveOnPage ? accentColor : subTextColor,
+                                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                      }}>
+                                        <SecIcon size={14} />
+                                      </div>
+                                      <span style={{ fontSize: 12, fontWeight: 750, color: textColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        {shortLabel}
+                                      </span>
+                                    </div>
+                                    {isActiveOnPage ? (
+                                      <span style={{
+                                        fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 999,
+                                        background: 'rgba(16,185,129,0.14)', color: '#10b981', flexShrink: 0,
+                                      }}>
+                                        Aktif
+                                      </span>
+                                    ) : (
+                                      <Plus size={13} color={accentColor} style={{ flexShrink: 0 }} />
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                )}
+
+                <div ref={berandaCanvasRef} style={{ position: 'relative', width: '100%' }}>
+                    {/* ════════════════ UNIFIED BERANDA (COMPANY & PERSONAL): DYNAMIC ON-CANVAS SECTIONS ════════════════ */}
+                    <div style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+                      {(() => {
+                        const allSections = getCurrentBerandaSections();
+                        const visibleSections = allSections.filter((s) => s.enabled !== false);
+
+                        if (visibleSections.length === 0) {
+                          return (
+                            <div style={{
+                              margin: '28px 24px',
+                              padding: '42px 24px',
+                              borderRadius: 20,
+                              border: `1.5px dashed ${cardBorder}`,
+                              textAlign: 'center',
+                              background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(15,23,42,0.02)',
+                            }}>
+                              <div style={{ fontSize: 14, fontWeight: 800, color: textColor, marginBottom: 6 }}>
+                                Kanvas Beranda Kosong
+                              </div>
+                              <div style={{ fontSize: 12.5, color: subTextColor, marginBottom: 16 }}>
+                                Klik tombol + untuk menambahkan section atau blok konten gaya Notion & Google Sites.
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setHomeWidgetPickerIdx(-1)}
+                                title="Tambah Widget atau Section"
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  width: 42,
+                                  height: 42,
+                                  borderRadius: 12,
+                                  border: 'none',
+                                  background: accentColor,
+                                  color: '#fff',
+                                  cursor: 'pointer',
+                                  boxShadow: `0 8px 20px ${accentColor}40`,
+                                }}
+                              >
+                                <Plus size={18} />
+                              </button>
+                            </div>
+                          );
+                        }
+
+                        return visibleSections.map((sec, visIdx, arr) => {
+                          const idx = allSections.findIndex((s) => s.id === sec.id);
+                          const isFirst = visIdx === 0;
+                          const isLast = visIdx === arr.length - 1;
+                          const isEnabled = sec.enabled !== false;
+
+                          return (
+                            <div
+                              key={sec.id}
+                              id={`admin-section-${sec.id}`}
+                              style={{
+                                position: 'relative',
+                                borderBottom: `1px solid ${cardBorder}`,
+                                background: 'transparent',
+                                contentVisibility: 'auto',
+                                containIntrinsicSize: 'auto 380px',
+                              }}
+                            >
+                              {/* ── ON-CANVAS SECTION CONTROL BAR (Pill Rounded) ── */}
+                              <div style={{
+                                maxWidth: 1200,
+                                margin: '12px auto 6px',
+                                padding: '6px 8px 6px 14px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                flexWrap: 'wrap',
+                                gap: 10,
+                                border: `1px solid ${cardBorder}`,
+                                background: isDark ? '#111827' : '#ffffff',
+                                borderRadius: 999,
+                                boxShadow: isDark ? '0 4px 16px rgba(0,0,0,0.28)' : '0 4px 16px rgba(15,23,42,0.05)',
+                              }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                  <div style={{
+                                    width: 24,
+                                    height: 24,
+                                    borderRadius: 999,
+                                    background: isEnabled ? `${accentColor}20` : 'rgba(239,68,68,0.18)',
+                                    color: isEnabled ? accentColor : '#ef4444',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: 11.5,
+                                    fontWeight: 900
+                                  }}>
+                                    {visIdx + 1}
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span
+                                      contentEditable
+                                      suppressContentEditableWarning
+                                      onBlur={(e) => {
+                                        const val = e.currentTarget.textContent?.trim();
+                                        if (val && val !== sec.label) {
+                                          handleUpdateSectionLabel(idx, val);
+                                        }
+                                      }}
+                                      style={{
+                                        fontFamily: "'Outfit', sans-serif",
+                                        fontSize: 13,
+                                        fontWeight: 800,
+                                        color: textColor,
+                                        cursor: 'text',
+                                        outline: 'none',
+                                        borderBottom: '1px dashed transparent',
+                                        padding: '2px 6px',
+                                        borderRadius: 6,
+                                        transition: 'all 0.2s ease'
+                                      }}
+                                      onFocus={(e) => {
+                                        e.currentTarget.style.borderBottomColor = accentColor;
+                                        e.currentTarget.style.background = `${accentColor}18`;
+                                      }}
+                                      title="Klik untuk langsung mengedit judul widget ini"
+                                    >
+                                      {sec.label}
+                                    </span>
+                                    <Edit3 size={12} color={subTextColor} style={{ opacity: 0.6 }} />
+                                  </div>
+                                </div>
+
+                                {/* Redesigned Notion-style Unified Control Bar: Pill Rounded */}
+                                <div style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                  padding: 3,
+                                  borderRadius: 999,
+                                  border: `1px solid ${cardBorder}`,
+                                  background: isDark ? 'rgba(255,255,255,0.04)' : '#f8fafc',
+                                }}>
+                                  {/* Editing Database (khusus section terhubung database/halaman) */}
+                                  {(() => {
+                                    const dbActionMap: Record<string, { title: string; onClick: () => void }> = {
+                                      clients: { title: 'Edit Database Ulasan & Mitra', onClick: () => setShowReviewsModal(true) },
+                                      store: { title: 'Edit Database Katalog & Produk', onClick: () => setActivePage('catalog') },
+                                      ratecard: { title: 'Edit Database Paket Rate Card', onClick: () => setActivePage('pricing') },
+                                      solutions: { title: 'Edit Database Daftar Harga & Paket', onClick: () => setActivePage('pricing') },
+                                      portfolio: { title: 'Edit Database Karya & Portofolio', onClick: () => setActivePage('portfolio') },
+                                      testimonials: { title: 'Edit Database Ulasan Klien', onClick: () => setShowReviewsModal(true) },
+                                      blog: { title: 'Edit Database Artikel & Blog', onClick: () => setActivePage('blog') },
+                                    };
+                                    const dbCfg = dbActionMap[sec.id];
+                                    if (!dbCfg) return null;
+                                    return (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={dbCfg.onClick}
+                                          title={dbCfg.title}
+                                          style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            width: 28,
+                                            height: 28,
+                                            borderRadius: 999,
+                                            border: 'none',
+                                            background: `${accentColor}16`,
+                                            color: accentColor,
+                                            cursor: 'pointer',
+                                          }}
+                                        >
+                                          <Database size={13} />
+                                        </button>
+                                        <div style={{ width: 1, height: 16, background: cardBorder, margin: '0 2px' }} />
+                                      </>
+                                    );
+                                  })()}
+
+                                  {/* Naik */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMoveSection(idx, 'up')}
+                                    disabled={isFirst}
+                                    title={isFirst ? "Sudah di posisi teratas" : "Geser ke atas"}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      width: 28,
+                                      height: 28,
+                                      borderRadius: 999,
+                                      border: 'none',
+                                      background: 'transparent',
+                                      color: isFirst ? subTextColor : textColor,
+                                      opacity: isFirst ? 0.3 : 1,
+                                      cursor: isFirst ? 'not-allowed' : 'pointer',
+                                      transition: 'background 0.15s ease',
+                                    }}
+                                  >
+                                    <ArrowUp size={13} />
+                                  </button>
+
+                                  {/* Turun */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMoveSection(idx, 'down')}
+                                    disabled={isLast}
+                                    title={isLast ? "Sudah di posisi terbawah" : "Geser ke bawah"}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      width: 28,
+                                      height: 28,
+                                      borderRadius: 999,
+                                      border: 'none',
+                                      background: 'transparent',
+                                      color: isLast ? subTextColor : textColor,
+                                      opacity: isLast ? 0.3 : 1,
+                                      cursor: isLast ? 'not-allowed' : 'pointer',
+                                      transition: 'background 0.15s ease',
+                                    }}
+                                  >
+                                    <ArrowDown size={13} />
+                                  </button>
+
+                                  <div style={{ width: 1, height: 16, background: cardBorder, margin: '0 2px' }} />
+
+                                  {/* Sisipkan Widget di bawah */}
+                                  <button
+                                    type="button"
+                                    onClick={() => setHomeWidgetPickerIdx(idx)}
+                                    title="Tambah widget atau section di bawah blok ini"
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      width: 28,
+                                      height: 28,
+                                      borderRadius: 999,
+                                      border: 'none',
+                                      background: `${accentColor}16`,
+                                      color: accentColor,
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    <Plus size={13} />
+                                  </button>
+
+                                  {/* Duplikat Widget Kustom */}
+                                  {(data as any).homeWidgets?.[sec.id] && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDuplicateWidget(idx)}
+                                      title="Duplikat widget ini"
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        width: 28,
+                                        height: 28,
+                                        borderRadius: 999,
+                                        border: 'none',
+                                        background: 'transparent',
+                                        color: textColor,
+                                        cursor: 'pointer',
+                                      }}
+                                    >
+                                      <Copy size={13} />
+                                    </button>
+                                  )}
+
+                                  {/* Hapus / Sembunyikan dari Kanvas (bisa ditambah lagi via +) */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteSection(idx)}
+                                    title="Hapus dari kanvas (bisa ditambahkan lagi lewat +)"
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      width: 28,
+                                      height: 28,
+                                      borderRadius: 999,
+                                      border: 'none',
+                                      background: 'rgba(239,68,68,0.1)',
+                                      color: '#ef4444',
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Widget Content or Dimmed Banner */}
+                              {isEnabled ? (
+                                sec.id === 'hero' ? (
+                                  data.siteMode === 'company' ? (
+                                    <section
+                                      style={{
+                                        position: 'relative',
+                                        overflow: 'hidden',
+                                        background: isDark ? '#0c0d12' : '#ffffff',
+                                        borderBottom: `1px solid ${cardBorder}`
+                                      }}
+                                    >
+                                      <LPCompanyHero
+                                        data={data}
+                                        latestUpdate={null}
+                                        isDark={isDark}
+                                        accentColor={accentColor}
+                                        editable={true}
+                                        onEdit={updateField}
+                                        onImageAction={(type, mode) =>
+                                          mode === 'upload' ? triggerUpload({ type }) : openMediaPicker({ type })
+                                        }
+                                      />
+                                    </section>
+                                  ) : (
+                                    <div style={{ position: 'relative', borderBottom: `1px solid ${cardBorder}` }}>
+                                      <LPHero
+                                        data={data?.hero || ({} as any)}
+                                        isDark={isDark}
+                                        accentColor={accentColor}
+                                      />
+                                      <div style={{ display: 'flex', justifyContent: 'center', gap: 8, padding: '8px 16px 16px', flexWrap: 'wrap' }}>
+                                        <button type="button" onClick={() => triggerUpload({ type: 'hero' })} style={{ padding: '5px 12px', borderRadius: 999, border: `1px solid ${cardBorder}`, background: cardBg, color: textColor, fontSize: 11, fontWeight: 750, cursor: 'pointer' }}>Upload Foto Hero</button>
+                                        <button type="button" onClick={() => openMediaPicker({ type: 'hero' })} style={{ padding: '5px 12px', borderRadius: 999, border: `1px solid ${cardBorder}`, background: cardBg, color: textColor, fontSize: 11, fontWeight: 750, cursor: 'pointer' }}>Galeri Hero</button>
+                                      </div>
+                                    </div>
+                                  )
+                                ) : sec.id === 'clients' ? (
+                                  <div style={{ position: 'relative', borderBottom: `1px solid ${cardBorder}` }}>
+                                    <LPClientMarquee
+                                      clients={data?.aboutSettings?.company?.clients}
+                                      isDark={isDark}
+                                      accentColor={accentColor}
+                                      badge={data?.aboutSettings?.company?.marqueeBadge}
+                                      title={data?.aboutSettings?.company?.marqueeTitle}
+                                      metric1={data?.aboutSettings?.company?.marqueeMetric1}
+                                      metric2={data?.aboutSettings?.company?.marqueeMetric2}
+                                      isEditable={true}
+                                      onUpdateBadge={(val) => updateField('aboutSettings.company.marqueeBadge', val)}
+                                      onUpdateTitle={(val) => updateField('aboutSettings.company.marqueeTitle', val)}
+                                      onUpdateMetric1={(val) => updateField('aboutSettings.company.marqueeMetric1', val)}
+                                      onUpdateMetric2={(val) => updateField('aboutSettings.company.marqueeMetric2', val)}
+                                    />
+                                  </div>
+                                ) : sec.id === 'updates' ? (
+                                  data.siteMode === 'company' ? (
+                                    <div style={{ position: 'relative', borderBottom: `1px solid ${cardBorder}` }}>
+                                    <div style={{
+                                      maxWidth: 1240,
+                                      margin: '0 auto',
+                                      padding: '24px 24px 0',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'space-between',
+                                      flexWrap: 'wrap',
+                                      gap: 12
+                                    }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: accentColor }} />
+                                        <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: 13, fontWeight: 800, color: accentColor }}>
+                                          Sorotan Rilis & Aktivitas Studio (Fokus Beranda: 1 Rilis Utama Sesuai Website Client)
+                                        </span>
+                                      </div>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                        <button
+                                          type="button"
+                                          onClick={() => setActivePage('updates')}
+                                          style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: 6,
+                                            padding: '7px 16px',
+                                            borderRadius: 100,
+                                            background: `${accentColor}18`,
+                                            border: `1px solid ${accentColor}40`,
+                                            color: accentColor,
+                                            fontFamily: "'Outfit', sans-serif",
+                                            fontSize: 12,
+                                            fontWeight: 750,
+                                            cursor: 'pointer'
+                                          }}
+                                        >
+                                          <span>Buka Halaman Penuh (/updates)</span>
+                                          <ArrowUpRight size={13} />
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ marginTop: 12 }}>
+                                      <LPCompanyUpdatesHub
+                                        isDark={isDark}
+                                        accentColor={accentColor}
+                                        badge={data.companyUpdates?.badge || 'RILIS & UPDATE TERBARU'}
+                                        title={data.companyUpdates?.title || 'Sorotan Rilis & Aktivitas Studio'}
+                                        subtitle={data.companyUpdates?.subtitle || 'Pembaruan terpilih seputar rilis aset baru, produk digital, dan wawasan terkini dari studio.'}
+                                        showSingleOnly={true}
+                                        seeMoreUrl="/updates"
+                                        seeMoreLabel="Lihat Semua Update & Rilis"
+                                        isEditable={true}
+                                        selectedUpdateId={data.companyUpdates?.selectedUpdateId}
+                                        onUpdateBadge={(val) => updateField('companyUpdates.badge', val)}
+                                        onUpdateTitle={(val) => updateField('companyUpdates.title', val)}
+                                        onUpdateSubtitle={(val) => updateField('companyUpdates.subtitle', val)}
+                                        onUpdateSelectedUpdateId={(id) => updateField('companyUpdates.selectedUpdateId', id)}
+                                      />
+                                    </div>
+                                  </div>
+                                  ) : (
+                                    <div style={{ position: 'relative', borderBottom: `1px solid ${cardBorder}` }}>
+                                      <LPUpdatesFeed isDark={isDark} accentColor={accentColor} />
+                                    </div>
+                                  )
+                                ) : sec.id === 'store' ? (
+                                  <div style={{ position: 'relative', borderBottom: `1px solid ${cardBorder}` }}>
+                                    <LPStoreSpotlight
+                                      isDark={isDark}
+                                      accentColor={accentColor}
+                                      shopSettings={data?.shopSettings}
+                                      badge={data?.storeSpotlight?.badge}
+                                      title={data?.storeSpotlight?.title}
+                                      subtitle={data?.storeSpotlight?.subtitle}
+                                      maxItems={data?.storeSpotlight?.maxItems}
+                                      selectedProductIds={data?.storeSpotlight?.selectedProductIds}
+                                      isEditable={true}
+                                      onUpdateBadge={(val) => updateField('storeSpotlight.badge', val)}
+                                      onUpdateTitle={(val) => updateField('storeSpotlight.title', val)}
+                                      onUpdateSubtitle={(val) => updateField('storeSpotlight.subtitle', val)}
+                                      onUpdateMaxItems={(val) => updateField('storeSpotlight.maxItems', val)}
+                                      onUpdateSelectedProductIds={(ids) => updateField('storeSpotlight.selectedProductIds', ids)}
+                                    />
+                                  </div>
+                                ) : sec.id === 'ratecard' ? (
+                                  <div style={{ position: 'relative', borderBottom: `1px solid ${cardBorder}` }}>
+                                    <LPRateCardSpotlight
+                                      isDark={isDark}
+                                      accentColor={accentColor}
+                                      badge={data?.rateCardSpotlight?.badge}
+                                      title={data?.rateCardSpotlight?.title}
+                                      subtitle={data?.rateCardSpotlight?.subtitle}
+                                      isEditable={true}
+                                      onUpdateBadge={(val) => updateField('rateCardSpotlight.badge', val)}
+                                      onUpdateTitle={(val) => updateField('rateCardSpotlight.title', val)}
+                                      onUpdateSubtitle={(val) => updateField('rateCardSpotlight.subtitle', val)}
+                                    />
+                                  </div>
+                                ) : sec.id === 'solutions' ? (
+                                  <div style={{ position: 'relative', borderBottom: `1px solid ${cardBorder}` }}>
+                                    <LPCompanySolutions
+                                      isDark={isDark}
+                                      accentColor={accentColor}
+                                      badge={data?.companySolutions?.badge}
+                                      title={data?.companySolutions?.title}
+                                      subtitle={data?.companySolutions?.subtitle}
+                                      isEditable={true}
+                                      onUpdateBadge={(val) => updateField('companySolutions.badge', val)}
+                                      onUpdateTitle={(val) => updateField('companySolutions.title', val)}
+                                      onUpdateSubtitle={(val) => updateField('companySolutions.subtitle', val)}
+                                    />
+                                  </div>
+                                ) : sec.id === 'portfolio' ? (
+                                  <div style={{ position: 'relative', borderBottom: `1px solid ${cardBorder}` }}>
+                                    <LPPortfolio
+                                      projects={projects || []}
+                                      landingFeaturedLabel={data?.landingFeaturedLabel || ''}
+                                      isDark={isDark}
+                                      accentColor={accentColor}
+                                      localization={data?.localization}
+                                    />
+                                  </div>
+                                ) : sec.id === 'beforeafter' ? (
+                                  <div style={{ position: 'relative', borderBottom: `1px solid ${cardBorder}` }}>
+                                    <LPBeforeAfterSpotlight
+                                      isDark={isDark}
+                                      accentColor={accentColor}
+                                      title={data?.beforeAfterSettings?.title}
+                                      subtitle={data?.beforeAfterSettings?.subtitle}
+                                      presets={data?.beforeAfterSettings?.presets}
+                                      isEditable={true}
+                                      onUpdateTitle={(val) => updateField('beforeAfterSettings.title', val)}
+                                      onUpdateSubtitle={(val) => updateField('beforeAfterSettings.subtitle', val)}
+                                      onUpdatePresets={(val) => updateField('beforeAfterSettings.presets', val)}
+                                    />
+                                  </div>
+                                ) : sec.id === 'model3d' ? (
+                                  <div style={{ position: 'relative', borderBottom: `1px solid ${cardBorder}` }}>
+                                    <LPModel3DSpotlight
+                                      isDark={isDark}
+                                      accentColor={accentColor}
+                                      badge={data?.model3dSettings?.badge}
+                                      title={data?.model3dSettings?.title}
+                                      subtitle={data?.model3dSettings?.subtitle}
+                                      modelUrl={data?.model3dSettings?.modelUrl}
+                                      height={data?.model3dSettings?.height}
+                                      autoRotate={data?.model3dSettings?.autoRotate}
+                                      isEditable={true}
+                                      onUpdateBadge={(val) => updateField('model3dSettings.badge', val)}
+                                      onUpdateTitle={(val) => updateField('model3dSettings.title', val)}
+                                      onUpdateSubtitle={(val) => updateField('model3dSettings.subtitle', val)}
+                                      onUpdateModelUrl={(val) => updateField('model3dSettings.modelUrl', val)}
+                                      onUpdateHeight={(val) => updateField('model3dSettings.height', val)}
+                                    />
+                                  </div>
+                                ) : sec.id === 'flipbook' ? (
+                                  <div style={{ position: 'relative', borderBottom: `1px solid ${cardBorder}` }}>
+                                    <LPFlipbookSpotlight
+                                      isDark={isDark}
+                                      accentColor={accentColor}
+                                      badge={data?.flipbookSettings?.badge}
+                                      title={data?.flipbookSettings?.title}
+                                      subtitle={data?.flipbookSettings?.subtitle}
+                                      pdfUrl={data?.flipbookSettings?.pdfUrl}
+                                      totalPages={data?.flipbookSettings?.totalPages}
+                                      bookTitle={data?.flipbookSettings?.bookTitle}
+                                      height={data?.flipbookSettings?.height}
+                                      defaultViewMode={data?.flipbookSettings?.defaultViewMode}
+                                      isEditable={true}
+                                      onUpdateBadge={(val) => updateField('flipbookSettings.badge', val)}
+                                      onUpdateTitle={(val) => updateField('flipbookSettings.title', val)}
+                                      onUpdateSubtitle={(val) => updateField('flipbookSettings.subtitle', val)}
+                                      onUpdatePdfUrl={(val) => updateField('flipbookSettings.pdfUrl', val)}
+                                      onUpdateTotalPages={(val) => updateField('flipbookSettings.totalPages', val)}
+                                      onUpdateDefaultViewMode={(val) => updateField('flipbookSettings.defaultViewMode', val)}
+                                      allowDownload={data?.flipbookSettings?.allowDownload ?? true}
+                                      onUpdateAllowDownload={(val) => updateField('flipbookSettings.allowDownload', val)}
+                                    />
+                                  </div>
+                                ) : sec.id === 'process' ? (
+                                  <section style={{ padding: isMobileOrTablet ? '40px 16px' : '80px 24px', background: isDark ? '#05060b' : '#ffffff', borderBottom: `1px solid ${cardBorder}` }}>
+                                    <div style={{ maxWidth: 1240, margin: '0 auto' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 28, flexWrap: 'wrap', gap: 12 }}>
+                                        <div>
+                                          <span style={{ fontSize: 12, fontWeight: 800, color: accentColor, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                                            {data.localization?.processSectionTitle || 'ALUR KERJA'}
+                                          </span>
+                                          <h2 style={{ fontFamily: "'Outfit', sans-serif", fontSize: isMobileOrTablet ? 24 : 32, fontWeight: 850, color: textColor, margin: '4px 0 0' }}>
+                                            {data.localization?.processMainTitle || 'Bagaimana Kami Bekerja'}
+                                          </h2>
+                                        </div>
+                                        <button
+                                          onClick={() => {
+                                            const currentList = (data.process && data.process.length > 0) ? data.process : (DEFAULT_MAIN_WEBSITE_DATA.process || []);
+                                            const newP = [...currentList, { id: `proc-${Date.now()}`, title: 'Langkah Baru', description: 'Deskripsi langkah kerja...' }];
+                                            updateField('process', newP);
+                                            notify('✨ Kartu alur kerja baru ditambahkan!');
+                                          }}
+                                          style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 6,
+                                            padding: '8px 14px',
+                                            borderRadius: 100,
+                                            background: `${accentColor}18`,
+                                            border: `1px solid ${accentColor}40`,
+                                            color: accentColor,
+                                            fontWeight: 800,
+                                            fontSize: 12,
+                                            cursor: 'pointer',
+                                          }}
+                                        >
+                                          <Plus size={14} />
+                                          <span>Tambah Langkah</span>
+                                        </button>
+                                      </div>
+
+                                      <div style={{ display: 'grid', gridTemplateColumns: isMobileOrTablet ? '1fr' : 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
+                                        {((data.process && data.process.length > 0) ? data.process : (DEFAULT_MAIN_WEBSITE_DATA.process || [])).map((proc: any, pIdx: number) => (
+                                          <div key={proc.id || pIdx} style={{ padding: 20, borderRadius: 20, background: cardBg, border: `1px solid ${cardBorder}`, position: 'relative' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                              <span style={{ fontSize: 24, fontWeight: 900, color: accentColor, opacity: 0.4 }}>0{pIdx + 1}</span>
+                                              <button
+                                                onClick={() => {
+                                                  const currentList = (data.process && data.process.length > 0) ? data.process : (DEFAULT_MAIN_WEBSITE_DATA.process || []);
+                                                  const newP = currentList.filter((_: any, i: number) => i !== pIdx);
+                                                  updateField('process', newP);
+                                                }}
+                                                style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', opacity: 0.4 }}
+                                                title="Hapus Langkah Ini"
+                                              >
+                                                <Trash2 size={13} />
+                                              </button>
+                                            </div>
+                                            <h4
+                                              contentEditable
+                                              suppressContentEditableWarning
+                                              onBlur={(e) => {
+                                                const currentList = (data.process && data.process.length > 0) ? data.process : (DEFAULT_MAIN_WEBSITE_DATA.process || []);
+                                                const newP = JSON.parse(JSON.stringify(currentList));
+                                                newP[pIdx].title = e.currentTarget.textContent || '';
+                                                updateField('process', newP);
+                                              }}
+                                              style={{ fontFamily: "'Outfit', sans-serif", fontSize: 16, fontWeight: 800, color: textColor, margin: '8px 0 6px', outline: 'none' }}
+                                            >
+                                              {proc.title}
+                                            </h4>
+                                            <p
+                                              contentEditable
+                                              suppressContentEditableWarning
+                                              onBlur={(e) => {
+                                                const currentList = (data.process && data.process.length > 0) ? data.process : (DEFAULT_MAIN_WEBSITE_DATA.process || []);
+                                                const newP = JSON.parse(JSON.stringify(currentList));
+                                                newP[pIdx].description = e.currentTarget.textContent || '';
+                                                updateField('process', newP);
+                                              }}
+                                              style={{ fontSize: 13, color: subTextColor, margin: 0, outline: 'none', lineHeight: 1.6 }}
+                                            >
+                                              {proc.description}
+                                            </p>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  </section>
+                                ) : sec.id === 'testimonials' ? (
+                                  <div style={{ position: 'relative', borderBottom: `1px solid ${cardBorder}` }}>
+                                    <LPTestimonials
+                                      testimonials={data?.testimonials || []}
+                                      isDark={isDark}
+                                      accentColor={accentColor}
+                                      localization={data?.localization}
+                                      badge={data?.localization?.testimonialSectionTitle}
+                                      title={data?.localization?.testimonialMainTitle}
+                                      subtitle={data?.localization?.testimonialSubtitle}
+                                      isEditable={true}
+                                      onUpdateBadge={(val) => updateField('localization.testimonialSectionTitle', val)}
+                                      onUpdateTitle={(val) => updateField('localization.testimonialMainTitle', val)}
+                                      onUpdateSubtitle={(val) => updateField('localization.testimonialSubtitle', val)}
+                                      onOpenManageReviews={() => setShowReviewsModal(true)}
+                                    />
+                                  </div>
+                                ) : sec.id === 'blog' ? (
+                                  <div style={{ position: 'relative', borderBottom: `1px solid ${cardBorder}` }}>
+                                    <LPBlogPreview
+                                      isDark={isDark}
+                                      accentColor={accentColor}
+                                      title={data?.blogPreview?.title || 'Catatan & Wawasan'}
+                                      subtitle={data?.blogPreview?.subtitle || 'Cerita di balik layar, eksplorasi desain, dan inspirasi hangat.'}
+                                      maxPosts={data?.blogPreview?.maxPosts || 3}
+                                      ctaLabel={data?.blogPreview?.ctaLabel || 'Lihat Semua Artikel'}
+                                      isEditable={true}
+                                      featuredId={data?.blogPreview?.featuredId}
+                                      onUpdateFeaturedId={(id) => updateField('blogPreview.featuredId', id)}
+                                    />
+                                  </div>
+                                ) : sec.id === 'about' ? (
+                                  <div style={{ position: 'relative', borderBottom: `1px solid ${cardBorder}` }}>
+                                    <LPAbout
+                                      bio={data?.profile?.bio || ''}
+                                      image={data?.profile?.image}
+                                      skills={data?.profile?.skills || []}
+                                      isDark={isDark}
+                                      accentColor={accentColor}
+                                      localization={data?.localization}
+                                    />
+                                  </div>
+                                ) : sec.id === 'faq' ? (
+                                  <div style={{ position: 'relative', borderBottom: `1px solid ${cardBorder}` }}>
+                                    <LPFaqSection isDark={isDark} accentColor={accentColor} />
+                                  </div>
+                                ) : sec.id === 'estimator' ? (
+                                  <div style={{ position: 'relative', borderBottom: `1px solid ${cardBorder}`, padding: '16px clamp(16px, 3.5vw, 24px)' }}>
+                                    <DesignProjectEstimator
+                                      isDark={isDark}
+                                      accentColor={accentColor}
+                                      studioName={data?.navbar?.logoText || 'sumr.day Studio'}
+                                      studioPhone={data?.profile?.phone || '081234567890'}
+                                    />
+                                  </div>
+                                ) : (data as any).homeWidgets?.[sec.id] ? (
+                                  <LPHomeCustomWidget
+                                    widget={(data as any).homeWidgets[sec.id]}
+                                    isDark={isDark}
+                                    accentColor={accentColor}
+                                    isEditable={true}
+                                    onUpdate={(nextWidget) => handleUpdateHomeWidget(sec.id, nextWidget)}
+                                  />
+                                ) : null
+                              ) : (
+                                <div style={{
+                                  padding: '28px 24px',
+                                  textAlign: 'center',
+                                  background: isDark ? 'rgba(239,68,68,0.04)' : 'rgba(239,68,68,0.02)',
+                                  borderTop: `1px dashed ${isDark ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.15)'}`
+                                }}>
+                                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, color: subTextColor, fontSize: 13, fontWeight: 700, flexWrap: 'wrap', justifyContent: 'center' }}>
+                                    <EyeOff size={16} color="#ef4444" />
+                                    <span>Widget <strong>"{sec.label}"</strong> dinonaktifkan (Off) dan tidak muncul bagi pengunjung.</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleSection(idx)}
+                                      style={{
+                                        marginLeft: 6,
+                                        padding: '5px 14px',
+                                        borderRadius: 100,
+                                        background: `${accentColor}20`,
+                                        border: `1px solid ${accentColor}50`,
+                                        color: accentColor,
+                                        fontSize: 12,
+                                        fontWeight: 800,
+                                        cursor: 'pointer'
+                                      }}
+                                    >
+                                      Aktifkan Kembali
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        });
+                      })()}
+                      {/* Bottom Notion-style + Tambah Widget Bar */}
+                      <div style={{ padding: '24px', display: 'flex', justifyContent: 'center', gap: 10, flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          onClick={() => setHomeWidgetPickerIdx(-1)}
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: 5,
-                            padding: '6px 12px',
-                            borderRadius: 100,
-                            background: `${accentColor}18`,
-                            border: `1px solid ${accentColor}40`,
+                            gap: 8,
+                            padding: '10px 20px',
+                            borderRadius: 999,
+                            border: `1.5px dashed ${accentColor}60`,
+                            background: `${accentColor}10`,
                             color: accentColor,
+                            fontSize: 13,
                             fontWeight: 800,
-                            fontSize: 11.5,
                             cursor: 'pointer',
                           }}
                         >
-                          <Plus size={13} />
-                          <span>Tambah Layanan</span>
+                          <Plus size={15} />
+                          <span>Tambah Widget / Blok (Teks, Stiker, Media, CTA)</span>
                         </button>
                       </div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: isMobileOrTablet ? '1fr' : 'repeat(auto-fill, minmax(260px, 1fr))', gap: 20 }}>
-                      {(data.profile?.skills || []).map((skill: any, index: number) => {
-                        const palette = CARD_PALETTES[index % CARD_PALETTES.length];
-                        return (
-                          <div
-                            key={skill.id || index}
-                            style={{
-                              background: isDark ? 'rgba(15, 23, 42, 0.65)' : '#ffffff',
-                              backdropFilter: 'blur(16px)',
-                              WebkitBackdropFilter: 'blur(16px)',
-                              border: `1px solid ${isDark ? palette.border : 'rgba(0,0,0,0.06)'}`,
-                              borderRadius: 22,
-                              padding: '26px 20px',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              alignItems: 'flex-start',
-                              textAlign: 'left',
-                              boxShadow: isDark ? '0 8px 24px rgba(0,0,0,0.2)' : '0 8px 24px rgba(0,0,0,0.03)',
-                              position: 'relative',
-                              overflow: 'hidden',
-                            }}
-                          >
-                            <button
-                              onClick={() => {
-                                const newS = (data.profile?.skills || []).filter((_: any, i: number) => i !== index);
-                                updateField('profile.skills', newS);
-                              }}
-                              style={{ position: 'absolute', top: 12, right: 12, background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', opacity: 0.4 }}
-                              title="Hapus Layanan"
-                            >
-                              <Trash2 size={13} />
-                            </button>
-
-                            {/* Interactive Editable Icon Badge */}
-                            <div
-                              onClick={() => setIconPickerTarget({
-                                type: 'skill',
-                                index,
-                                currentIcon: skill.icon || 'Sparkles',
-                                title: `Pilih Ikon untuk "${skill.name || 'Layanan'}"`
-                              })}
-                              style={{
-                                width: 46,
-                                height: 46,
-                                borderRadius: 14,
-                                background: palette.bg,
-                                border: `1px solid ${palette.border}`,
-                                color: palette.accent,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                marginBottom: 18,
-                                cursor: 'pointer',
-                                transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
-                                position: 'relative',
-                              }}
-                              title="Klik untuk memilih ikon lain"
-                            >
-                              {renderDynamicIcon(skill.icon || 'Sparkles', 22)}
-                              <div
-                                style={{
-                                  position: 'absolute',
-                                  bottom: -3,
-                                  right: -3,
-                                  width: 16,
-                                  height: 16,
-                                  borderRadius: '50%',
-                                  background: accentColor,
-                                  color: '#ffffff',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  border: `1.5px solid ${isDark ? '#0f172a' : '#ffffff'}`,
-                                  boxShadow: '0 2px 5px rgba(0,0,0,0.3)',
-                                }}
-                              >
-                                <Edit3 size={8} />
-                              </div>
-                            </div>
-
-                            <h3
-                              contentEditable
-                              suppressContentEditableWarning
-                              onBlur={(e) => {
-                                const newS = [...(data.profile?.skills || [])];
-                                newS[index].name = e.currentTarget.textContent || '';
-                                updateField('profile.skills', newS);
-                              }}
-                              style={{
-                                fontFamily: "'Outfit', sans-serif",
-                                fontSize: 17,
-                                fontWeight: 800,
-                                color: textColor,
-                                margin: '0 0 8px',
-                                outline: 'none',
-                              }}
-                            >
-                              {skill.name}
-                            </h3>
-
-                            <p
-                              contentEditable
-                              suppressContentEditableWarning
-                              onBlur={(e) => {
-                                const newS = [...(data.profile?.skills || [])];
-                                newS[index].description = e.currentTarget.textContent || '';
-                                updateField('profile.skills', newS);
-                              }}
-                              style={{
-                                fontFamily: "'Inter', sans-serif",
-                                fontSize: 13,
-                                color: subTextColor,
-                                lineHeight: 1.6,
-                                margin: 0,
-                                outline: 'none',
-                              }}
-                            >
-                              {skill.description}
-                            </p>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                  </div>
-                </section>
-
-                {/* 1.3 PROCESS WORKFLOW */}
-                <section style={{ padding: isMobileOrTablet ? '40px 16px' : '80px 24px', background: isDark ? '#05060b' : '#ffffff', borderTop: `1px solid ${cardBorder}` }}>
-                  <div style={{ maxWidth: 1240, margin: '0 auto' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 28, flexWrap: 'wrap', gap: 12 }}>
-                      <div>
-                        <span style={{ fontSize: 12, fontWeight: 800, color: accentColor, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                          {data.localization?.processSectionTitle || 'ALUR KERJA'}
-                        </span>
-                        <h2 style={{ fontFamily: "'Outfit', sans-serif", fontSize: isMobileOrTablet ? 24 : 32, fontWeight: 850, color: textColor, margin: '4px 0 0' }}>
-                          {data.localization?.processMainTitle || 'Bagaimana Kami Bekerja'}
-                        </h2>
-                      </div>
-                      <button
-                        onClick={() => {
-                          const currentList = (data.process && data.process.length > 0) ? data.process : (DEFAULT_MAIN_WEBSITE_DATA.process || []);
-                          const newP = [...currentList, { id: `proc-${Date.now()}`, title: 'Langkah Baru', description: 'Deskripsi langkah kerja...' }];
-                          updateField('process', newP);
-                          notify('✨ Kartu alur kerja baru ditambahkan!');
-                        }}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 6,
-                          padding: '8px 14px',
-                          borderRadius: 100,
-                          background: `${accentColor}18`,
-                          border: `1px solid ${accentColor}40`,
-                          color: accentColor,
-                          fontWeight: 800,
-                          fontSize: 12,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <Plus size={14} />
-                        <span>Tambah Langkah</span>
-                      </button>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: isMobileOrTablet ? '1fr' : 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
-                      {((data.process && data.process.length > 0) ? data.process : (DEFAULT_MAIN_WEBSITE_DATA.process || [])).map((proc: any, idx: number) => (
-                        <div key={proc.id || idx} style={{ padding: 20, borderRadius: 20, background: cardBg, border: `1px solid ${cardBorder}`, position: 'relative' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: 24, fontWeight: 900, color: accentColor, opacity: 0.4 }}>0{idx + 1}</span>
-                            <button
-                              onClick={() => {
-                                const currentList = (data.process && data.process.length > 0) ? data.process : (DEFAULT_MAIN_WEBSITE_DATA.process || []);
-                                const newP = currentList.filter((_: any, i: number) => i !== idx);
-                                updateField('process', newP);
-                              }}
-                              style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', opacity: 0.4 }}
-                              title="Hapus Langkah Ini"
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
-                          <h4
-                            contentEditable
-                            suppressContentEditableWarning
-                            onBlur={(e) => {
-                              const currentList = (data.process && data.process.length > 0) ? data.process : (DEFAULT_MAIN_WEBSITE_DATA.process || []);
-                              const newP = JSON.parse(JSON.stringify(currentList));
-                              newP[idx].title = e.currentTarget.textContent || '';
-                              updateField('process', newP);
-                            }}
-                            style={{ fontFamily: "'Outfit', sans-serif", fontSize: 16, fontWeight: 800, color: textColor, margin: '8px 0 6px', outline: 'none' }}
-                          >
-                            {proc.title}
-                          </h4>
-                          <p
-                            contentEditable
-                            suppressContentEditableWarning
-                            onBlur={(e) => {
-                              const currentList = (data.process && data.process.length > 0) ? data.process : (DEFAULT_MAIN_WEBSITE_DATA.process || []);
-                              const newP = JSON.parse(JSON.stringify(currentList));
-                              newP[idx].description = e.currentTarget.textContent || '';
-                              updateField('process', newP);
-                            }}
-                            style={{ fontSize: 13, color: subTextColor, margin: 0, outline: 'none', lineHeight: 1.6 }}
-                          >
-                            {proc.description}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </section>
-
-                {/* 1.4 TESTIMONIALS */}
-                <section style={{ padding: isMobileOrTablet ? '40px 16px' : '80px 24px', background: isDark ? '#08080f' : '#f8fafc', borderTop: `1px solid ${cardBorder}` }}>
-                  <div style={{ maxWidth: 1240, margin: '0 auto' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 28, flexWrap: 'wrap', gap: 12 }}>
-                      <div>
-                        <span style={{ fontSize: 12, fontWeight: 800, color: accentColor, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                          {data.localization?.testimonialSectionTitle || 'TESTIMONI'}
-                        </span>
-                        <h2 style={{ fontFamily: "'Outfit', sans-serif", fontSize: isMobileOrTablet ? 24 : 32, fontWeight: 850, color: textColor, margin: '4px 0 0' }}>
-                          {data.localization?.testimonialMainTitle || 'Apa Kata Klien'}
-                        </h2>
-                      </div>
-                      <button
-                        onClick={() => {
-                          const currentT = (data.testimonials && data.testimonials.length > 0) ? data.testimonials : (DEFAULT_MAIN_WEBSITE_DATA.testimonials || []);
-                          const newT = [...currentT, { id: `tst-${Date.now()}`, name: 'Nama Klien', author: 'Nama Klien', role: 'CEO / Founder', company: 'Perusahaan', text: 'Ulasan kerja sama hangat...', quote: 'Ulasan kerja sama hangat...', avatar: '' }];
-                          updateField('testimonials', newT);
-                          notify('✨ Kartu testimoni baru ditambahkan!');
-                        }}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 6,
-                          padding: '8px 14px',
-                          borderRadius: 100,
-                          background: `${accentColor}18`,
-                          border: `1px solid ${accentColor}40`,
-                          color: accentColor,
-                          fontWeight: 800,
-                          fontSize: 12,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <Plus size={14} />
-                        <span>Tambah Testimoni</span>
-                      </button>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: isMobileOrTablet ? '1fr' : 'repeat(auto-fit, minmax(280px, 1fr))', gap: 18 }}>
-                      {((data.testimonials && data.testimonials.length > 0) ? data.testimonials : (DEFAULT_MAIN_WEBSITE_DATA.testimonials || [])).map((t: any, idx: number) => (
-                        <div key={t.id || idx} style={{ padding: 22, borderRadius: 20, background: cardBg, border: `1px solid ${cardBorder}`, display: 'flex', flexDirection: 'column', gap: 12, position: 'relative' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <div
-                                onClick={() => triggerUpload({ type: 'avatar', index: idx })}
-                                style={{
-                                  width: 44,
-                                  height: 44,
-                                  borderRadius: '50%',
-                                  background: `${accentColor}25`,
-                                  overflow: 'hidden',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  position: 'relative',
-                                }}
-                                title="Klik untuk ganti avatar"
-                              >
-                                {t.avatar ? <img src={t.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <User size={20} color={accentColor} />}
-                              </div>
-                              <div>
-                                <h4
-                                  contentEditable
-                                  suppressContentEditableWarning
-                                  onBlur={(e) => {
-                                    const currentT = (data.testimonials && data.testimonials.length > 0) ? data.testimonials : (DEFAULT_MAIN_WEBSITE_DATA.testimonials || []);
-                                    const newT = JSON.parse(JSON.stringify(currentT));
-                                    const val = e.currentTarget.textContent || '';
-                                    newT[idx].name = val;
-                                    newT[idx].author = val;
-                                    updateField('testimonials', newT);
-                                  }}
-                                  style={{ margin: 0, fontFamily: "'Outfit', sans-serif", fontSize: 14, fontWeight: 800, color: textColor, outline: 'none' }}
-                                >
-                                  {t.name || t.author || 'Klien'}
-                                </h4>
-                                <div
-                                  contentEditable
-                                  suppressContentEditableWarning
-                                  onBlur={(e) => {
-                                    const currentT = (data.testimonials && data.testimonials.length > 0) ? data.testimonials : (DEFAULT_MAIN_WEBSITE_DATA.testimonials || []);
-                                    const newT = JSON.parse(JSON.stringify(currentT));
-                                    newT[idx].role = e.currentTarget.textContent || '';
-                                    updateField('testimonials', newT);
-                                  }}
-                                  style={{ fontSize: 11.5, color: subTextColor, outline: 'none' }}
-                                >
-                                  {t.role || 'Klien'}
-                                </div>
-                              </div>
-                            </div>
-                            <button
-                              onClick={() => {
-                                const currentT = (data.testimonials && data.testimonials.length > 0) ? data.testimonials : (DEFAULT_MAIN_WEBSITE_DATA.testimonials || []);
-                                const newT = currentT.filter((_: any, i: number) => i !== idx);
-                                updateField('testimonials', newT);
-                              }}
-                              style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', opacity: 0.4 }}
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
-                          <p
-                            contentEditable
-                            suppressContentEditableWarning
-                            onBlur={(e) => {
-                              const currentT = (data.testimonials && data.testimonials.length > 0) ? data.testimonials : (DEFAULT_MAIN_WEBSITE_DATA.testimonials || []);
-                              const newT = JSON.parse(JSON.stringify(currentT));
-                              const val = e.currentTarget.textContent || '';
-                              newT[idx].text = val;
-                              newT[idx].quote = val;
-                              updateField('testimonials', newT);
-                            }}
-                            style={{ fontSize: 13, color: subTextColor, fontStyle: 'italic', margin: 0, outline: 'none', lineHeight: 1.6 }}
-                          >
-                            "{t.text || t.quote || ''}"
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </section>
-
-                {/* 1.5 UPDATES & UTAS FEED SECTION */}
-                {data.updatesFeed?.enabled !== false && (
-                  <LPUpdatesFeed
+                  <LPFloatingStickersEditorLayer
+                    stickers={(data as any).floatingStickers || []}
+                    selectedId={selectedFloatingStickerId}
+                    onSelect={setSelectedFloatingStickerId}
+                    onChange={(nextStickers) => updateField('floatingStickers' as any, nextStickers)}
+                    canvasRef={berandaCanvasRef}
                     isDark={isDark}
                     accentColor={accentColor}
-                    badge={data.updatesFeed?.badge || 'UTAS & CERITA HANGAT'}
-                    title={data.updatesFeed?.title || 'Jurnal Kreatif & Update Proyek'}
-                    subtitle={data.updatesFeed?.subtitle || 'Catatan progres, kilas balik karya, dan cerita seru dari balik layar sumr.day ☀️'}
-                    maxPosts={1}
-                    showOnlyPinnedOrSingle={true}
-                    seeMoreUrl="/updates"
-                    seeMoreLabel="Selengkapnya"
-                    showSocialStats={data.updatesFeed?.showSocialStats !== false}
-                    isEditableInVisualWeb={true}
-                    onUpdateBadge={(val) => updateField('updatesFeed.badge', val)}
-                    onUpdateTitle={(val) => updateField('updatesFeed.title', val)}
-                    onUpdateSubtitle={(val) => updateField('updatesFeed.subtitle', val)}
-                    onEditSection={() => {
-                      setActivePage('updates');
+                    onOpenMediaGallery={(stickerId) => {
+                      setFloatingStickerGalleryTargetId(stickerId);
+                      setIsGalleryOpen(true);
                     }}
-                  />
-                )}
-
-                {/* 1.6 BLOG & INSIGHTS PREVIEW (EXACT MATCH WITH LPBlogPreview.tsx ON CLIENT WEBSITE) */}
-                <div style={{ position: 'relative' }}>
-                  <div style={{
-                    maxWidth: 1240,
-                    margin: '0 auto',
-                    padding: '24px 24px 0',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    flexWrap: 'wrap',
-                    gap: 12,
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: accentColor }} />
-                      <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: 13, fontWeight: 800, color: accentColor }}>
-                        Preview Catatan & Blog (Sinkronisasi Live Client)
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => setActivePage('blog')}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        padding: '6px 14px',
-                        borderRadius: 100,
-                        background: `${accentColor}18`,
-                        border: `1px solid ${accentColor}40`,
-                        color: accentColor,
-                        fontFamily: "'Outfit', sans-serif",
-                        fontSize: 12,
-                        fontWeight: 750,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <span>Kelola Semua Artikel (/blog)</span>
-                      <ArrowUpRight size={13} />
-                    </button>
-                  </div>
-
-                  <LPBlogPreview
-                    isDark={isDark}
-                    accentColor={accentColor}
-                    title={data?.blogPreview?.title || 'Catatan & Wawasan'}
-                    subtitle={data?.blogPreview?.subtitle || 'Cerita di balik layar, eksplorasi desain, dan inspirasi hangat.'}
-                    maxPosts={data?.blogPreview?.maxPosts || 3}
-                    ctaLabel={data?.blogPreview?.ctaLabel || 'Lihat Semua Artikel'}
+                    notify={notify}
                   />
                 </div>
               </>
@@ -4619,64 +5563,60 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
 
             {/* ════════════════ PAGE 2: PORTOFOLIO ════════════════ */}
             {activePage === 'portfolio' && (
-              <div style={{ padding: isMobileOrTablet ? '30px 16px' : '60px 24px', maxWidth: 1240, margin: '0 auto' }}>
-                {/* Header Title & Add Button */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 20, flexWrap: 'wrap', gap: 14 }}>
-                  <div>
-                    <span
-                      contentEditable
-                      suppressContentEditableWarning
-                      onBlur={(e) => updateField('pagesHeader.portfolio.badge', e.currentTarget.textContent || 'Koleksi Proyek')}
-                      style={{ fontSize: 12, fontWeight: 800, color: accentColor, textTransform: 'uppercase', letterSpacing: '0.1em', outline: 'none' }}
+              <div style={{ padding: isMobileOrTablet ? '30px 16px' : '48px 24px', maxWidth: 1240, margin: '0 auto' }}>
+                <PageHeroHeader
+                  isDark={isDark}
+                  isEditable={true}
+                  bgPattern={(data.pagesHeader as any)?.portfolio?.bgPattern || 'grid'}
+                  onPatternChange={(p) => updateField('pagesHeader.portfolio.bgPattern', p)}
+                  badgeIcon={<Sparkles size={14} />}
+                  badgeText={data.pagesHeader?.portfolio?.badge || 'KOLEKSI PROYEK & DESAIN'}
+                  onBadgeChange={(v) => updateField('pagesHeader.portfolio.badge', v)}
+                  title={data.pagesHeader?.portfolio?.title || 'Karya Pilihan & Studi Kasus'}
+                  onTitleChange={(v) => updateField('pagesHeader.portfolio.title', v)}
+                  description={data.pagesHeader?.portfolio?.description || 'Eksplorasi kurasi karya desain grafis, antarmuka visual, identitas brand, serta studi kasus proyek unggulan.'}
+                  onDescriptionChange={(v) => updateField('pagesHeader.portfolio.description', v)}
+                  accentColor={accentColor}
+                  textColor={textColor}
+                  subTextColor={subTextColor}
+                  actionButtons={
+                    <button
+                      onClick={() => {
+                        const newProj = {
+                          id: `prj-${Date.now()}`,
+                          title: 'Proyek Baru',
+                          category: 'Branding',
+                          description: 'Deskripsi studi kasus proyek...',
+                          coverImage: '',
+                          isFavorite: false,
+                          featuredLabel: 'FEATURED',
+                          images: []
+                        };
+                        setProjects(prev => [newProj, ...prev]);
+                        setIsDirty(true);
+                        notify('✨ Kartu portofolio baru ditambahkan!');
+                      }}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        padding: '10px 18px',
+                        borderRadius: 999,
+                        background: accentColor,
+                        color: '#ffffff',
+                        fontFamily: "'Outfit', sans-serif",
+                        fontSize: 12.5,
+                        fontWeight: 750,
+                        border: 'none',
+                        cursor: 'pointer',
+                        boxShadow: `0 4px 14px ${accentColor}40`,
+                      }}
                     >
-                      {data.pagesHeader?.portfolio?.badge || 'KOLEKSI PROYEK & DESAIN'}
-                    </span>
-                    <h1
-                      contentEditable
-                      suppressContentEditableWarning
-                      onBlur={(e) => updateField('pagesHeader.portfolio.title', e.currentTarget.textContent || 'Karya Pilihan & Studi Kasus')}
-                      style={{ fontFamily: "'Outfit', sans-serif", fontSize: isMobileOrTablet ? 24 : 'clamp(28px, 4vw, 42px)', fontWeight: 900, color: textColor, margin: '6px 0 0', outline: 'none' }}
-                    >
-                      {data.pagesHeader?.portfolio?.title || 'Karya Pilihan & Studi Kasus'}
-                    </h1>
-                  </div>
-
-                  <button
-                    onClick={() => {
-                      const newProj = {
-                        id: `prj-${Date.now()}`,
-                        title: 'Proyek Baru',
-                        category: 'Branding',
-                        description: 'Deskripsi studi kasus proyek...',
-                        coverImage: '',
-                        isFavorite: false,
-                        featuredLabel: 'FEATURED',
-                        images: []
-                      };
-                      setProjects(prev => [newProj, ...prev]);
-                      setIsDirty(true);
-                      notify('✨ Kartu portofolio baru ditambahkan!');
-                    }}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      padding: '8px 16px',
-                      borderRadius: 100,
-                      background: accentColor,
-                      color: '#ffffff',
-                      fontFamily: "'Outfit', sans-serif",
-                      fontSize: 12.5,
-                      fontWeight: 750,
-                      border: 'none',
-                      cursor: 'pointer',
-                      boxShadow: `0 4px 14px ${accentColor}40`,
-                    }}
-                  >
-                    <Plus size={15} />
-                    <span>Tambah Kartu Proyek</span>
-                  </button>
-                </div>
+                      <Plus size={14} />
+                      <span>Tambah Karya</span>
+                    </button>
+                  }
+                />
 
                 {/* Interactive Category Filter Chips */}
                 {(() => {
@@ -4725,193 +5665,193 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                   {projects
                     .filter(p => portfolioActiveCategory === 'Semua' || p.category === portfolioActiveCategory)
                     .map((p) => (
-                    <div
-                      key={p.id}
-                      style={{
-                        borderRadius: 22,
-                        background: cardBg,
-                        border: `1px solid ${cardBorder}`,
-                        overflow: 'hidden',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        position: 'relative',
-                      }}
-                    >
-                      {/* Image Thumbnail with Upload Trigger & Favorite Toggle */}
                       <div
+                        key={p.id}
                         style={{
-                          width: '100%',
-                          aspectRatio: '16/10',
-                          background: isDark ? '#0f172a' : '#f1f5f9',
+                          borderRadius: 22,
+                          background: cardBg,
+                          border: `1px solid ${cardBorder}`,
                           overflow: 'hidden',
-                          position: 'relative',
                           display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
+                          flexDirection: 'column',
+                          position: 'relative',
                         }}
                       >
-                        {p.coverImage ? (
-                          <img src={p.coverImage} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        ) : (
-                          <div style={{ color: subTextColor, fontSize: 12, textAlign: 'center' }}>
-                            <ImageIcon size={24} style={{ margin: '0 auto 4px', opacity: 0.5 }} />
-                            <div>Belum ada cover</div>
-                          </div>
-                        )}
-
-                        {/* Favorite Badge Toggle */}
-                        <button
-                          onClick={() => {
-                            setProjects(prev => prev.map(item => item.id === p.id ? { ...item, isFavorite: !item.isFavorite } : item));
-                            setIsDirty(true);
-                            notify(p.isFavorite ? '⭐ Dihapus dari Favorit' : '⭐ Ditandai sebagai Favorit!');
-                          }}
-                          style={{
-                            position: 'absolute',
-                            top: 8,
-                            left: 8,
-                            padding: '4px 8px',
-                            borderRadius: 100,
-                            background: p.isFavorite ? '#f59e0b' : 'rgba(0,0,0,0.6)',
-                            color: '#fff',
-                            border: 'none',
-                            fontSize: 10,
-                            fontWeight: 800,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 3,
-                          }}
-                        >
-                          <Star size={11} fill={p.isFavorite ? '#fff' : 'none'} />
-                          <span>{p.isFavorite ? 'FAV' : 'FAV'}</span>
-                        </button>
-
-                        {/* Open Modal Editor Trigger */}
-                        <button
-                          onClick={() => setEditingProjectModal(p)}
-                          style={{
-                            position: 'absolute',
-                            bottom: 8,
-                            left: 8,
-                            padding: '5px 10px',
-                            borderRadius: 100,
-                            background: 'rgba(0,0,0,0.75)',
-                            backdropFilter: 'blur(8px)',
-                            color: '#fff',
-                            border: '1px solid rgba(255,255,255,0.2)',
-                            fontSize: 10.5,
-                            fontWeight: 750,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 4,
-                          }}
-                        >
-                          <Edit3 size={11} />
-                          <span>Edit Pop-up</span>
-                        </button>
-
-                        {/* Multi-Action Image Toolbar for Portfolio Card */}
+                        {/* Image Thumbnail with Upload Trigger & Favorite Toggle */}
                         <div
                           style={{
-                            position: 'absolute',
-                            bottom: 8,
-                            right: 8,
+                            width: '100%',
+                            aspectRatio: '16/10',
+                            background: isDark ? '#0f172a' : '#f1f5f9',
+                            overflow: 'hidden',
+                            position: 'relative',
                             display: 'flex',
                             alignItems: 'center',
-                            gap: 3,
-                            background: 'rgba(0,0,0,0.8)',
-                            backdropFilter: 'blur(8px)',
-                            padding: '3px 6px',
-                            borderRadius: 100,
-                            border: '1px solid rgba(255,255,255,0.2)',
+                            justifyContent: 'center',
                           }}
                         >
-                          <button
-                            onClick={() => triggerUpload({ type: 'project', id: p.id })}
-                            title="Upload Cover (Cloudinary)"
-                            style={{ background: 'none', border: 'none', color: '#fff', fontSize: 10, fontWeight: 750, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}
-                          >
-                            <Camera size={11} />
-                            <span>Upload</span>
-                          </button>
-                          <button
-                            onClick={() => openMediaPicker({ type: 'project', id: p.id })}
-                            title="Pilih dari Galeri Media"
-                            style={{ background: 'none', border: 'none', color: '#fff', fontSize: 10, fontWeight: 750, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: 5 }}
-                          >
-                            <ImageIcon size={11} />
-                            <span>Galeri</span>
-                          </button>
-                          {p.coverImage && (
-                            <button
-                              onClick={() => handleRemoveImage('project', p.id)}
-                              title="Hapus Cover"
-                              style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: 5 }}
-                            >
-                              <Trash2 size={11} />
-                            </button>
+                          {p.coverImage ? (
+                            <img src={p.coverImage} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          ) : (
+                            <div style={{ color: subTextColor, fontSize: 12, textAlign: 'center' }}>
+                              <ImageIcon size={24} style={{ margin: '0 auto 4px', opacity: 0.5 }} />
+                              <div>Belum ada cover</div>
+                            </div>
                           )}
-                        </div>
-                      </div>
 
-                      {/* Card Content */}
-                      <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span
+                          {/* Favorite Badge Toggle */}
+                          <button
+                            onClick={() => {
+                              setProjects(prev => prev.map(item => item.id === p.id ? { ...item, isFavorite: !item.isFavorite } : item));
+                              setIsDirty(true);
+                              notify(p.isFavorite ? '⭐ Dihapus dari Favorit' : '⭐ Ditandai sebagai Favorit!');
+                            }}
+                            style={{
+                              position: 'absolute',
+                              top: 8,
+                              left: 8,
+                              padding: '4px 8px',
+                              borderRadius: 100,
+                              background: p.isFavorite ? '#f59e0b' : 'rgba(0,0,0,0.6)',
+                              color: '#fff',
+                              border: 'none',
+                              fontSize: 10,
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 3,
+                            }}
+                          >
+                            <Star size={11} fill={p.isFavorite ? '#fff' : 'none'} />
+                            <span>{p.isFavorite ? 'FAV' : 'FAV'}</span>
+                          </button>
+
+                          {/* Open Modal Editor Trigger */}
+                          <button
+                            onClick={() => setEditingProjectModal(p)}
+                            style={{
+                              position: 'absolute',
+                              bottom: 8,
+                              left: 8,
+                              padding: '5px 10px',
+                              borderRadius: 100,
+                              background: 'rgba(0,0,0,0.75)',
+                              backdropFilter: 'blur(8px)',
+                              color: '#fff',
+                              border: '1px solid rgba(255,255,255,0.2)',
+                              fontSize: 10.5,
+                              fontWeight: 750,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 4,
+                            }}
+                          >
+                            <Edit3 size={11} />
+                            <span>Edit Pop-up</span>
+                          </button>
+
+                          {/* Multi-Action Image Toolbar for Portfolio Card */}
+                          <div
+                            style={{
+                              position: 'absolute',
+                              bottom: 8,
+                              right: 8,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 3,
+                              background: 'rgba(0,0,0,0.8)',
+                              backdropFilter: 'blur(8px)',
+                              padding: '3px 6px',
+                              borderRadius: 100,
+                              border: '1px solid rgba(255,255,255,0.2)',
+                            }}
+                          >
+                            <button
+                              onClick={() => triggerUpload({ type: 'project', id: p.id })}
+                              title="Upload Cover (Cloudinary)"
+                              style={{ background: 'none', border: 'none', color: '#fff', fontSize: 10, fontWeight: 750, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}
+                            >
+                              <Camera size={11} />
+                              <span>Upload</span>
+                            </button>
+                            <button
+                              onClick={() => openMediaPicker({ type: 'project', id: p.id })}
+                              title="Pilih dari Galeri Media"
+                              style={{ background: 'none', border: 'none', color: '#fff', fontSize: 10, fontWeight: 750, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: 5 }}
+                            >
+                              <ImageIcon size={11} />
+                              <span>Galeri</span>
+                            </button>
+                            {p.coverImage && (
+                              <button
+                                onClick={() => handleRemoveImage('project', p.id)}
+                                title="Hapus Cover"
+                                style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: 5 }}
+                              >
+                                <Trash2 size={11} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Card Content */}
+                        <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span
+                              contentEditable
+                              suppressContentEditableWarning
+                              onBlur={(e) => {
+                                const val = e.currentTarget.textContent || '';
+                                setProjects(prev => prev.map(item => item.id === p.id ? { ...item, category: val } : item));
+                                setIsDirty(true);
+                              }}
+                              style={{ fontSize: 11, fontWeight: 800, color: accentColor, textTransform: 'uppercase', outline: 'none' }}
+                            >
+                              {p.category || 'Kategori'}
+                            </span>
+                            <button
+                              onClick={() => {
+                                setProjects(prev => prev.filter(item => item.id !== p.id));
+                                setIsDirty(true);
+                                notify('🗑️ Proyek dihapus');
+                              }}
+                              style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', opacity: 0.5 }}
+                              title="Hapus Proyek"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+
+                          <h4
                             contentEditable
                             suppressContentEditableWarning
                             onBlur={(e) => {
                               const val = e.currentTarget.textContent || '';
-                              setProjects(prev => prev.map(item => item.id === p.id ? { ...item, category: val } : item));
+                              setProjects(prev => prev.map(item => item.id === p.id ? { ...item, title: val, name: val } : item));
                               setIsDirty(true);
                             }}
-                            style={{ fontSize: 11, fontWeight: 800, color: accentColor, textTransform: 'uppercase', outline: 'none' }}
+                            style={{ fontFamily: "'Outfit', sans-serif", fontSize: 16, fontWeight: 800, color: textColor, margin: 0, outline: 'none' }}
                           >
-                            {p.category || 'Kategori'}
-                          </span>
-                          <button
-                            onClick={() => {
-                              setProjects(prev => prev.filter(item => item.id !== p.id));
+                            {p.title || p.name || 'Judul Proyek'}
+                          </h4>
+
+                          <p
+                            contentEditable
+                            suppressContentEditableWarning
+                            onBlur={(e) => {
+                              const val = e.currentTarget.textContent || '';
+                              setProjects(prev => prev.map(item => item.id === p.id ? { ...item, description: val } : item));
                               setIsDirty(true);
-                              notify('🗑️ Proyek dihapus');
                             }}
-                            style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', opacity: 0.5 }}
-                            title="Hapus Proyek"
+                            style={{ fontSize: 12.5, color: subTextColor, margin: 0, outline: 'none', lineHeight: 1.5 }}
                           >
-                            <Trash2 size={13} />
-                          </button>
+                            {p.description || 'Deskripsi singkat proyek...'}
+                          </p>
                         </div>
-
-                        <h4
-                          contentEditable
-                          suppressContentEditableWarning
-                          onBlur={(e) => {
-                            const val = e.currentTarget.textContent || '';
-                            setProjects(prev => prev.map(item => item.id === p.id ? { ...item, title: val, name: val } : item));
-                            setIsDirty(true);
-                          }}
-                          style={{ fontFamily: "'Outfit', sans-serif", fontSize: 16, fontWeight: 800, color: textColor, margin: 0, outline: 'none' }}
-                        >
-                          {p.title || p.name || 'Judul Proyek'}
-                        </h4>
-
-                        <p
-                          contentEditable
-                          suppressContentEditableWarning
-                          onBlur={(e) => {
-                            const val = e.currentTarget.textContent || '';
-                            setProjects(prev => prev.map(item => item.id === p.id ? { ...item, description: val } : item));
-                            setIsDirty(true);
-                          }}
-                          style={{ fontSize: 12.5, color: subTextColor, margin: 0, outline: 'none', lineHeight: 1.5 }}
-                        >
-                          {p.description || 'Deskripsi singkat proyek...'}
-                        </p>
                       </div>
-                    </div>
-                  ))}
+                    ))}
                 </div>
               </div>
             )}
@@ -4919,7 +5859,7 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
             {/* ════════════════ PAGE 3: TENTANG SAYA & PERUSAHAAN (STANDALONE /about PAGE) ════════════════ */}
             {activePage === 'about' && (
               <div style={{ padding: isMobileOrTablet ? '20px 14px' : '40px 24px', maxWidth: 1160, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
-                
+
                 {/* ── Mode Switcher Header Bar: Mode Personal vs Mode Perusahaan ── */}
                 <div style={{
                   display: 'flex',
@@ -4954,8 +5894,8 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                       </div>
                       <div style={{ fontSize: 11.5, color: subTextColor, fontWeight: 500 }}>
                         {data.aboutSettings?.mode === 'company'
-                          ? '🏢 Mode Perusahaan Aktif: Menampilkan Company Profile, Visi-Misi, Nilai Inti, Tim & Roadmap'
-                          : '👤 Mode Personal Aktif: Menampilkan CV Profesional, Pengalaman Kerja, Pendidikan & Keahlian'}
+                          ? 'Mode Perusahaan Aktif: Menampilkan Company Profile, Visi-Misi, Nilai Inti, Tim & Roadmap'
+                          : 'Mode Pribadi Aktif: Menampilkan CV Profesional, Pengalaman Kerja, Pendidikan & Keahlian'}
                       </div>
                     </div>
                   </div>
@@ -4971,10 +5911,7 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                   }}>
                     <button
                       type="button"
-                      onClick={() => {
-                        updateField('aboutSettings.mode', 'personal');
-                        notify('👤 Mode Personal (CV / Individu) diaktifkan');
-                      }}
+                      onClick={() => handleSiteModeToggle('personal')}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -4993,14 +5930,11 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                       }}
                     >
                       <User size={14} />
-                      <span>Mode Personal (CV)</span>
+                      <span>Mode Pribadi (CV)</span>
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
-                        updateField('aboutSettings.mode', 'company');
-                        notify('🏢 Mode Perusahaan (Company Profile / Agensi) diaktifkan');
-                      }}
+                      onClick={() => handleSiteModeToggle('company')}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -5027,80 +5961,34 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                 {/* ════════════════ COMPANY PROFILE STUDIO (WHEN MODE === 'company') ════════════════ */}
                 {data.aboutSettings?.mode === 'company' ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
-                    
-                    {/* C.1 HERO BANNER PERUSAHAAN */}
-                    <div
-                      style={{
-                        position: 'relative',
-                        width: '100%',
-                        minHeight: isMobileOrTablet ? 200 : 260,
-                        background: `linear-gradient(135deg, ${accentColor} 0%, #1e1b4b 100%)`,
-                        borderRadius: isMobileOrTablet ? 20 : 28,
-                        overflow: 'hidden',
-                        display: 'flex',
-                        alignItems: 'flex-end',
-                        padding: isMobileOrTablet ? '24px 20px' : '36px 40px',
-                        boxSizing: 'border-box',
-                        boxShadow: '0 20px 50px rgba(0,0,0,0.2)',
+
+                    {/* C.1 HERO BANNER PERUSAHAAN (UNIFIED TALL PAGE HERO HEADER + PATTERN PICKER) */}
+                    <PageHeroHeader
+                      isDark={isDark}
+                      isEditable={true}
+                      bgPattern={(data.pagesHeader as any)?.about?.bgPattern || 'grid'}
+                      onPatternChange={(pat) => {
+                        updateField('pagesHeader.about.bgPattern', pat);
+                        setIsDirty(true);
                       }}
-                    >
-                      {/* Ambient Deco Orbs */}
-                      <div style={{ position: 'absolute', top: -50, right: -50, width: 220, height: 220, borderRadius: '50%', background: 'rgba(255,255,255,0.1)', filter: 'blur(40px)', pointerEvents: 'none' }} />
-                      <div style={{ position: 'absolute', bottom: -60, left: '30%', width: 180, height: 180, borderRadius: '50%', background: `${accentColor}40`, filter: 'blur(30px)', pointerEvents: 'none' }} />
-
-                      <div style={{ position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 750 }}>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(10px)', padding: '4px 12px', borderRadius: 100, border: '1px solid rgba(255,255,255,0.25)', width: 'fit-content' }}>
-                          <Building2 size={12} color="#fff" />
-                          <span
-                            contentEditable
-                            suppressContentEditableWarning
-                            onBlur={(e) => updateField('aboutSettings.company.badge', e.currentTarget.textContent || '')}
-                            style={{ fontFamily: "'Outfit', sans-serif", fontSize: 10.5, fontWeight: 850, color: '#fff', letterSpacing: '0.08em', outline: 'none' }}
-                          >
-                            {data.aboutSettings?.company?.badge || 'PROFIL PERUSAHAAN & STUDIO'}
-                          </span>
-                        </div>
-
-                        <h1
-                          contentEditable
-                          suppressContentEditableWarning
-                          onBlur={(e) => updateField('aboutSettings.company.name', e.currentTarget.textContent || '')}
-                          style={{
-                            margin: 0,
-                            fontFamily: "'Outfit', sans-serif",
-                            fontSize: isMobileOrTablet ? '28px' : 'clamp(34px, 4.5vw, 50px)',
-                            fontWeight: 900,
-                            letterSpacing: '-1.5px',
-                            color: '#ffffff',
-                            lineHeight: 1.1,
-                            outline: 'none',
-                            cursor: 'text',
-                          }}
-                          title="Klik untuk mengedit Nama Perusahaan"
-                        >
-                          {data.aboutSettings?.company?.name || 'sumr.day'}
-                        </h1>
-
-                        <p
-                          contentEditable
-                          suppressContentEditableWarning
-                          onBlur={(e) => updateField('aboutSettings.company.tagline', e.currentTarget.textContent || '')}
-                          style={{
-                            margin: 0,
-                            fontSize: isMobileOrTablet ? 14 : 16,
-                            fontFamily: "'Inter', sans-serif",
-                            fontWeight: 600,
-                            color: 'rgba(255,255,255,0.92)',
-                            outline: 'none',
-                            cursor: 'text',
-                            lineHeight: 1.4
-                          }}
-                          title="Klik untuk mengedit Tagline / Slogan"
-                        >
-                          {data.aboutSettings?.company?.tagline || DEFAULT_MAIN_WEBSITE_DATA.aboutSettings.company.tagline}
-                        </p>
-                      </div>
-                    </div>
+                      accentColor={accentColor}
+                      badgeIcon={<Building2 size={13} />}
+                      badgeText={data.aboutSettings?.company?.badge || 'PROFIL PERUSAHAAN & STUDIO'}
+                      title={data.aboutSettings?.company?.name || 'sumr.day Studio'}
+                      description={data.aboutSettings?.company?.tagline || DEFAULT_MAIN_WEBSITE_DATA.aboutSettings.company.tagline}
+                      onBadgeChange={(val) => {
+                        updateField('aboutSettings.company.badge', val);
+                        setIsDirty(true);
+                      }}
+                      onTitleChange={(val) => {
+                        updateField('aboutSettings.company.name', val);
+                        setIsDirty(true);
+                      }}
+                      onDescriptionChange={(val) => {
+                        updateField('aboutSettings.company.tagline', val);
+                        setIsDirty(true);
+                      }}
+                    />
 
                     {/* C.2 KEY STATS METRIC COUNTER ROW */}
                     <div style={{ display: 'grid', gridTemplateColumns: isMobileOrTablet ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: 14 }}>
@@ -5154,10 +6042,10 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
 
                     {/* C.3 BENTO GRID: SIDEBAR & MAIN DETAILS */}
                     <div style={{ display: 'grid', gridTemplateColumns: isMobileOrTablet ? '1fr' : '320px 1fr', gap: isMobileOrTablet ? 24 : 36, alignItems: 'start' }}>
-                      
+
                       {/* LEFT SIDEBAR: IDENTITY & CONTACT */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                        
+
                         {/* Company Card */}
                         <div style={{ padding: '24px 20px', background: cardBg, backdropFilter: 'blur(16px)', borderRadius: 22, border: `1px solid ${cardBorder}`, display: 'flex', flexDirection: 'column', gap: 16 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -5283,9 +6171,10 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                                 updateField('aboutSettings.company.clients', newC);
                                 notify('✨ Mitra / Klien baru ditambahkan');
                               }}
-                              style={{ border: 'none', background: `${accentColor}20`, color: accentColor, padding: '3px 8px', borderRadius: 100, fontSize: 10.5, fontWeight: 800, cursor: 'pointer' }}
+                              style={{ border: 'none', background: `${accentColor}20`, color: accentColor, padding: '3px 8px', borderRadius: 100, fontSize: 10.5, fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                              title="Tambah Klien"
                             >
-                              + Tambah
+                              <Plus size={12} /> Tambah
                             </button>
                           </div>
 
@@ -5343,7 +6232,7 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
 
                       {/* RIGHT MAIN CONTENT */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-                        
+
                         {/* 1. TENTANG PERUSAHAAN (DESCRIPTION) */}
                         <div style={{ padding: '26px 28px', background: cardBg, backdropFilter: 'blur(16px)', borderRadius: 22, border: `1px solid ${cardBorder}`, display: 'flex', flexDirection: 'column', gap: 14 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -5405,9 +6294,10 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                                   updateField('aboutSettings.company.mission', [...cur, 'Poin misi baru perusahaan']);
                                   notify('✨ Poin misi baru ditambahkan');
                                 }}
-                                style={{ border: 'none', background: `${accentColor}18`, color: accentColor, padding: '3px 8px', borderRadius: 100, fontSize: 10.5, fontWeight: 800, cursor: 'pointer' }}
+                                style={{ border: 'none', background: `${accentColor}18`, color: accentColor, padding: '3px 8px', borderRadius: 100, fontSize: 10.5, fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                                title="Tambah Poin Misi"
                               >
-                                + Tambah
+                                <Plus size={12} /> Tambah
                               </button>
                             </div>
 
@@ -5855,13 +6745,13 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
 
                     {/* 3.2 EXACT MAIN BENTO GRID (SIDEBAR + CONTENT) */}
                     <div style={{ display: 'grid', gridTemplateColumns: isMobileOrTablet ? '1fr' : '300px 1fr', gap: isMobileOrTablet ? 24 : 36, alignItems: 'start' }}>
-                      
+
                       {/* ═══ LEFT SIDEBAR (PROFILE, STATS & CONTACT) ═══ */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                        
+
                         {/* Profile Card */}
                         <div style={{ padding: '24px 20px', textAlign: 'center', background: cardBg, backdropFilter: 'blur(16px)', borderRadius: 22, border: `1px solid ${cardBorder}`, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-                          
+
                           {/* Avatar with Exact Camera Replacement Button */}
                           <div style={{ position: 'relative' }}>
                             <div
@@ -6000,7 +6890,7 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
 
                       {/* ═══ RIGHT CONTENT AREA (BIO, EXPERIENCES, EDUCATION, CERTS, SKILLS) ═══ */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-                        
+
                         {/* 3.2.1 BIOGRAFI / TENTANG SAYA */}
                         <div style={{ padding: '26px 28px', background: cardBg, backdropFilter: 'blur(16px)', borderRadius: 22, border: `1px solid ${cardBorder}`, display: 'flex', flexDirection: 'column', gap: 14 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -6573,7 +7463,23 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
 
             {/* ════════════════ PAGE 4: KATALOG PRODUK ════════════════ */}
             {activePage === 'catalog' && (
-              <div style={{ padding: isMobileOrTablet ? '30px 16px' : '60px 24px', maxWidth: 1240, margin: '0 auto' }}>
+              <div style={{ padding: isMobileOrTablet ? '30px 16px' : '48px 24px', maxWidth: 1240, margin: '0 auto' }}>
+                <PageHeroHeader
+                  isDark={isDark}
+                  isEditable={true}
+                  bgPattern={(data.pagesHeader as any)?.catalog?.bgPattern || 'grid'}
+                  onPatternChange={(p) => updateField('pagesHeader.catalog.bgPattern', p)}
+                  badgeIcon={<ShoppingBag size={14} />}
+                  badgeText={data.pagesHeader?.catalog?.badge || 'PRODUK & ASET DIGITAL'}
+                  onBadgeChange={(v) => updateField('pagesHeader.catalog.badge', v)}
+                  title={data.pagesHeader?.catalog?.title || 'Koleksi Produk & Layanan'}
+                  onTitleChange={(v) => updateField('pagesHeader.catalog.title', v)}
+                  description={data.pagesHeader?.catalog?.description || 'Dapatkan solusi desain berkualitas tinggi, aset digital siap pakai, serta layanan kustom profesional untuk mengembangkan bisnis Anda.'}
+                  onDescriptionChange={(v) => updateField('pagesHeader.catalog.description', v)}
+                  accentColor={accentColor}
+                  textColor={textColor}
+                  subTextColor={subTextColor}
+                />
                 {/* Promo Header Banner */}
                 <div
                   style={{
@@ -6718,154 +7624,170 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                   {products
                     .filter(p => catalogActiveCategory === 'Semua' || p.category === catalogActiveCategory)
                     .map((prod) => (
-                    <div key={prod.id} style={{ borderRadius: 22, background: cardBg, border: `1px solid ${cardBorder}`, overflow: 'hidden', padding: 18, display: 'flex', flexDirection: 'column', gap: 10, position: 'relative' }}>
-                      <div style={{ width: '100%', height: 170, borderRadius: 14, background: isDark ? '#0f172a' : '#f1f5f9', overflow: 'hidden', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        {prod.image ? (
-                          <img src={prod.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        ) : (
-                          <ShoppingBag size={32} opacity={0.4} color={accentColor} />
-                        )}
-
-                        {/* Product Badge */}
-                        {prod.badge && (
-                          <div style={{ position: 'absolute', top: 8, left: 8, padding: '3px 8px', borderRadius: 100, background: accentColor, color: '#fff', fontSize: 9.5, fontWeight: 800 }}>
-                            {prod.badge}
-                          </div>
-                        )}
-                        
-                        {/* Edit Pop-up Modal button */}
-                        <button
-                          onClick={() => setEditingProductModal(prod)}
-                          style={{
-                            position: 'absolute',
-                            bottom: 6,
-                            left: 6,
-                            padding: '5px 10px',
-                            borderRadius: 100,
-                            background: 'rgba(0,0,0,0.75)',
-                            backdropFilter: 'blur(8px)',
-                            color: '#fff',
-                            border: '1px solid rgba(255,255,255,0.2)',
-                            fontSize: 10,
-                            fontWeight: 750,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Edit Pop-up
-                        </button>
-
-                        {/* Multi-Action Image Toolbar for Product Card */}
-                        <div
-                          style={{
-                            position: 'absolute',
-                            bottom: 6,
-                            right: 6,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 3,
-                            background: 'rgba(0,0,0,0.8)',
-                            backdropFilter: 'blur(8px)',
-                            padding: '3px 6px',
-                            borderRadius: 100,
-                            border: '1px solid rgba(255,255,255,0.2)',
-                          }}
-                        >
-                          <button
-                            onClick={() => triggerUpload({ type: 'product', id: prod.id })}
-                            title="Upload Foto (Cloudinary)"
-                            style={{ background: 'none', border: 'none', color: '#fff', fontSize: 10, fontWeight: 750, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}
-                          >
-                            <Camera size={11} />
-                            <span>Upload</span>
-                          </button>
-                          <button
-                            onClick={() => openMediaPicker({ type: 'product', id: prod.id })}
-                            title="Pilih dari Galeri Media"
-                            style={{ background: 'none', border: 'none', color: '#fff', fontSize: 10, fontWeight: 750, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: 5 }}
-                          >
-                            <ImageIcon size={11} />
-                            <span>Galeri</span>
-                          </button>
-                          {prod.image && (
-                            <button
-                              onClick={() => handleRemoveImage('product', prod.id)}
-                              title="Hapus Foto Produk"
-                              style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: 5 }}
-                            >
-                              <Trash2 size={11} />
-                            </button>
+                      <div key={prod.id} style={{ borderRadius: 22, background: cardBg, border: `1px solid ${cardBorder}`, overflow: 'hidden', padding: 18, display: 'flex', flexDirection: 'column', gap: 10, position: 'relative' }}>
+                        <div style={{ width: '100%', height: 170, borderRadius: 14, background: isDark ? '#0f172a' : '#f1f5f9', overflow: 'hidden', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {prod.image ? (
+                            <img src={prod.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          ) : (
+                            <ShoppingBag size={32} opacity={0.4} color={accentColor} />
                           )}
-                        </div>
-                      </div>
 
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <div>
+                          {/* Product Badge */}
+                          {prod.badge && (
+                            <div style={{ position: 'absolute', top: 8, left: 8, padding: '3px 8px', borderRadius: 100, background: accentColor, color: '#fff', fontSize: 9.5, fontWeight: 800 }}>
+                              {prod.badge}
+                            </div>
+                          )}
+
+                          {/* Edit Pop-up Modal button */}
+                          <button
+                            onClick={() => setEditingProductModal(prod)}
+                            style={{
+                              position: 'absolute',
+                              bottom: 6,
+                              left: 6,
+                              padding: '5px 10px',
+                              borderRadius: 100,
+                              background: 'rgba(0,0,0,0.75)',
+                              backdropFilter: 'blur(8px)',
+                              color: '#fff',
+                              border: '1px solid rgba(255,255,255,0.2)',
+                              fontSize: 10,
+                              fontWeight: 750,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Edit Pop-up
+                          </button>
+
+                          {/* Multi-Action Image Toolbar for Product Card */}
+                          <div
+                            style={{
+                              position: 'absolute',
+                              bottom: 6,
+                              right: 6,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 3,
+                              background: 'rgba(0,0,0,0.8)',
+                              backdropFilter: 'blur(8px)',
+                              padding: '3px 6px',
+                              borderRadius: 100,
+                              border: '1px solid rgba(255,255,255,0.2)',
+                            }}
+                          >
+                            <button
+                              onClick={() => triggerUpload({ type: 'product', id: prod.id })}
+                              title="Upload Foto (Cloudinary)"
+                              style={{ background: 'none', border: 'none', color: '#fff', fontSize: 10, fontWeight: 750, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}
+                            >
+                              <Camera size={11} />
+                              <span>Upload</span>
+                            </button>
+                            <button
+                              onClick={() => openMediaPicker({ type: 'product', id: prod.id })}
+                              title="Pilih dari Galeri Media"
+                              style={{ background: 'none', border: 'none', color: '#fff', fontSize: 10, fontWeight: 750, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: 5 }}
+                            >
+                              <ImageIcon size={11} />
+                              <span>Galeri</span>
+                            </button>
+                            {prod.image && (
+                              <button
+                                onClick={() => handleRemoveImage('product', prod.id)}
+                                title="Hapus Foto Produk"
+                                style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: 5 }}
+                              >
+                                <Trash2 size={11} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div>
+                            <span
+                              contentEditable
+                              suppressContentEditableWarning
+                              onBlur={(e) => {
+                                const val = e.currentTarget.textContent || '';
+                                setProducts(prev => prev.map(item => item.id === prod.id ? { ...item, category: val } : item));
+                                setIsDirty(true);
+                              }}
+                              style={{ fontSize: 10.5, fontWeight: 800, color: accentColor, textTransform: 'uppercase', outline: 'none' }}
+                            >
+                              {prod.category || 'Kategori'}
+                            </span>
+                            <h4
+                              contentEditable
+                              suppressContentEditableWarning
+                              onBlur={(e) => {
+                                const val = e.currentTarget.textContent || '';
+                                setProducts(prev => prev.map(item => item.id === prod.id ? { ...item, name: val } : item));
+                                setIsDirty(true);
+                              }}
+                              style={{ fontFamily: "'Outfit', sans-serif", fontSize: 15.5, fontWeight: 800, color: textColor, margin: '2px 0 0', outline: 'none' }}
+                            >
+                              {prod.name || 'Nama Produk'}
+                            </h4>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setProducts(prev => prev.filter(item => item.id !== prod.id));
+                              setIsDirty(true);
+                              notify('🗑️ Produk dihapus');
+                            }}
+                            style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', opacity: 0.4 }}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                          <span style={{ fontSize: 13, fontWeight: 800, color: accentColor }}>Rp</span>
                           <span
                             contentEditable
                             suppressContentEditableWarning
                             onBlur={(e) => {
-                              const val = e.currentTarget.textContent || '';
-                              setProducts(prev => prev.map(item => item.id === prod.id ? { ...item, category: val } : item));
+                              const val = Number(e.currentTarget.textContent?.replace(/[^0-9]/g, '') || 0);
+                              setProducts(prev => prev.map(item => item.id === prod.id ? { ...item, price: val } : item));
                               setIsDirty(true);
                             }}
-                            style={{ fontSize: 10.5, fontWeight: 800, color: accentColor, textTransform: 'uppercase', outline: 'none' }}
+                            style={{ fontSize: 16, fontWeight: 900, color: accentColor, outline: 'none' }}
                           >
-                            {prod.category || 'Kategori'}
+                            {Number(prod.price || 0).toLocaleString('id-ID')}
                           </span>
-                          <h4
-                            contentEditable
-                            suppressContentEditableWarning
-                            onBlur={(e) => {
-                              const val = e.currentTarget.textContent || '';
-                              setProducts(prev => prev.map(item => item.id === prod.id ? { ...item, name: val } : item));
-                              setIsDirty(true);
-                            }}
-                            style={{ fontFamily: "'Outfit', sans-serif", fontSize: 15.5, fontWeight: 800, color: textColor, margin: '2px 0 0', outline: 'none' }}
-                          >
-                            {prod.name || 'Nama Produk'}
-                          </h4>
+                          {prod.originalPrice && (
+                            <span style={{ fontSize: 12, color: subTextColor, textDecoration: 'line-through' }}>
+                              Rp {Number(prod.originalPrice).toLocaleString('id-ID')}
+                            </span>
+                          )}
                         </div>
-                        <button
-                          onClick={() => {
-                            setProducts(prev => prev.filter(item => item.id !== prod.id));
-                            setIsDirty(true);
-                            notify('🗑️ Produk dihapus');
-                          }}
-                          style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', opacity: 0.4 }}
-                        >
-                          <Trash2 size={13} />
-                        </button>
                       </div>
-
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                        <span style={{ fontSize: 13, fontWeight: 800, color: accentColor }}>Rp</span>
-                        <span
-                          contentEditable
-                          suppressContentEditableWarning
-                          onBlur={(e) => {
-                            const val = Number(e.currentTarget.textContent?.replace(/[^0-9]/g, '') || 0);
-                            setProducts(prev => prev.map(item => item.id === prod.id ? { ...item, price: val } : item));
-                            setIsDirty(true);
-                          }}
-                          style={{ fontSize: 16, fontWeight: 900, color: accentColor, outline: 'none' }}
-                        >
-                          {Number(prod.price || 0).toLocaleString('id-ID')}
-                        </span>
-                        {prod.originalPrice && (
-                          <span style={{ fontSize: 12, color: subTextColor, textDecoration: 'line-through' }}>
-                            Rp {Number(prod.originalPrice).toLocaleString('id-ID')}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                    ))}
                 </div>
               </div>
             )}
 
             {/* ════════════════ PAGE: DAFTAR HARGA & PAKET JASA (/pricing) ════════════════ */}
             {activePage === 'pricing' && (
-              <div style={{ padding: isMobileOrTablet ? '30px 16px' : '60px 24px', maxWidth: 1240, margin: '0 auto' }}>
+              <div style={{ padding: isMobileOrTablet ? '30px 16px' : '48px 24px', maxWidth: 1240, margin: '0 auto' }}>
+                <PageHeroHeader
+                  isDark={isDark}
+                  isEditable={true}
+                  bgPattern={(data.pagesHeader as any)?.pricing?.bgPattern || 'grid'}
+                  onPatternChange={(p) => updateField('pagesHeader.pricing.bgPattern', p)}
+                  badgeIcon={<Receipt size={14} />}
+                  badgeText={data.pagesHeader?.pricing?.badge || 'Rate Card & Paket Layanan'}
+                  onBadgeChange={(v) => updateField('pagesHeader.pricing.badge', v)}
+                  title={data.pagesHeader?.pricing?.title || 'Investasi Terukur untuk Hasil Maksimal'}
+                  onTitleChange={(v) => updateField('pagesHeader.pricing.title', v)}
+                  description={data.pagesHeader?.pricing?.description || 'Pilih paket layanan yang sesuai dengan kebutuhan studio atau bisnis Anda. Semua paket mencakup revisi terukur dan jaminan kualitas profesional.'}
+                  onDescriptionChange={(v) => updateField('pagesHeader.pricing.description', v)}
+                  accentColor={accentColor}
+                  textColor={textColor}
+                  subTextColor={subTextColor}
+                />
                 {/* Header Banner Showcase Pricing */}
                 <div
                   style={{
@@ -6907,15 +7829,15 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                       contentEditable
                       suppressContentEditableWarning
                       onBlur={(e) => updateField('pagesHeader.pricing.highlight', e.currentTarget.textContent || 'Hasil Maksimal Bisnis Anda')}
-                      style={{ 
-                        margin: '2px 0 0', 
-                        fontFamily: "'Outfit', sans-serif", 
-                        fontSize: isMobileOrTablet ? 20 : 28, 
-                        fontWeight: 900, 
-                        background: `linear-gradient(90deg, ${accentColor}, #38bdf8)`, 
-                        WebkitBackgroundClip: 'text', 
+                      style={{
+                        margin: '2px 0 0',
+                        fontFamily: "'Outfit', sans-serif",
+                        fontSize: isMobileOrTablet ? 20 : 28,
+                        fontWeight: 900,
+                        background: `linear-gradient(90deg, ${accentColor}, #38bdf8)`,
+                        WebkitBackgroundClip: 'text',
                         WebkitTextFillColor: 'transparent',
-                        outline: 'none' 
+                        outline: 'none'
                       }}
                     >
                       {data.pagesHeader?.pricing?.highlight || 'Hasil Maksimal Bisnis Anda'}
@@ -6969,7 +7891,7 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                     notify={notify}
                     confirm={(opts: any) => {
                       if (typeof opts === 'string') {
-                        confirm(opts, () => {});
+                        confirm(opts, () => { });
                       } else if (opts?.message && opts?.onConfirm) {
                         confirm(opts.message, opts.onConfirm);
                       }
@@ -6982,7 +7904,23 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
 
             {/* ════════════════ PAGE: KATALOG GAME (/games) ════════════════ */}
             {activePage === 'games' && (
-              <div style={{ padding: isMobileOrTablet ? '30px 16px' : '60px 24px', maxWidth: 1240, margin: '0 auto' }}>
+              <div style={{ padding: isMobileOrTablet ? '30px 16px' : '48px 24px', maxWidth: 1240, margin: '0 auto' }}>
+                <PageHeroHeader
+                  isDark={isDark}
+                  isEditable={true}
+                  bgPattern={(data.pagesHeader as any)?.games?.bgPattern || 'grid'}
+                  onPatternChange={(p) => updateField('pagesHeader.games.bgPattern', p)}
+                  badgeIcon={<Sparkles size={14} />}
+                  badgeText={data.pagesHeader?.games?.badge || 'Interactive Event Activation Games'}
+                  onBadgeChange={(v) => updateField('pagesHeader.games.badge', v)}
+                  title={data.pagesHeader?.games?.title || 'Koleksi Game Kustom untuk Aktivasi Event & Booth Brand Anda'}
+                  onTitleChange={(v) => updateField('pagesHeader.games.title', v)}
+                  description={data.pagesHeader?.games?.description || 'Tingkatkan keterlibatan pengunjung di pameran, mal, expo, dan festival dengan game interaktif responsif berbasis HTML5.'}
+                  onDescriptionChange={(v) => updateField('pagesHeader.games.description', v)}
+                  accentColor={accentColor}
+                  textColor={textColor}
+                  subTextColor={subTextColor}
+                />
                 {/* Header Banner Showcase Games */}
                 <div
                   style={{
@@ -7024,15 +7962,15 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                       contentEditable
                       suppressContentEditableWarning
                       onBlur={(e) => updateField('pagesHeader.games.highlight', e.currentTarget.textContent || 'Aktivasi Event & Booth Brand Anda')}
-                      style={{ 
-                        margin: '2px 0 0', 
-                        fontFamily: "'Outfit', sans-serif", 
-                        fontSize: isMobileOrTablet ? 20 : 28, 
-                        fontWeight: 900, 
-                        background: `linear-gradient(135deg, ${accentColor}, #3b82f6)`, 
-                        WebkitBackgroundClip: 'text', 
+                      style={{
+                        margin: '2px 0 0',
+                        fontFamily: "'Outfit', sans-serif",
+                        fontSize: isMobileOrTablet ? 20 : 28,
+                        fontWeight: 900,
+                        background: `linear-gradient(135deg, ${accentColor}, #3b82f6)`,
+                        WebkitBackgroundClip: 'text',
                         WebkitTextFillColor: 'transparent',
-                        outline: 'none' 
+                        outline: 'none'
                       }}
                     >
                       {data.pagesHeader?.games?.highlight || 'Aktivasi Event & Booth Brand Anda'}
@@ -7165,7 +8103,7 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                                 try {
                                   await saveGameInstance({ ...g, title: val });
                                   notify('Judul game diperbarui!');
-                                } catch (err) {}
+                                } catch (err) { }
                               }}
                               style={{ margin: 0, fontFamily: "'Outfit', sans-serif", fontSize: 16, fontWeight: 800, color: textColor, outline: 'none' }}
                             >
@@ -7223,7 +8161,7 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                               try {
                                 await saveGameInstance({ ...g, description: val });
                                 notify('Deskripsi game diperbarui!');
-                              } catch (err) {}
+                              } catch (err) { }
                             }}
                             style={{ fontSize: 12.5, color: subTextColor, margin: '10px 0', lineHeight: 1.5, flex: 1, outline: 'none' }}
                           >
@@ -7259,63 +8197,61 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
             )}
 
             {/* ════════════════ PAGE 5: BLOG & ARTIKEL ════════════════ */}
+            {/* ════════════════ PAGE 6: BLOG & ARTIKEL ════════════════ */}
             {activePage === 'blog' && (
-              <div style={{ padding: isMobileOrTablet ? '30px 16px' : '60px 24px', maxWidth: 1240, margin: '0 auto' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 28, flexWrap: 'wrap', gap: 14 }}>
-                  <div>
-                    <span
-                      contentEditable
-                      suppressContentEditableWarning
-                      onBlur={(e) => updateField('pagesHeader.blog.badge', e.currentTarget.textContent || 'Jurnal & Publikasi')}
-                      style={{ fontSize: 12, fontWeight: 800, color: accentColor, textTransform: 'uppercase', letterSpacing: '0.1em', outline: 'none' }}
+              <div style={{ padding: isMobileOrTablet ? '30px 16px' : '48px 24px', maxWidth: 1240, margin: '0 auto' }}>
+                <PageHeroHeader
+                  isDark={isDark}
+                  isEditable={true}
+                  bgPattern={(data.pagesHeader as any)?.blog?.bgPattern || 'grid'}
+                  onPatternChange={(p) => updateField('pagesHeader.blog.bgPattern', p)}
+                  badgeIcon={<Compass size={14} />}
+                  badgeText={data.pagesHeader?.blog?.badge || 'JURNAL & PUBLIKASI ARTIKEL'}
+                  onBadgeChange={(v) => updateField('pagesHeader.blog.badge', v)}
+                  title={data.pagesHeader?.blog?.title || 'Ide, Wawasan & Catatan Eksplorasi'}
+                  onTitleChange={(v) => updateField('pagesHeader.blog.title', v)}
+                  description={data.pagesHeader?.blog?.description || 'Koleksi tulisan mendalam seputar teknologi, panduan praktis, inovasi digital, serta gagasan kreatif terbaru.'}
+                  onDescriptionChange={(v) => updateField('pagesHeader.blog.description', v)}
+                  accentColor={accentColor}
+                  textColor={textColor}
+                  subTextColor={subTextColor}
+                  actionButtons={
+                    <button
+                      onClick={() => {
+                        const newPost = {
+                          id: `blog-${Date.now()}`,
+                          title: 'Judul Artikel Baru',
+                          excerpt: 'Pratinjau ringkasan artikel menarik...',
+                          content: 'Isi lengkap artikel...',
+                          category: 'Desain',
+                          coverImage: '',
+                          date: new Date().toISOString()
+                        };
+                        setBlogPosts(prev => [newPost, ...prev]);
+                        setIsDirty(true);
+                        notify('✨ Kartu artikel baru ditambahkan!');
+                      }}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        padding: '10px 18px',
+                        borderRadius: 999,
+                        background: accentColor,
+                        color: '#ffffff',
+                        fontFamily: "'Outfit', sans-serif",
+                        fontSize: 12.5,
+                        fontWeight: 750,
+                        border: 'none',
+                        cursor: 'pointer',
+                        boxShadow: `0 4px 14px ${accentColor}40`,
+                      }}
                     >
-                      {data.pagesHeader?.blog?.badge || 'JURNAL & PUBLIKASI ARTIKEL'}
-                    </span>
-                    <h1
-                      contentEditable
-                      suppressContentEditableWarning
-                      onBlur={(e) => updateField('pagesHeader.blog.title', e.currentTarget.textContent || 'Ide, Wawasan & Catatan Eksplorasi')}
-                      style={{ fontFamily: "'Outfit', sans-serif", fontSize: isMobileOrTablet ? 24 : 'clamp(28px, 4vw, 42px)', fontWeight: 900, color: textColor, margin: '6px 0 0', outline: 'none' }}
-                    >
-                      {data.pagesHeader?.blog?.title || 'Ide, Wawasan & Catatan Eksplorasi'}
-                    </h1>
-                  </div>
-
-                  <button
-                    onClick={() => {
-                      const newPost = {
-                        id: `blog-${Date.now()}`,
-                        title: 'Judul Artikel Baru',
-                        excerpt: 'Pratinjau ringkasan artikel menarik...',
-                        content: 'Isi lengkap artikel...',
-                        category: 'Desain',
-                        coverImage: '',
-                        date: new Date().toISOString()
-                      };
-                      setBlogPosts(prev => [newPost, ...prev]);
-                      setIsDirty(true);
-                      notify('✨ Kartu artikel baru ditambahkan!');
-                    }}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      padding: '8px 16px',
-                      borderRadius: 100,
-                      background: accentColor,
-                      color: '#ffffff',
-                      fontFamily: "'Outfit', sans-serif",
-                      fontSize: 12.5,
-                      fontWeight: 750,
-                      border: 'none',
-                      cursor: 'pointer',
-                      boxShadow: `0 4px 14px ${accentColor}40`,
-                    }}
-                  >
-                    <Plus size={15} />
-                    <span>Tambah Kartu Artikel</span>
-                  </button>
-                </div>
+                      <Plus size={14} />
+                      <span>Tulis Artikel</span>
+                    </button>
+                  }
+                />
 
                 <div style={{ display: 'grid', gridTemplateColumns: isMobileOrTablet ? '1fr' : 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20 }}>
                   {blogPosts.map((post) => (
@@ -7326,7 +8262,7 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                         ) : (
                           <FileText size={32} opacity={0.4} color={accentColor} />
                         )}
-                        
+
                         <button
                           onClick={() => setEditingBlogModal(post)}
                           style={{
@@ -9909,47 +10845,334 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
               );
             })()}
 
-            {/* ── FOOTER (INLINE EDITABLE ACROSS PAGES) ── */}
-            <footer style={{ padding: isMobileOrTablet ? '30px 16px 140px' : '60px 24px 90px', background: isDark ? '#05060b' : '#f8fafc', borderTop: `1px solid ${cardBorder}` }}>
-              <div style={{ maxWidth: 1240, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 20 }}>
-                  <div>
-                    <h3 style={{ fontFamily: "'Outfit', sans-serif", fontSize: 18, fontWeight: 900, color: textColor, margin: '0 0 6px' }}>{data.navbar?.logoText || 'sumr.day'}</h3>
-                    <p
-                      contentEditable
-                      suppressContentEditableWarning
-                      onBlur={(e) => updateField('footer.description', e.currentTarget.textContent || '')}
-                      style={{ fontSize: 13, color: subTextColor, margin: 0, outline: 'none', maxWidth: 420 }}
-                    >
-                      {data.footer?.description || 'A little sunshine for your screen ☀️ Studio kreatif digital berkonsep Warm Tech & Skena-Aesthetic.'}
-                    </p>
+            {/* ── FOOTER GLOBAL (EDITABLE + LIVE PREVIEW) ── */}
+            <div style={{ position: 'relative', borderTop: `1px solid ${cardBorder}`, background: isDark ? '#05060b' : '#f8fafc', paddingBottom: isMobileOrTablet ? 88 : 0 }}>
+              {/* Top Control Bar */}
+              <div style={{
+                maxWidth: 1240,
+                margin: '0 auto',
+                padding: isMobileOrTablet ? '12px 14px' : '12px 24px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 10,
+                borderBottom: `1px solid ${cardBorder}`,
+                background: isDark ? 'rgba(255,255,255,0.02)' : '#ffffff',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 12, fontWeight: 850, color: textColor, fontFamily: "'Outfit', sans-serif" }}>
+                    Footer Global Website
+                  </span>
+                  <span style={{
+                    fontSize: 10.5,
+                    fontWeight: 800,
+                    padding: '2px 8px',
+                    borderRadius: 999,
+                    background: (data.footer as any)?.enabled !== false ? 'rgba(16,185,129,0.14)' : 'rgba(239,68,68,0.14)',
+                    color: (data.footer as any)?.enabled !== false ? '#10b981' : '#ef4444',
+                  }}>
+                    {(data.footer as any)?.enabled !== false ? 'Tampil' : 'Disembunyikan'}
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => updateField('footer.enabled', (data.footer as any)?.enabled === false)}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: 999,
+                      border: `1px solid ${cardBorder}`,
+                      background: isDark ? 'rgba(255,255,255,0.05)' : '#f8fafc',
+                      color: textColor,
+                      fontSize: 11.5,
+                      fontWeight: 750,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 5,
+                    }}
+                  >
+                    {(data.footer as any)?.enabled !== false ? <EyeOff size={13} /> : <Eye size={13} />}
+                    <span>{(data.footer as any)?.enabled !== false ? 'Sembunyikan' : 'Tampilkan'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowFooterEditorPanel((v) => !v)}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: 999,
+                      border: showFooterEditorPanel ? `1px solid ${accentColor}` : `1px solid ${accentColor}50`,
+                      background: showFooterEditorPanel ? accentColor : `${accentColor}16`,
+                      color: showFooterEditorPanel ? '#fff' : accentColor,
+                      fontSize: 11.5,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 5,
+                    }}
+                  >
+                    <Edit3 size={13} />
+                    <span>{showFooterEditorPanel ? 'Tutup Editor Footer' : 'Edit Footer'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Expandable Inline Footer Editor Panel */}
+              {showFooterEditorPanel && (
+                <div style={{
+                  maxWidth: 1240,
+                  margin: '0 auto',
+                  padding: isMobileOrTablet ? '16px 14px' : '20px 24px',
+                  borderBottom: `1px solid ${cardBorder}`,
+                  background: isDark ? 'rgba(15,23,42,0.55)' : '#f8fafc',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 14,
+                }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobileOrTablet ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                      <label style={{ fontSize: 11, fontWeight: 800, color: subTextColor }}>Email Kontak Footer</label>
+                      <input
+                        type="text"
+                        value={data.footer?.email || ''}
+                        onChange={(e) => updateField('footer.email', e.target.value)}
+                        placeholder="hi.sumrday@gmail.com"
+                        style={{ padding: '8px 12px', borderRadius: 10, border: `1px solid ${cardBorder}`, background: cardBg, color: textColor, fontSize: 12.5 }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                      <label style={{ fontSize: 11, fontWeight: 800, color: subTextColor }}>Lokasi Studio</label>
+                      <input
+                        type="text"
+                        value={data.footer?.location || ''}
+                        onChange={(e) => updateField('footer.location', e.target.value)}
+                        placeholder="Indonesia / Remote Worldwide"
+                        style={{ padding: '8px 12px', borderRadius: 10, border: `1px solid ${cardBorder}`, background: cardBg, color: textColor, fontSize: 12.5 }}
+                      />
+                    </div>
                   </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: accentColor, textTransform: 'uppercase' }}>KONTAK LANGSUNG</div>
-                    <div
-                      contentEditable
-                      suppressContentEditableWarning
-                      onBlur={(e) => updateField('footer.email', e.currentTarget.textContent || '')}
-                      style={{ fontSize: 13, fontWeight: 700, color: textColor, outline: 'none' }}
-                    >
-                      {data.footer?.email || 'hi.sumrday@gmail.com'}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    <label style={{ fontSize: 11, fontWeight: 800, color: subTextColor }}>Deskripsi Footer</label>
+                    <textarea
+                      rows={2}
+                      value={data.footer?.description || ''}
+                      onChange={(e) => updateField('footer.description', e.target.value)}
+                      placeholder="Deskripsi singkat studio di footer..."
+                      style={{ padding: '8px 12px', borderRadius: 10, border: `1px solid ${cardBorder}`, background: cardBg, color: textColor, fontSize: 12.5, resize: 'vertical' }}
+                    />
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobileOrTablet ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                      <label style={{ fontSize: 11, fontWeight: 800, color: subTextColor }}>Teks Copyright</label>
+                      <input
+                        type="text"
+                        value={data.footer?.copyright || ''}
+                        onChange={(e) => updateField('footer.copyright', e.target.value)}
+                        placeholder="© 2026 sumr.day | Creative Digital Studio."
+                        style={{ padding: '8px 12px', borderRadius: 10, border: `1px solid ${cardBorder}`, background: cardBg, color: textColor, fontSize: 12.5 }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                      <label style={{ fontSize: 11, fontWeight: 800, color: subTextColor }}>Brand Footer & Teks Ke Atas</label>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: 8 }}>
+                        <input
+                          type="text"
+                          value={(data.footer as any)?.brandText || ''}
+                          onChange={(e) => updateField('footer.brandText', e.target.value)}
+                          placeholder={data.navbar?.logoText || 'sumr.day'}
+                          style={{ padding: '8px 12px', borderRadius: 10, border: `1px solid ${cardBorder}`, background: cardBg, color: textColor, fontSize: 12.5 }}
+                        />
+                        <input
+                          type="text"
+                          value={(data.footer as any)?.backToTopLabel || ''}
+                          onChange={(e) => updateField('footer.backToTopLabel', e.target.value)}
+                          placeholder="Ke Atas ↑"
+                          style={{ padding: '8px 12px', borderRadius: 10, border: `1px solid ${cardBorder}`, background: cardBg, color: textColor, fontSize: 12.5 }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Banner Kolaborasi & Header Kontak */}
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobileOrTablet ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                      <label style={{ fontSize: 11, fontWeight: 800, color: subTextColor }}>Badge & Judul Banner Kolaborasi</label>
+                      <input
+                        type="text"
+                        value={(data.footer as any)?.collabBadge || ''}
+                        onChange={(e) => updateField('footer.collabBadge', e.target.value)}
+                        placeholder="KOLABORASI PROYEK"
+                        style={{ padding: '8px 12px', borderRadius: 10, border: `1px solid ${cardBorder}`, background: cardBg, color: textColor, fontSize: 12.5 }}
+                      />
+                      <input
+                        type="text"
+                        value={(data.footer as any)?.collabTitle || ''}
+                        onChange={(e) => updateField('footer.collabTitle', e.target.value)}
+                        placeholder="Siap Mewujudkan Proyek Digital Anda?"
+                        style={{ padding: '8px 12px', borderRadius: 10, border: `1px solid ${cardBorder}`, background: cardBg, color: textColor, fontSize: 12.5 }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                      <label style={{ fontSize: 11, fontWeight: 800, color: subTextColor }}>Subjudul & Tombol Banner Kolaborasi</label>
+                      <input
+                        type="text"
+                        value={(data.footer as any)?.collabSubtitle || ''}
+                        onChange={(e) => updateField('footer.collabSubtitle', e.target.value)}
+                        placeholder="Diskusikan kebutuhan desain, pengembangan website..."
+                        style={{ padding: '8px 12px', borderRadius: 10, border: `1px solid ${cardBorder}`, background: cardBg, color: textColor, fontSize: 12.5 }}
+                      />
+                      <input
+                        type="text"
+                        value={(data.footer as any)?.collabCtaLabel || ''}
+                        onChange={(e) => updateField('footer.collabCtaLabel', e.target.value)}
+                        placeholder="Kirim Pesan Sekarang"
+                        style={{ padding: '8px 12px', borderRadius: 10, border: `1px solid ${cardBorder}`, background: cardBg, color: textColor, fontSize: 12.5 }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Header Seksi Kontak & Placeholder Form */}
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobileOrTablet ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                      <label style={{ fontSize: 11, fontWeight: 800, color: subTextColor }}>Badge & Judul Seksi Kontak</label>
+                      <input
+                        type="text"
+                        value={(data.localization as any)?.customProjectSectionTitle || ''}
+                        onChange={(e) => updateField('localization.customProjectSectionTitle', e.target.value)}
+                        placeholder="HUBUNGI KAMI"
+                        style={{ padding: '8px 12px', borderRadius: 10, border: `1px solid ${cardBorder}`, background: cardBg, color: textColor, fontSize: 12.5 }}
+                      />
+                      <input
+                        type="text"
+                        value={(data.localization as any)?.customProjectMainTitle || ''}
+                        onChange={(e) => updateField('localization.customProjectMainTitle', e.target.value)}
+                        placeholder="Kirimkan Pesan atau Pertanyaan"
+                        style={{ padding: '8px 12px', borderRadius: 10, border: `1px solid ${cardBorder}`, background: cardBg, color: textColor, fontSize: 12.5 }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                      <label style={{ fontSize: 11, fontWeight: 800, color: subTextColor }}>Placeholder Input Form Kontak</label>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                        <input
+                          type="text"
+                          value={(data.footer as any)?.formNamePlaceholder || ''}
+                          onChange={(e) => updateField('footer.formNamePlaceholder', e.target.value)}
+                          placeholder="Nama Lengkap"
+                          style={{ padding: '8px 12px', borderRadius: 10, border: `1px solid ${cardBorder}`, background: cardBg, color: textColor, fontSize: 12 }}
+                        />
+                        <input
+                          type="text"
+                          value={(data.footer as any)?.formContactPlaceholder || ''}
+                          onChange={(e) => updateField('footer.formContactPlaceholder', e.target.value)}
+                          placeholder="Email / Kontak"
+                          style={{ padding: '8px 12px', borderRadius: 10, border: `1px solid ${cardBorder}`, background: cardBg, color: textColor, fontSize: 12 }}
+                        />
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                        <input
+                          type="text"
+                          value={(data.footer as any)?.formTypePlaceholder || ''}
+                          onChange={(e) => updateField('footer.formTypePlaceholder', e.target.value)}
+                          placeholder="Pilih Jenis Proyek"
+                          style={{ padding: '8px 12px', borderRadius: 10, border: `1px solid ${cardBorder}`, background: cardBg, color: textColor, fontSize: 12 }}
+                        />
+                        <input
+                          type="text"
+                          value={(data.footer as any)?.formMessagePlaceholder || ''}
+                          onChange={(e) => updateField('footer.formMessagePlaceholder', e.target.value)}
+                          placeholder="Ceritakan detail proyek..."
+                          style={{ padding: '8px 12px', borderRadius: 10, border: `1px solid ${cardBorder}`, background: cardBg, color: textColor, fontSize: 12 }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    <label style={{ fontSize: 11, fontWeight: 800, color: subTextColor }}>Opsi Jenis Proyek Form (pisahkan dengan koma)</label>
+                    <input
+                      type="text"
+                      value={(data.footer?.contactProjectTypes || []).join(', ')}
+                      onChange={(e) => updateField('footer.contactProjectTypes', e.target.value.split(',').map((s) => s.trim()).filter(Boolean))}
+                      placeholder="Undangan Web Estetik, Landing Page & Website, Branding"
+                      style={{ padding: '8px 12px', borderRadius: 10, border: `1px solid ${cardBorder}`, background: cardBg, color: textColor, fontSize: 12.5 }}
+                    />
+                  </div>
+
+                  {/* Social Links Editor */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <label style={{ fontSize: 11, fontWeight: 800, color: subTextColor }}>Tautan Sosial Footer</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const cur = data.footer?.socialLinks || [];
+                          updateField('footer.socialLinks', [...cur, { id: `soc-${Date.now()}`, platform: 'Instagram', url: 'https://instagram.com/', icon: 'Camera' }]);
+                        }}
+                        style={{ padding: '4px 10px', borderRadius: 999, border: `1px solid ${accentColor}50`, background: `${accentColor}15`, color: accentColor, fontSize: 11, fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                      >
+                        <Plus size={12} />
+                        <span>Tambah Sosial</span>
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {(data.footer?.socialLinks || []).map((soc: any, sIdx: number) => (
+                        <div key={soc.id || sIdx} style={{ display: 'grid', gridTemplateColumns: isMobileOrTablet ? '1fr auto' : '150px 1fr auto', gap: 8, alignItems: 'center' }}>
+                          <input
+                            type="text"
+                            value={soc.platform || ''}
+                            onChange={(e) => {
+                              const next = (data.footer?.socialLinks || []).map((item: any, k: number) => k === sIdx ? { ...item, platform: e.target.value } : item);
+                              updateField('footer.socialLinks', next);
+                            }}
+                            placeholder="Platform (e.g. Instagram)"
+                            style={{ padding: '7px 10px', borderRadius: 9, border: `1px solid ${cardBorder}`, background: cardBg, color: textColor, fontSize: 12 }}
+                          />
+                          <input
+                            type="text"
+                            value={soc.url || ''}
+                            onChange={(e) => {
+                              const next = (data.footer?.socialLinks || []).map((item: any, k: number) => k === sIdx ? { ...item, url: e.target.value } : item);
+                              updateField('footer.socialLinks', next);
+                            }}
+                            placeholder="https://..."
+                            style={{ padding: '7px 10px', borderRadius: 9, border: `1px solid ${cardBorder}`, background: cardBg, color: textColor, fontSize: 12, gridColumn: isMobileOrTablet ? '1 / -2' : undefined }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = (data.footer?.socialLinks || []).filter((_: any, k: number) => k !== sIdx);
+                              updateField('footer.socialLinks', next);
+                            }}
+                            style={{ padding: 7, borderRadius: 9, border: '1px solid rgba(239,68,68,0.25)', background: 'rgba(239,68,68,0.08)', color: '#ef4444', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                            title="Hapus tautan sosial"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
+              )}
 
-                <div style={{ borderTop: `1px solid ${cardBorder}`, paddingTop: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5, color: subTextColor }}>
-                  <span
-                    contentEditable
-                    suppressContentEditableWarning
-                    onBlur={(e) => updateField('footer.copyright', e.currentTarget.textContent || '')}
-                    style={{ outline: 'none' }}
-                  >
-                    {data.footer?.copyright || '© 2026 sumr.day | Creative Digital Studio. Crafted with warm vibes.'}
-                  </span>
-                </div>
+              {/* Live WYSIWYG Footer Preview */}
+              <div style={{ opacity: (data.footer as any)?.enabled === false ? 0.4 : 1, transition: 'opacity 0.2s' }}>
+                <LPFooter
+                  isDark={isDark}
+                  accentColor={accentColor}
+                  data={data?.footer}
+                  localization={data?.localization}
+                  isEditable={true}
+                  onUpdateFooter={(field, val) => updateField(`footer.${field}`, val)}
+                  onUpdateLocalization={(field, val) => updateField(`localization.${field}`, val)}
+                />
               </div>
-            </footer>
+            </div>
 
           </div>
         </div>
@@ -12766,6 +13989,52 @@ export const VisualWebEditor: React.FC<VisualWebEditorProps> = ({ notify, confir
                       ))}
                     </div>
                   </div>
+
+                  {subIdx === undefined && (
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: subTextColor, marginBottom: 6 }}>
+                        Posisi di Drawer Mobile:
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+                        {[
+                          { id: 'auto', label: 'Otomatis' },
+                          { id: 'grid', label: 'Kotak Atas' },
+                          { id: 'list', label: 'Daftar Bawah' },
+                        ].map((opt) => {
+                          const currentSlot = targetObj.mobileSlot || 'auto';
+                          const isSelected = currentSlot === opt.id;
+                          return (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              onClick={() => {
+                                const newItems = [...(data.navbar?.items || [])];
+                                newItems[parentIdx] = {
+                                  ...newItems[parentIdx],
+                                  mobileSlot: opt.id === 'auto' ? undefined : opt.id,
+                                };
+                                updateField('navbar.items', newItems);
+                              }}
+                              style={{
+                                padding: '7px 8px',
+                                borderRadius: 10,
+                                border: `1px solid ${isSelected ? accentColor : borderColor}`,
+                                background: isSelected
+                                  ? (isDark ? 'rgba(245,158,11,0.16)' : 'rgba(245,158,11,0.12)')
+                                  : (isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)'),
+                                color: isSelected ? accentColor : textColor,
+                                fontSize: 11.5,
+                                fontWeight: isSelected ? 800 : 600,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   <button
                     onClick={() => setEditingLinkItem(null)}

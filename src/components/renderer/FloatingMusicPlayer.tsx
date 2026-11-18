@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Pause, Music, X } from 'lucide-react';
+import { Play, Pause, Music, X, Repeat } from 'lucide-react';
 
 interface FloatingMusicPlayerProps {
   nowPlaying: { blockId: string; name: string; isBackground: boolean } | null;
@@ -53,8 +53,18 @@ const FloatingMusicPlayer: React.FC<FloatingMusicPlayerProps> = ({
         <div className="text-[11px] font-bold text-white truncate">
           {nowPlaying?.name || 'Musik'}
         </div>
-        <div className="text-[9px] text-white/50 mt-px">
-          {nowPlaying?.isBackground ? '🔁 Background' : '🎵 Konten'}
+        <div className="text-[9px] text-white/50 mt-px flex items-center gap-1">
+          {nowPlaying?.isBackground ? (
+            <>
+              <Repeat size={9} />
+              <span>Background</span>
+            </>
+          ) : (
+            <>
+              <Music size={9} />
+              <span>Konten</span>
+            </>
+          )}
         </div>
       </div>
 

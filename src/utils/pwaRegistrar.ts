@@ -1,26 +1,23 @@
 /**
- * PWA Registrar Dinamis & Terisolasi
- * Menentukan manifest dan service worker terpisah sesuai rute:
- * - /admin/* -> manifest-admin.json & sw-admin.js (scope: /admin/)
- * - /client/* -> manifest-client.json & sw-client.js (scope: /client/)
+ * PWA Registrar Dinamis
+ * Menentukan manifest dan meta tags terpisah sesuai rute:
+ * - /admin/* -> manifest-admin.json & tema sumr.day OS
+ * - /client/* & rute publik -> manifest-client.json & tema sumr.day
+ * 
+ * Pengelolaan Service Worker disatukan via VitePWA Workbox (/sw.js)
+ * untuk mencegah konflik registrasi ganda dan infinite reload loop.
  */
 
 export const initDynamicPwa = () => {
   if (typeof window === 'undefined') return;
 
   const path = window.location.pathname;
-  let manifestUrl = '/manifest.json';
-  let swScript: { url: string; scope: string } | null = null;
+  const isAdmin = path.startsWith('/admin');
+  const manifestUrl = isAdmin ? '/manifest-admin.json' : '/manifest-client.json';
+  const appTitle = isAdmin ? 'sumr.day OS' : 'sumr.day';
+  const themeColor = isAdmin ? '#050507' : '#09090b';
 
-  if (path.startsWith('/admin')) {
-    manifestUrl = '/manifest-admin.json';
-    swScript = { url: '/sw-admin.js', scope: '/admin/' };
-  } else if (path.startsWith('/client')) {
-    manifestUrl = '/manifest-client.json';
-    swScript = { url: '/sw-client.js', scope: '/client/' };
-  }
-
-  // 1. Update manifest link secara dinamis
+  // 1. Update manifest link dan meta tags secara dinamis
   try {
     let manifestLink = document.querySelector('link[rel="manifest"]') as HTMLLinkElement | null;
     if (!manifestLink) {
@@ -28,23 +25,30 @@ export const initDynamicPwa = () => {
       manifestLink.rel = 'manifest';
       document.head.appendChild(manifestLink);
     }
-    manifestLink.href = manifestUrl;
+    if (manifestLink.getAttribute('href') !== manifestUrl) {
+      manifestLink.href = manifestUrl;
+    }
+
+    const metaTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+    if (metaTitle) metaTitle.setAttribute('content', appTitle);
+
+    const metaTheme = document.querySelector('meta[name="theme-color"]');
+    if (metaTheme) metaTheme.setAttribute('content', themeColor);
   } catch (e) {
     console.warn('[PWA] Gagal menyematkan manifest link:', e);
   }
 
-  // 2. Registrasi Service Worker scope terisolasi
-  if ('serviceWorker' in navigator && swScript) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker
-        .register(swScript!.url, { scope: swScript!.scope })
-        .then((reg) => {
-          console.log(`[PWA Isolated] Registered ${swScript!.url} on scope:`, reg.scope);
-        })
-        .catch((err) => {
-          console.warn(`[PWA Isolated] Failed to register ${swScript!.url}:`, err);
-        });
-    });
+  // 2. Bersihkan service worker usang / terduplikasi (sw-client.js / sw-admin.js)
+  // agar hanya ada SATU Service Worker kanonikal (/sw.js dari VitePWA) yang mengendalikan scope
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then((registrations) => {
+      for (const reg of registrations) {
+        const scriptUrl = reg.active?.scriptURL || reg.installing?.scriptURL || reg.waiting?.scriptURL || '';
+        if (scriptUrl.includes('sw-client.js') || scriptUrl.includes('sw-admin.js')) {
+          console.log('[PWA Clean] Menghapus Service Worker usang bentrok:', scriptUrl);
+          reg.unregister();
+        }
+      }
+    }).catch(() => {});
   }
 };
-

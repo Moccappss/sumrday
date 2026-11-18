@@ -13,8 +13,7 @@ import SEOHelmet from '../components/SEOHelmet';
 import { useToast } from '../context/ToastContext';
 import { useScrollReveal } from '../hooks/useScrollReveal';
 import { useWebsiteTheme } from '../hooks/useWebsiteTheme';
-import { toJpeg } from 'html-to-image';
-import jsPDF from 'jspdf';
+import PageHeroHeader from '../components/common/PageHeroHeader';
 
 /* ─────────────── Helpers ─────────────── */
 const hex2rgb = (hex: string) => {
@@ -34,9 +33,20 @@ const SOCIAL_ICONS: Record<string, string> = {
 
 /* ═══════════════════════════════════════ */
 const AboutPage: React.FC = () => {
-  const { data, isLoading: isLandingLoading } = useLandingData();
-  const [biodata, setBiodata] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const { data } = useLandingData();
+  const [biodata, setBiodata] = useState<any>(() => {
+    try {
+      const cached = localStorage.getItem('porto_biodata');
+      if (cached) return JSON.parse(cached);
+      const s = localStorage.getItem('porto_settings');
+      if (s) {
+        const parsed = JSON.parse(s);
+        if (parsed?.biodata) return parsed.biodata;
+      }
+    } catch { }
+    return null;
+  });
+  const [isLoading, setIsLoading] = useState(() => !biodata);
   const containerRef = useRef<HTMLDivElement>(null);
   const { showToast } = useToast();
 
@@ -65,22 +75,45 @@ const AboutPage: React.FC = () => {
     return () => { isMounted = false; if (typeof u1 === 'function') u1(); if (typeof u2 === 'function') u2(); };
   }, []);
 
+  // Reactive site mode listener
+  const [siteModeOverride, setSiteModeOverride] = useState<string | null>(() => {
+    return typeof localStorage !== 'undefined' ? localStorage.getItem('porto_site_mode') : null;
+  });
+
+  useEffect(() => {
+    const handleMode = (e: any) => {
+      if (e?.detail?.mode) setSiteModeOverride(e.detail.mode);
+    };
+    window.addEventListener('porto_sitemode_changed', handleMode);
+
+    const unsubStorage = storage.listenItem('porto_main_website', (d: any) => {
+      if (d?.siteMode) setSiteModeOverride(d.siteMode);
+    });
+
+    return () => {
+      window.removeEventListener('porto_sitemode_changed', handleMode);
+      if (typeof unsubStorage === 'function') unsubStorage();
+    };
+  }, []);
+
   /* Unified website theme hook */
   const { isDark } = useWebsiteTheme(data?.theme?.defaultMode);
 
-  /* Design tokens */
+  /* Design tokens - pure solid flat minimal */
   const accent = (typeof localStorage !== 'undefined' ? localStorage.getItem('porto_accent_color') : null) || data?.theme?.accentColor || '#64748b';
+  const accentColor = accent;
   const accentRgb = hex2rgb(accent);
-  const bg        = isDark ? '#08080f' : '#f4f6fb';
-  const textPri   = isDark ? '#f1f5f9' : '#0d1117';
-  const textSub   = isDark ? '#8899b4' : '#5a6a82';
-  const glass     = isDark ? 'rgba(20,28,44,0.7)' : 'rgba(255,255,255,0.82)';
-  const glassHover= isDark ? 'rgba(30,42,62,0.9)' : 'rgba(255,255,255,1)';
-  const border    = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
+  const bg = isDark ? '#06070a' : '#eef2f6';
+  const textPri = isDark ? '#ffffff' : '#111827';
+  const textSub = isDark ? '#94a3b8' : '#4b5563';
+  const glass = isDark ? '#151824' : '#ffffff';
+  const glassHover = isDark ? '#1d2132' : '#f9fafb';
+  const border = isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(15, 23, 42, 0.08)';
 
-  if (isLandingLoading || isLoading) return <div style={{ minHeight: '100vh', background: bg }} />;
+  if (isLoading && !biodata && !data?.aboutSettings) return <div style={{ minHeight: '100vh', background: bg }} />;
 
-  const isCompanyMode = data?.aboutSettings?.mode === 'company';
+  const currentMode = siteModeOverride || data?.siteMode || data?.aboutSettings?.mode || 'company';
+  const isCompanyMode = currentMode === 'company';
   const companyProfile = data?.aboutSettings?.company || {
     name: 'sumr.day',
     tagline: 'A little sunshine for your screen | Creative Digital Studio',
@@ -125,14 +158,14 @@ const AboutPage: React.FC = () => {
     ]
   };
 
-  const name       = biodata?.fullName || data?.hero?.headline || 'Nama Saya';
-  const role       = biodata?.role || data?.hero?.subheadline || 'Professional';
-  const company    = biodata?.company || '';
-  const bio        = biodata?.fullBio || data?.profile?.fullBio || biodata?.bio || data?.profile?.bio || '';
-  const skills     = biodata?.skills || data?.profile?.skills || [];
-  const avatarUrl  = biodata?.avatarUrl || biodata?.coverUrl || data?.hero?.heroImage || '';
-  const nameParts  = name.split(' ');
-  const initials   = nameParts.length >= 2
+  const name = biodata?.fullName || data?.hero?.headline || 'Nama Saya';
+  const role = biodata?.role || data?.hero?.subheadline || 'Professional';
+  const company = biodata?.company || '';
+  const bio = biodata?.fullBio || data?.profile?.fullBio || biodata?.bio || data?.profile?.bio || '';
+  const skills = biodata?.skills || data?.profile?.skills || [];
+  const avatarUrl = biodata?.avatarUrl || biodata?.coverUrl || data?.hero?.heroImage || '';
+  const nameParts = name.split(' ');
+  const initials = nameParts.length >= 2
     ? nameParts[0][0] + nameParts[1][0]
     : name.substring(0, 2);
 
@@ -282,13 +315,15 @@ const AboutPage: React.FC = () => {
 
     try {
       const exportElem = container.querySelector('#comp-export-container') as HTMLElement;
-      if (!exportElem) throw new Error('Root container missing');
-
+      const [{ toJpeg }, { default: jsPDF }] = await Promise.all([
+        import('html-to-image'),
+        import('jspdf')
+      ]);
       const dataUrl = await toJpeg(exportElem, { quality: 0.95, pixelRatio: 2, backgroundColor: '#ffffff' });
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = pdf.internal.pageSize.getHeight();
-      
+
       const img = new Image();
       img.src = dataUrl;
       img.onload = () => {
@@ -317,10 +352,42 @@ const AboutPage: React.FC = () => {
     }
   };
 
+  /* ── Download Official Brand Kit ── */
+  const downloadBrandKit = () => {
+    const brandData = {
+      brandName: companyProfile.name || 'sumr.day',
+      tagline: companyProfile.tagline || 'Creative Digital Studio & Digital Assets Ecosystem',
+      palette: {
+        primaryAccent: accent,
+        darkBackground: '#080811',
+        lightBackground: '#f8fafc',
+        textPrimary: '#0f172a',
+        textMuted: '#64748b'
+      },
+      typography: {
+        headingFont: "'Outfit', sans-serif",
+        bodyFont: "'Inter', sans-serif"
+      },
+      logoSvg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 100"><text x="10" y="70" font-family="Outfit, sans-serif" font-size="52" font-weight="900" fill="${accent}">${companyProfile.name || 'sumr.day'}</text></svg>`,
+      generatedAt: new Date().toISOString()
+    };
+
+    const blob = new Blob([JSON.stringify(brandData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Brand_Kit_${(companyProfile.name || 'sumr.day').replace(/\s+/g, '_')}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('Brand Kit Resmi Berhasil Diunduh!', 'Paket aset logo & palet warna siap digunakan', 'success');
+  };
+
   /* ── Download PDF CV ── */
   const downloadCV = async () => {
     // Tampilkan notifikasi loading (opsional, jika ada state loading bisa di set di sini)
-    
+
     const skillList = skills.map((s: any) => typeof s === 'string' ? s : s.name).join(', ');
     const expHTML = (biodata?.experiences || []).map((e: any) => `
       <div class="timeline-item">
@@ -500,18 +567,18 @@ const AboutPage: React.FC = () => {
 <!-- Header -->
 <div class="cv-header">
   ${avatarUrl
-    ? `<img src="${avatarUrl}" alt="${name}" class="cv-avatar" crossorigin="anonymous" />`
-    : `<div class="cv-avatar-placeholder">${initials.toUpperCase()}</div>`
-  }
+        ? `<img src="${avatarUrl}" alt="${name}" class="cv-avatar" crossorigin="anonymous" />`
+        : `<div class="cv-avatar-placeholder">${initials.toUpperCase()}</div>`
+      }
   <div class="cv-header-info">
     <div class="cv-name">${name}</div>
     <div class="cv-role">${role}</div>
     ${company ? `<div class="cv-company">@ ${company}</div>` : ''}
     <div class="cv-contacts">
-      ${biodata?.email    ? `<span class="cv-contact-pill pdf-link" data-url="mailto:${biodata.email}">&#9993; ${biodata.email}</span>` : ''}
-      ${biodata?.phone    ? `<span class="cv-contact-pill pdf-link" data-url="https://wa.me/${biodata.phone.replace(/\D/g, '')}">WA: ${biodata.phone}</span>` : ''}
+      ${biodata?.email ? `<span class="cv-contact-pill pdf-link" data-url="mailto:${biodata.email}">&#9993; ${biodata.email}</span>` : ''}
+      ${biodata?.phone ? `<span class="cv-contact-pill pdf-link" data-url="https://wa.me/${biodata.phone.replace(/\D/g, '')}">WA: ${biodata.phone}</span>` : ''}
       ${biodata?.location ? `<span class="cv-contact-pill">&#128205; ${biodata.location}</span>` : ''}
-      ${biodata?.website  ? `<span class="cv-contact-pill pdf-link" data-url="${biodata.website.startsWith('http') ? biodata.website : 'https://'+biodata.website}">&#127760; Website</span>` : ''}
+      ${biodata?.website ? `<span class="cv-contact-pill pdf-link" data-url="${biodata.website.startsWith('http') ? biodata.website : 'https://' + biodata.website}">&#127760; Website</span>` : ''}
     </div>
   </div>
 </div>
@@ -540,13 +607,13 @@ const AboutPage: React.FC = () => {
       <div class="contact-row pdf-link" data-url="mailto:${biodata.email}"><span class="contact-icon">&#9993;</span><span class="contact-text">${biodata.email}</span></div>
       ${biodata?.phone ? `<div class="contact-row pdf-link" data-url="https://wa.me/${biodata.phone.replace(/\D/g, '')}"><span class="contact-icon" style="font-size:7pt; font-weight:800; transform:translateY(1px)">WA</span><span class="contact-text">${biodata.phone}</span></div>` : ''}
       ${biodata?.location ? `<div class="contact-row"><span class="contact-icon">&#128205;</span><span class="contact-text">${biodata.location}</span></div>` : ''}
-      ${biodata?.website ? `<div class="contact-row pdf-link" data-url="${biodata.website.startsWith('http') ? biodata.website : 'https://'+biodata.website}"><span class="contact-icon">&#127760;</span><span class="contact-text">${biodata.website}</span></div>` : ''}
+      ${biodata?.website ? `<div class="contact-row pdf-link" data-url="${biodata.website.startsWith('http') ? biodata.website : 'https://' + biodata.website}"><span class="contact-icon">&#127760;</span><span class="contact-text">${biodata.website}</span></div>` : ''}
     </div>` : ''}
 
     ${(biodata?.socialLinks && Object.keys(biodata.socialLinks).filter((k) => biodata.socialLinks[k]).length > 0) ? `
     <div class="sidebar-section">
       <div class="sidebar-label">Sosial</div>
-      ${Object.entries(biodata.socialLinks).filter(([, v]) => v).map(([k, v]) => `<div class="contact-row pdf-link" data-url="${String(v).startsWith('http') ? v : 'https://'+v}"><span class="contact-icon">&#128279;</span><span class="contact-text">${k}</span></div>`).join('')}
+      ${Object.entries(biodata.socialLinks).filter(([, v]) => v).map(([k, v]) => `<div class="contact-row pdf-link" data-url="${String(v).startsWith('http') ? v : 'https://' + v}"><span class="contact-icon">&#128279;</span><span class="contact-text">${k}</span></div>`).join('')}
     </div>` : ''}
   </div>
 
@@ -594,30 +661,55 @@ const AboutPage: React.FC = () => {
     container.style.width = '210mm';
     container.style.background = '#fff';
     container.innerHTML = htmlContent;
-    document.body.appendChild(container);
+    try {
+      const [{ toJpeg }, { default: jsPDF }] = await Promise.all([
+        import('html-to-image'),
+        import('jspdf')
+      ]);
+      const dataUrl = await toJpeg(container, { quality: 0.95, skipFonts: false, pixelRatio: 1.5 });
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
 
-    toJpeg(container, { quality: 0.95, skipFonts: false, pixelRatio: 1.5 })
-      .then((dataUrl) => {
-        const pdf = new jsPDF('p', 'mm', 'a4');
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = pdf.internal.pageSize.getHeight();
-        
-        const img = new Image();
-        img.src = dataUrl;
-        img.onload = () => {
-          const imgProps = pdf.getImageProperties(dataUrl);
-          const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
-          let heightLeft = imgHeight;
-          let position = 0;
-          
+      const img = new Image();
+      img.src = dataUrl;
+      img.onload = () => {
+        const imgProps = pdf.getImageProperties(dataUrl);
+        const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
+        let heightLeft = imgHeight;
+        let position = 0;
+
+        pdf.addImage(dataUrl, 'JPEG', 0, position, pdfWidth, imgHeight);
+
+        // Map DOM links to PDF coordinates
+        const containerRect = container.getBoundingClientRect();
+        const scaleX = pdfWidth / containerRect.width;
+        const scaleY = imgHeight / containerRect.height;
+
+        const links = container.querySelectorAll('.pdf-link');
+        links.forEach((link: any) => {
+          const rect = link.getBoundingClientRect();
+          const url = link.getAttribute('data-url');
+          if (url) {
+            const x = (rect.left - containerRect.left) * scaleX;
+            const y = (rect.top - containerRect.top) * scaleY;
+            const w = rect.width * scaleX;
+            const h = rect.height * scaleY;
+            // Make sure the link is on the current page (y coordinate)
+            if (y >= position && y < position + pdfHeight) {
+              pdf.link(x, y - position, w, h, { url });
+            }
+          }
+        });
+
+        heightLeft -= pdfHeight;
+
+        while (heightLeft > 0) {
+          position = heightLeft - imgHeight;
+          pdf.addPage();
           pdf.addImage(dataUrl, 'JPEG', 0, position, pdfWidth, imgHeight);
-          
-          // Map DOM links to PDF coordinates
-          const containerRect = container.getBoundingClientRect();
-          const scaleX = pdfWidth / containerRect.width;
-          const scaleY = imgHeight / containerRect.height;
-          
-          const links = container.querySelectorAll('.pdf-link');
+
+          // Add links for subsequent pages
           links.forEach((link: any) => {
             const rect = link.getBoundingClientRect();
             const url = link.getAttribute('data-url');
@@ -626,60 +718,36 @@ const AboutPage: React.FC = () => {
               const y = (rect.top - containerRect.top) * scaleY;
               const w = rect.width * scaleX;
               const h = rect.height * scaleY;
-              // Make sure the link is on the current page (y coordinate)
-              if (y >= position && y < position + pdfHeight) {
-                pdf.link(x, y - position, w, h, { url });
+
+              const pageYOffset = imgHeight - heightLeft - pdfHeight; // calculate absolute offset
+              if (y >= pageYOffset && y < pageYOffset + pdfHeight) {
+                pdf.link(x, y - pageYOffset, w, h, { url });
               }
             }
           });
-          
           heightLeft -= pdfHeight;
-          
-          while (heightLeft > 0) {
-            position = heightLeft - imgHeight;
-            pdf.addPage();
-            pdf.addImage(dataUrl, 'JPEG', 0, position, pdfWidth, imgHeight);
-            
-            // Add links for subsequent pages
-            links.forEach((link: any) => {
-              const rect = link.getBoundingClientRect();
-              const url = link.getAttribute('data-url');
-              if (url) {
-                const x = (rect.left - containerRect.left) * scaleX;
-                const y = (rect.top - containerRect.top) * scaleY;
-                const w = rect.width * scaleX;
-                const h = rect.height * scaleY;
-                
-                const pageYOffset = imgHeight - heightLeft - pdfHeight; // calculate absolute offset
-                if (y >= pageYOffset && y < pageYOffset + pdfHeight) {
-                   pdf.link(x, y - pageYOffset, w, h, { url });
-                }
-              }
-            });
-            heightLeft -= pdfHeight;
-          }
-          
-          const blob = pdf.output('blob');
-          const blobUrl = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.style.display = 'none';
-          a.href = blobUrl;
-          a.download = `CV_${name.replace(/\s+/g, '_')}.pdf`;
-          document.body.appendChild(a);
-          a.click();
-          
-          setTimeout(() => {
-            document.body.removeChild(a);
-            URL.revokeObjectURL(blobUrl);
-            document.body.removeChild(container);
-          }, 100);
-        };
-      })
-      .catch(err => {
-        console.error('Failed to generate PDF', err);
-        if (document.body.contains(container)) document.body.removeChild(container);
-        alert('Gagal mendownload PDF. Silakan coba lagi.');
-      });
+        }
+
+        const blob = pdf.output('blob');
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = blobUrl;
+        a.download = `CV_${name.replace(/\s+/g, '_')}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+
+        setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(blobUrl);
+          document.body.removeChild(container);
+        }, 100);
+      };
+    } catch (err) {
+      console.error('Failed to generate PDF', err);
+      if (document.body.contains(container)) document.body.removeChild(container);
+      alert('Gagal mendownload PDF. Silakan coba lagi.');
+    }
   };
 
   /* ── Sub-components ── */
@@ -697,23 +765,13 @@ const AboutPage: React.FC = () => {
 
   const Card = ({ children, style = {}, hover = true }: { children: React.ReactNode; style?: React.CSSProperties; hover?: boolean }) => (
     <div
+      data-card-3d={hover ? 'true' : undefined}
+      data-no-3d={hover ? undefined : 'true'}
       style={{
-        background: glass, backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
-        border: `1px solid ${border}`, borderRadius: 20,
-        transition: 'all 0.25s ease', ...style
+        background: glass, backdropFilter: 'none', WebkitBackdropFilter: 'none',
+        border: `1px solid ${border}`, borderRadius: 22,
+        transition: 'border-color 0.45s cubic-bezier(0.16, 1, 0.3, 1)', ...style
       }}
-      onMouseEnter={hover ? (e) => {
-        (e.currentTarget as HTMLDivElement).style.background = glassHover;
-        (e.currentTarget as HTMLDivElement).style.borderColor = `rgba(${accentRgb},0.22)`;
-        (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)';
-        (e.currentTarget as HTMLDivElement).style.boxShadow = `0 12px 40px rgba(${accentRgb},0.1)`;
-      } : undefined}
-      onMouseLeave={hover ? (e) => {
-        (e.currentTarget as HTMLDivElement).style.background = glass;
-        (e.currentTarget as HTMLDivElement).style.borderColor = border;
-        (e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)';
-        (e.currentTarget as HTMLDivElement).style.boxShadow = 'none';
-      } : undefined}
     >
       {children}
     </div>
@@ -726,7 +784,7 @@ const AboutPage: React.FC = () => {
     <div style={{ display: 'flex', gap: 18, position: 'relative' }}>
       {/* Dot + line */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
-        <div style={{ width: 14, height: 14, borderRadius: '50%', background: accent, border: `3px solid ${bg}`, boxShadow: `0 0 0 3px rgba(${accentRgb},0.25)`, marginTop: 4, flexShrink: 0 }} />
+        <div style={{ width: 14, height: 14, borderRadius: '50%', background: accent, border: `3px solid ${bg}`, boxShadow: 'none', marginTop: 4, flexShrink: 0 }} />
         {!isLast && <div style={{ width: 2, flex: 1, background: `rgba(${accentRgb},0.15)`, marginTop: 6, minHeight: 40 }} />}
       </div>
       {/* Content */}
@@ -771,8 +829,6 @@ const AboutPage: React.FC = () => {
       <SEOHelmet title={`Tentang - ${name}`} description={bio || `Profil ${name}, ${role}`} />
 
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap');
-
         .about-grid {
           display: grid;
           grid-template-columns: 1fr;
@@ -870,13 +926,12 @@ const AboutPage: React.FC = () => {
         }
         .cert-card {
           background: ${glass}; border: 1px solid ${border}; border-radius: 18px;
-          padding: 22px; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+          padding: 22px; backdrop-filter: none; -webkit-backdrop-filter: none;
           display: flex; flex-direction: column; gap: 12;
-          transition: all 0.25s ease;
+          transition: background 0.45s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.45s cubic-bezier(0.16, 1, 0.3, 1);
         }
         .cert-card:hover {
           background: ${glassHover}; border-color: rgba(${accentRgb},0.22);
-          transform: translateY(-3px); box-shadow: 0 16px 40px rgba(${accentRgb},0.1);
         }
         .stat-item {
           display: flex; flex-direction: column; align-items: center;
@@ -917,53 +972,71 @@ const AboutPage: React.FC = () => {
         accentColor={accent}
       />
 
-      <main style={{ padding: '104px 20px 80px', maxWidth: 1160, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+      <main style={{ padding: '104px clamp(16px, 3.5vw, 24px) 80px', maxWidth: 1240, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
 
         {isCompanyMode ? (
           /* ════════════════════════ COMPANY PROFILE MODE ════════════════════════ */
           <div style={{ display: 'flex', flexDirection: 'column', gap: 36 }}>
-            
-            {/* ── COMPANY HERO BANNER ── */}
-            <div
-              data-reveal="true"
-              className="about-hero-banner"
-              style={{
-                minHeight: 280,
-                background: `linear-gradient(135deg, rgba(${accentRgb},0.95) 0%, #1e1b4b 100%)`,
-                position: 'relative'
-              }}
-            >
-              <div className="hero-blur-orb-1" />
-              <div className="hero-blur-orb-2" />
 
-              <div style={{ position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 780 }}>
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(10px)', padding: '5px 14px', borderRadius: 100, border: '1px solid rgba(255,255,255,0.25)', width: 'fit-content' }}>
-                  <Building2 size={13} color="#fff" />
-                  <span style={{ fontFamily: "'Outfit',sans-serif", fontSize: 11, fontWeight: 850, color: '#fff', letterSpacing: '0.08em' }}>
-                    {companyProfile.badge || 'PROFIL PERUSAHAAN & STUDIO'}
-                  </span>
-                </div>
+            {/* ── UNIFIED HERO POSTER SECTION ── */}
+            <PageHeroHeader
+              isDark={isDark}
+              bgPattern={(data?.pagesHeader as any)?.about?.bgPattern || 'grid'}
+              accentColor={accentColor}
+              badgeIcon={<Building2 size={13} />}
+              badgeText={companyProfile.badge || 'PROFIL PERUSAHAAN & STUDIO'}
+              title={companyProfile.name || 'sumr.day Studio'}
+              description={companyProfile.tagline || 'A little sunshine for your screen | Creative Digital Studio'}
+              actionButtons={
+                <>
+                  <button
+                    onClick={downloadBrandKit}
+                    className="no-print"
+                    style={{
+                      padding: '9px 18px',
+                      borderRadius: 100,
+                      border: 'none',
+                      background: accentColor,
+                      color: '#ffffff',
+                      fontSize: 12.5,
+                      fontWeight: 750,
+                      fontFamily: "'Outfit', sans-serif",
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6
+                    }}
+                    title="Unduh Panduan Logo, Palet Warna, & Typography"
+                  >
+                    <Sparkles size={13} />
+                    <span>Unduh Brand Kit</span>
+                  </button>
 
-                <h1 style={{ margin: '0', fontFamily: "'Outfit',sans-serif", fontSize: 'clamp(32px, 5vw, 54px)', fontWeight: 900, letterSpacing: '-1.5px', color: '#ffffff', lineHeight: 1.1 }}>
-                  {companyProfile.name || 'sumr.day'}
-                </h1>
-
-                <p style={{ margin: 0, fontSize: 16, fontFamily: "'Inter',sans-serif", fontWeight: 500, color: 'rgba(255,255,255,0.92)', lineHeight: 1.5 }}>
-                  {companyProfile.tagline || 'A little sunshine for your screen | Creative Digital Studio'}
-                </p>
-              </div>
-
-              {/* Download Company Profile PDF button */}
-              <button
-                onClick={downloadCompanyProfile}
-                className="print-btn no-print"
-                style={{ position: 'absolute', top: 24, right: 24, background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.3)', color: '#fff', backdropFilter: 'blur(10px)', padding: '9px 20px', borderRadius: 100, fontSize: 13, fontWeight: 700, fontFamily: "'Outfit',sans-serif", cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, transition: 'all 0.2s ease' }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.28)'; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.18)'; }}
-              >
-                <Download size={14} /> Unduh Profil PDF
-              </button>
-            </div>
+                  <button
+                    onClick={downloadCompanyProfile}
+                    className="print-btn no-print"
+                    style={{
+                      padding: '9px 18px',
+                      borderRadius: 100,
+                      border: `1px solid ${isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.15)'}`,
+                      background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.03)',
+                      color: isDark ? '#f8fafc' : '#0f172a',
+                      fontSize: 12.5,
+                      fontWeight: 750,
+                      fontFamily: "'Outfit', sans-serif",
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6
+                    }}
+                    title="Unduh Profil Perusahaan PDF"
+                  >
+                    <Download size={13} />
+                    <span>Unduh Profil PDF</span>
+                  </button>
+                </>
+              }
+            />
 
             {/* ── COMPANY STATS METRIC COUNTER ROW ── */}
             <div data-reveal="true" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16 }}>
@@ -986,10 +1059,10 @@ const AboutPage: React.FC = () => {
 
             {/* ── BENTO GRID: SIDEBAR & MAIN CONTENT ── */}
             <div className="about-grid">
-              
+
               {/* LEFT SIDEBAR: IDENTITY & CONTACT */}
               <div data-reveal="true" className="about-sidebar reveal-delay-1">
-                
+
                 {/* Company Info Card */}
                 <Card style={{ padding: '26px 22px', display: 'flex', flexDirection: 'column', gap: 16 }} hover={false}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -1127,7 +1200,7 @@ const AboutPage: React.FC = () => {
 
               {/* RIGHT MAIN CONTENT AREA */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 36 }}>
-                
+
                 {/* 1. TENTANG PERUSAHAAN (DESCRIPTION) */}
                 <div data-reveal="true" className="reveal-delay-2">
                   <SectionHeading icon={Building2} title="Tentang Studio Kami" subtitle="Visi, identitas, dan komitmen profesional kami" />
@@ -1140,7 +1213,7 @@ const AboutPage: React.FC = () => {
 
                 {/* 2. VISI & MISI BENTO CARDS */}
                 <div data-reveal="true" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
-                  <Card style={{ padding: '26px 28px', border: `1.5px solid rgba(${accentRgb},0.35)` }} hover={true}>
+                  <Card style={{ padding: '26px 28px' }} hover={true}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, color: accent }}>
                       <Sparkles size={20} />
                       <h3 style={{ margin: 0, fontFamily: "'Outfit',sans-serif", fontSize: 18, fontWeight: 900, color: textPri }}>Visi Kami</h3>
@@ -1198,7 +1271,7 @@ const AboutPage: React.FC = () => {
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 18 }}>
                       {companyProfile.teamMembers.map((tm: any, tIdx: number) => (
                         <Card key={tm.id || tIdx} style={{ padding: '24px 20px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }} hover={true}>
-                          <div style={{ width: 76, height: 76, borderRadius: '50%', overflow: 'hidden', background: `rgba(${accentRgb},0.15)`, border: `2.5px solid rgba(${accentRgb},0.4)`, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 8px 20px rgba(${accentRgb},0.15)` }}>
+                          <div style={{ width: 76, height: 76, borderRadius: '50%', overflow: 'hidden', background: `rgba(${accentRgb},0.15)`, border: `2.5px solid rgba(${accentRgb},0.4)`, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'none' }}>
                             {tm.photo ? (
                               <img src={tm.photo} alt={tm.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                             ) : (
@@ -1250,7 +1323,7 @@ const AboutPage: React.FC = () => {
                   data-reveal="true"
                   style={{
                     padding: '36px 32px',
-                    borderRadius: 24,
+                    borderRadius: 22,
                     background: `linear-gradient(135deg, rgba(${accentRgb},0.2) 0%, rgba(${accentRgb},0.05) 100%)`,
                     border: `1.5px solid rgba(${accentRgb},0.35)`,
                     display: 'flex',
@@ -1280,7 +1353,7 @@ const AboutPage: React.FC = () => {
                       fontSize: 14,
                       fontWeight: 800,
                       textDecoration: 'none',
-                      boxShadow: `0 8px 24px rgba(${accentRgb},0.35)`,
+                      boxShadow: 'none',
                       transition: 'transform 0.2s ease'
                     }}
                     onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.transform = 'translateY(-2px)'; }}
@@ -1297,44 +1370,40 @@ const AboutPage: React.FC = () => {
         ) : (
           /* ════════════════════════ PERSONAL CV MODE ════════════════════════ */
           <div>
-            {/* ── HERO BANNER ── */}
-            <div data-reveal="true" className="about-hero-banner" style={{ marginBottom: 40 }}>
-              <div className="hero-blur-orb-1" />
-              <div className="hero-blur-orb-2" />
-
-              {/* Avatar in hero */}
-              {avatarUrl && (
-                <div style={{ position: 'absolute', bottom: 0, right: 40, width: 200, height: 200, borderRadius: '50% 50% 0 0', overflow: 'hidden', opacity: 0.18, filter: 'grayscale(20%)' }}>
-                  <img src={avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
-                </div>
-              )}
-
-              <div style={{ position: 'relative', zIndex: 2 }}>
-                <h1 style={{ margin: '0 0 8px', fontFamily: "'Outfit',sans-serif", fontSize: 'clamp(32px, 5vw, 54px)', fontWeight: 900, letterSpacing: '-1.5px', color: '#ffffff', lineHeight: 1.05 }}>
-                  {name}
-                </h1>
-                <div style={{ fontSize: 16, fontFamily: "'Inter',sans-serif", fontWeight: 500, color: 'rgba(255,255,255,0.82)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  {role}
-                  {company && (
-                    <>
-                      <ChevronRight size={14} style={{ opacity: 0.6 }} />
-                      <span style={{ opacity: 0.75 }}>{company}</span>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Download CV button */}
-              <button
-                onClick={downloadCV}
-                className="print-btn no-print"
-                style={{ position: 'absolute', top: 24, right: 24, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', color: '#fff', backdropFilter: 'blur(10px)', padding: '8px 18px', borderRadius: 100, fontSize: 13, fontWeight: 700, fontFamily: "'Outfit',sans-serif", cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, transition: 'all 0.2s ease' }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.25)'; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.15)'; }}
-              >
-                <Download size={14} /> Download PDF
-              </button>
-            </div>
+            {/* ── UNIFIED HERO POSTER SECTION ── */}
+            <PageHeroHeader
+              isDark={isDark}
+              bgPattern={(data?.pagesHeader as any)?.about?.bgPattern || 'grid'}
+              accentColor={accentColor}
+              badgeIcon={<Award size={13} />}
+              badgeText="CURRICULUM VITAE & PROFIL"
+              title={name}
+              description={company ? `${role} • ${company}` : role}
+              posterImage={avatarUrl || undefined}
+              actionButtons={
+                <button
+                  onClick={downloadCV}
+                  className="print-btn no-print"
+                  style={{
+                    padding: '9px 18px',
+                    borderRadius: 100,
+                    border: 'none',
+                    background: accentColor,
+                    color: '#ffffff',
+                    fontSize: 12.5,
+                    fontWeight: 750,
+                    fontFamily: "'Outfit', sans-serif",
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 7,
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  <Download size={14} /> Download PDF
+                </button>
+              }
+            />
 
             {/* ── MAIN GRID ── */}
             <div className="about-grid">
@@ -1346,11 +1415,11 @@ const AboutPage: React.FC = () => {
                 <Card style={{ padding: '28px 24px', textAlign: 'center' }} hover={false}>
                   {/* Avatar */}
                   {avatarUrl ? (
-                    <div style={{ width: 110, height: 110, borderRadius: '50%', overflow: 'hidden', border: `3px solid rgba(${accentRgb},0.25)`, margin: '0 auto 16px', boxShadow: `0 8px 28px rgba(${accentRgb},0.2)` }}>
+                    <div style={{ width: 110, height: 110, borderRadius: '50%', overflow: 'hidden', border: `3px solid rgba(${accentRgb},0.25)`, margin: '0 auto 16px', boxShadow: 'none' }}>
                       <img src={avatarUrl} alt={name} loading="eager" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     </div>
                   ) : (
-                    <div style={{ width: 110, height: 110, borderRadius: '50%', background: `linear-gradient(135deg, rgba(${accentRgb},0.7), rgba(${accentRgb},0.3))`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', color: '#fff', fontFamily: "'Outfit',sans-serif", fontSize: 34, fontWeight: 900, letterSpacing: -2, boxShadow: `0 8px 28px rgba(${accentRgb},0.3)` }}>
+                    <div style={{ width: 110, height: 110, borderRadius: '50%', background: `linear-gradient(135deg, rgba(${accentRgb},0.7), rgba(${accentRgb},0.3))`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', color: '#fff', fontFamily: "'Outfit',sans-serif", fontSize: 34, fontWeight: 900, letterSpacing: -2, boxShadow: 'none' }}>
                       {initials.toUpperCase()}
                     </div>
                   )}

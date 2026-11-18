@@ -1,0 +1,34 @@
+[
+  {
+    "id": "target-sumrday",
+    "name": "sumr.day (Utama)",
+    "projectId": "sumr-day",
+    "apiKey": "AIzaSyA0ebREB9RCSE14pOptxhrtqm3YpQns2co",
+    "appId": "1:333413040741:web:03cd168046d95d72d33c8c",
+    "storagePrefix": "sumrday",
+    "messagingSenderId": "333413040741",
+    "measurementId": "G-N8LQKJKXCN",
+    "cloudinaryName": "dlvjat7lg",
+    "cloudinaryPreset": "ml_default",
+    "sheetId": "11CteMG8hM_W0Eh6cvXF9sHJ-bbsu0NhnWSfR3OtAhaw",
+    "appsScriptUrl": "https://script.google.com/macros/s/AKfycbwObxSFNX0Z9VWCR4KQlnlgIXEQAM4c1aKj65vPxU7ABQTX9UejTjdZlDQ_ck6bLoCu/exec",
+    "geminiApiKey": "",
+    "googleWebClientId": "333413040741-otdqd81dk6t6gogp512ogpbcs14i0cn6.apps.googleusercontent.com"
+  },
+  {
+    "id": "target-websiteagenzie",
+    "name": "Website Agenzie",
+    "projectId": "websiteagenzie",
+    "apiKey": "AIzaSyAHO3ImKaomLGyywH9bukut7QpG-ETxAdg",
+    "appId": "1:434116660065:web:4c53914345bf75bd645320",
+    "messagingSenderId": "434116660065",
+    "measurementId": "G-CVSGZLLJ0K",
+    "storagePrefix": "agenzie",
+    "cloudinaryName": "dlvjat7lg",
+    "cloudinaryPreset": "ml_default",
+    "sheetId": "11CteMG8hM_W0Eh6cvXF9sHJ-bbsu0NhnWSfR3OtAhaw",
+    "appsScriptUrl": "https://script.google.com/macros/s/AKfycbwObxSFNX0Z9VWCR4KQlnlgIXEQAM4c1aKj65vPxU7ABQTX9UejTjdZlDQ_ck6bLoCu/exec",
+    "geminiApiKey": "",
+    "googleWebClientId": "434116660065-ee39lp6huhut1mpigqpt4qhnslqkppvm.apps.googleusercontent.com"
+  }
+]

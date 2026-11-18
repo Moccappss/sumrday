@@ -1,5 +1,5 @@
 {
-  "name": "porto-2026",
+  "name": "sumr-day",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -9,13 +9,30 @@
     "prebuild": "node scripts/sync-gas.mjs",
     "dev": "vite",
     "build": "vite build",
+    "build:android": "vite build --mode android",
+    "cap:sync": "npm run build:android && npx cap sync android",
+    "cap:open": "npx cap open android",
+    "apk:sumrday": "node scripts/build-android-apk.mjs sumr-day",
+    "apk:agenzie": "node scripts/build-android-apk.mjs websiteagenzie",
+    "apk:all": "node scripts/build-android-apk.mjs --all",
     "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "preview": "vite preview",
     "predeploy": "npm run build",
-    "deploy": "firebase deploy --only hosting",
-    "deploy:target": "node scripts/deploy-target.mjs"
+    "deploy": "node scripts/deploy-target.mjs",
+    "deploy:raw": "firebase deploy --only hosting",
+    "deploy:target": "node scripts/deploy-target.mjs",
+    "deploy:all": "node scripts/deploy-target.mjs --all",
+    "env:use": "node scripts/switch-env.mjs",
+    "use:sumrday": "node scripts/switch-env.mjs sumr-day",
+    "use:agenzie": "node scripts/switch-env.mjs websiteagenzie"
   },
   "dependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.6.2",
+    "@capgo/capacitor-social-login": "^8.7.11",
     "@google/generative-ai": "^0.24.1",
     "@tanstack/react-query": "^5.101.4",
     "date-fns": "^4.2.1",
@@ -37,6 +54,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.6.2",
     "@eslint/js": "^9.39.4",
     "@tailwindcss/postcss": "^4.3.3",
     "@tailwindcss/vite": "^4.3.3",

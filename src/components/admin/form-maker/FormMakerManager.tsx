@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { 
   FileSpreadsheet, Plus, Search, Eye, Share2, Copy, Trash2, 
   Cloud, CheckCircle2, ArrowRight, Sparkles, FolderPlus, 
-  Clock, CheckSquare, Layers, Download, Check, LayoutGrid
+  Clock, CheckSquare, Layers, Download, Check, LayoutGrid, RefreshCw
 } from 'lucide-react';
 import { storage } from '../../../utils/storage';
+import { googleSync } from '../../../utils/googleSync';
 import type { FormSchema, FormResponse } from './formTypes';
 import FormEditor from './FormEditor';
 import FormPublicView from './FormPublicView';
@@ -131,6 +132,7 @@ export const FormMakerManager: React.FC<FormMakerManagerProps> = ({
   const [previewingFormId, setPreviewingFormId] = useState<string | null>(null);
   const [showAiModal, setShowAiModal] = useState<boolean>(false);
   const [showTemplatesModal, setShowTemplatesModal] = useState<boolean>(false);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
 
   useEffect(() => {
@@ -459,6 +461,39 @@ export const FormMakerManager: React.FC<FormMakerManagerProps> = ({
             <LayoutGrid size={18} color="#673ab7" />
           </button>
 
+          {/* Cloud Sync (Google Sheets) Button */}
+          <button
+            type="button"
+            disabled={isSyncing}
+            onClick={async () => {
+              setIsSyncing(true);
+              try {
+                await googleSync.syncForms(forms, notify);
+              } catch (err: any) {
+                if (notify) notify(err?.message || 'Gagal menyinkronkan formulir ke Google Sheets', 'error');
+              } finally {
+                setIsSyncing(false);
+              }
+            }}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: '50%',
+              background: isDarkMode ? 'rgba(255,255,255,0.06)' : '#ffffff',
+              color: isDarkMode ? '#e2e8f0' : '#1e293b',
+              border: `1.5px solid ${isDarkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)'}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: isSyncing ? 'not-allowed' : 'pointer',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+              transition: 'all 0.15s ease'
+            }}
+            title="Sinkronisasi Cloud (Google Sheets)"
+          >
+            <RefreshCw size={18} className={isSyncing ? 'animate-spin' : ''} color="#673ab7" />
+          </button>
+
           {/* Create Blank Form Button (Icon Only) */}
           <button
             type="button"
@@ -676,8 +711,8 @@ export const FormMakerManager: React.FC<FormMakerManagerProps> = ({
 
                       {/* Download Excel */}
                       <button
-                        onClick={() => {
-                          const ok = downloadFormExcel(form, responses);
+                        onClick={async () => {
+                          const ok = await downloadFormExcel(form, responses);
                           if (ok && notify) notify(`Excel "${form.title} (Tanggapan).xlsx" diunduh!`);
                         }}
                         style={{ background: 'none', border: 'none', color: '#107c41', cursor: 'pointer', padding: 5 }}

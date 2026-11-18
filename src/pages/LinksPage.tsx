@@ -1591,14 +1591,12 @@ export const LinksPage: React.FC = () => {
         }
 
         .lp-link-item {
-          transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.35s cubic-bezier(0.16, 1, 0.3, 1), filter 0.35s ease, border-color 0.35s ease !important;
+          transition: box-shadow 0.55s cubic-bezier(0.16, 1, 0.3, 1), filter 0.45s ease, border-color 0.45s ease;
           animation: lpItemFadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
         }
 
         .lp-link-item:hover {
-          transform: translateY(-3px) scale(1.008);
-          filter: brightness(1.07);
-          box-shadow: 0 12px 28px rgba(0,0,0,0.22) !important;
+          filter: brightness(1.04);
         }
 
         .lp-link-item:active {

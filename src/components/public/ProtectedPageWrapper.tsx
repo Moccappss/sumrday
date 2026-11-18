@@ -163,7 +163,11 @@ export const ProtectedPageWrapper: React.FC<ProtectedPageWrapperProps> = ({
   }, [pageKey, pageLockConfig]);
 
   if (isChecking) {
-    return <>{children}</>;
+    return (
+      <div key={pageKey} className="cinematic-client-page-transition" style={{ minHeight: '100vh', width: '100%' }}>
+        {children}
+      </div>
+    );
   }
 
   if (effectiveConfig?.isLocked && !unlocked) {
@@ -182,7 +186,7 @@ export const ProtectedPageWrapper: React.FC<ProtectedPageWrapperProps> = ({
 
     return (
       <div
-        className="public-locked-page-layout"
+        className="public-locked-page-layout cinematic-client-page-transition"
         style={{
           minHeight: '100dvh',
           width: '100%',
@@ -201,7 +205,7 @@ export const ProtectedPageWrapper: React.FC<ProtectedPageWrapperProps> = ({
             loginBtnLabel={data?.navbar?.loginBtnLabel || 'Login'}
             isDark={isDark}
             accentColor={data?.theme?.accentColor || '#6366f1'}
-            logoText={data?.navbar?.logoText || data?.hero?.title || 'sumr.day'}
+            logoText={data?.navbar?.logoText || data?.hero?.title || 'Studio'}
           />
         </div>
         <main style={{ 
@@ -226,7 +230,7 @@ export const ProtectedPageWrapper: React.FC<ProtectedPageWrapperProps> = ({
   }
 
   return (
-    <div key={pageKey} className="client-page-fade" style={{ minHeight: '100vh', width: '100%' }}>
+    <div key={pageKey} className="cinematic-client-page-transition" style={{ minHeight: '100vh', width: '100%' }}>
       {children}
     </div>
   );

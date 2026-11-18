@@ -97,6 +97,7 @@ const MainLayout = ({ children }) => {
     }
 
     if (rightStackTimerRef.current) clearTimeout(rightStackTimerRef.current);
+    const hideDelay = window.innerWidth < 768 ? 1200 : 2200;
     rightStackTimerRef.current = setTimeout(() => {
       if (!rightStackHovered.current && rightStackRef.current) {
         rightStackRef.current.style.opacity = '0';
@@ -107,7 +108,7 @@ const MainLayout = ({ children }) => {
             children[i].style.pointerEvents = 'none';
         }
       }
-    }, 2500);
+    }, hideDelay);
   }, []);
 
   // Set --scroll-h CSS variable so sticky parallax blocks know the scroll container height
@@ -377,7 +378,7 @@ const MainLayout = ({ children }) => {
 
     window.addEventListener('porto_block_active', handleControl);
     const scrollArea = pageScrollRef.current;
-    if (scrollArea) scrollArea.addEventListener('scroll', handleScroll);
+    if (scrollArea) scrollArea.addEventListener('scroll', handleScroll, { passive: true });
 
     return () => {
       window.removeEventListener('porto_block_active', handleControl);
@@ -441,6 +442,7 @@ const MainLayout = ({ children }) => {
       
       const st = el.scrollTop;
       const maxScroll = el.scrollHeight - el.clientHeight;
+      const didScrollMove = Math.abs(st - lastScrollRef.current) > 1;
       lastScrollRef.current = st;
 
       const frac = maxScroll > 0 ? st / maxScroll : 0;
@@ -453,7 +455,9 @@ const MainLayout = ({ children }) => {
       const near = markerPosRef.current.find(m => Math.abs(m.frac - frac) < 0.07);
       setNearMarker(near?.name || '');
       
-      wakeRightStack();
+      if (didScrollMove) {
+        wakeRightStack();
+      }
 
       scrollRafId.current = null;
     });
@@ -628,7 +632,7 @@ const MainLayout = ({ children }) => {
           position: 'relative'
         }}
       >
-        <div key={location.pathname} className="page-transition-wrapper" style={{ animation: 'cmsFadeIn 0.6s cubic-bezier(0.19, 1, 0.22, 1)' }}>
+        <div key={location.pathname} className="page-transition-wrapper" style={{ animation: 'cinematicPageEnter 0.38s cubic-bezier(0.16, 1, 0.3, 1)' }}>
           {(() => {
             const currentSlug = location.pathname.replace(/^\/lpimage\/?/, '').split('/')[0] || 'home';
             const currentPage = customPages.find(p => p.slug === currentSlug) || null;
@@ -764,8 +768,10 @@ const MainLayout = ({ children }) => {
           flexDirection: 'column',
           gap: 12,
           alignItems: 'center',
+          opacity: isDesktop ? 1 : 0,
+          transform: isDesktop ? 'translateX(0)' : 'translateX(10px)',
           pointerEvents: 'none',
-          transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)'
+          transition: 'all 0.32s cubic-bezier(0.16, 1, 0.3, 1)'
         }}
         onMouseEnter={() => { rightStackHovered.current = true; wakeRightStack(); }}
         onMouseLeave={() => { rightStackHovered.current = false; wakeRightStack(); }}
@@ -783,7 +789,11 @@ const MainLayout = ({ children }) => {
             title={isDark ? "Ganti ke Mode Terang (Light Mode)" : "Ganti ke Mode Gelap (Dark Mode)"}
             aria-label="Toggle Dark / Light Mode"
           >
-            {isDark ? <Sun size={24} strokeWidth={2.2} color="#f59e0b" /> : <Moon size={24} strokeWidth={2.2} />}
+            {isDark ? (
+              <span key="sun-ml" className="theme-icon-animated"><Sun size={24} strokeWidth={2.2} color="#f59e0b" /></span>
+            ) : (
+              <span key="moon-ml" className="theme-icon-animated"><Moon size={24} strokeWidth={2.2} /></span>
+            )}
           </button>
 
           <button

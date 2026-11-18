@@ -111,14 +111,16 @@ export const DriveAttachmentPicker: React.FC<DriveAttachmentPickerProps> = ({
           } catch (driveErr) {
             console.warn('[DriveAttachmentPicker] Drive upload failed, falling back to Cloudinary:', driveErr);
             // Fallback to Cloudinary if Google Script is unreachable
-            const cdnUrl = await uploadToCloudinary(file);
+            const cdnRes = await uploadToCloudinary(file);
+            const cdnUrl = typeof cdnRes === 'string' ? cdnRes : (cdnRes?.url || '');
             fileUrl = cdnUrl;
             downloadUrl = cdnUrl;
             provider = 'cloudinary';
           }
         } else {
           // Upload to Cloudinary if no Google Apps Script configured
-          const cdnUrl = await uploadToCloudinary(file);
+          const cdnRes = await uploadToCloudinary(file);
+          const cdnUrl = typeof cdnRes === 'string' ? cdnRes : (cdnRes?.url || '');
           fileUrl = cdnUrl;
           downloadUrl = cdnUrl;
           provider = 'cloudinary';

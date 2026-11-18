@@ -1,23 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import { storage } from '../utils/storage';
 import { BusinessProfile, DEFAULT_BUSINESS_PROFILE, BankAccount } from '../types/businessProfile';
+import {
+  BUSINESS_PROFILE_STORAGE_KEY,
+  formatWhatsAppNumber,
+  syncUnifiedStudioData,
+  detectStudioFieldChanges,
+  buildSyncNotificationMessage,
+  DetectedChanges
+} from '../utils/unifiedDataSync';
 
-export const BUSINESS_PROFILE_STORAGE_KEY = 'porto_business_profile';
-
-/**
- * Format any Indonesian phone number to international WhatsApp format:
- * e.g. "0812-3456-7890" -> "6281234567890"
- */
-export const formatWhatsAppNumber = (phoneStr?: string): string => {
-  if (!phoneStr) return '';
-  let cleaned = phoneStr.replace(/[^0-9]/g, '');
-  if (cleaned.startsWith('0')) {
-    cleaned = '62' + cleaned.slice(1);
-  } else if (cleaned.startsWith('8')) {
-    cleaned = '62' + cleaned;
-  }
-  return cleaned;
-};
+export { BUSINESS_PROFILE_STORAGE_KEY, formatWhatsAppNumber };
 
 /**
  * Build standard social media URL from handle/username or full URL
@@ -55,80 +48,11 @@ export const buildSocialUrl = (platform: string, handleOrUrl?: string): string =
   }
 };
 
-export const syncProfileToAllDatabases = async (profile: BusinessProfile) => {
-  // 1. Save to master storage key
-  await storage.setItem(BUSINESS_PROFILE_STORAGE_KEY, profile);
-
-  // 2. Sync to porto_settings (shopSettings & footer)
-  try {
-    const settings = (await storage.getItem<any>('porto_settings', {})) || {};
-    const cleanWa = formatWhatsAppNumber(profile.whatsapp);
-
-    // Map socials to legacy array
-    const socialLinks = Object.entries(profile.socials || {})
-      .filter(([_, val]) => Boolean(val && val.trim()))
-      .map(([platform, val]) => ({
-        id: `soc_${platform}`,
-        platform: platform.charAt(0).toUpperCase() + platform.slice(1),
-        url: buildSocialUrl(platform, val),
-        icon: platform
-      }));
-
-    const updatedSettings = {
-      ...settings,
-      shopSettings: {
-        ...(settings.shopSettings || {}),
-        whatsappNumber: cleanWa,
-        paymentMethods: profile.bankAccounts,
-        qrisImageUrl: profile.qris?.imageUrl || settings.shopSettings?.qrisImageUrl || '',
-      },
-      footer: {
-        ...(settings.footer || {}),
-        whatsappNumber: cleanWa,
-        email: profile.email || settings.footer?.email || '',
-        location: profile.address || profile.city || settings.footer?.location || '',
-        description: profile.description || settings.footer?.description || '',
-        socialLinks: socialLinks.length > 0 ? socialLinks : (settings.footer?.socialLinks || []),
-      }
-    };
-
-    await storage.setItem('porto_settings', updatedSettings);
-  } catch (err) {
-    console.warn('Failed to sync business profile to porto_settings', err);
-  }
-
-  // 3. Sync to porto_invoice_settings
-  try {
-    const invoiceSettings = (await storage.getItem<any>('porto_invoice_settings', {})) || {};
-    const updatedInvoiceSettings = {
-      ...invoiceSettings,
-      shopName: profile.brandName || invoiceSettings.shopName,
-      shopPhone: profile.whatsapp || invoiceSettings.shopPhone,
-      shopAddress: profile.address || invoiceSettings.shopAddress,
-      banks: profile.bankAccounts || invoiceSettings.banks || []
-    };
-    await storage.setItem('porto_invoice_settings', updatedInvoiceSettings);
-  } catch (err) {
-    console.warn('Failed to sync business profile to porto_invoice_settings', err);
-  }
-
-  // 4. Sync to porto_shop_settings
-  try {
-    await storage.setItem('porto_shop_settings', {
-      whatsappNumber: formatWhatsAppNumber(profile.whatsapp),
-      paymentMethods: profile.bankAccounts,
-      qrisImageUrl: profile.qris?.imageUrl || ''
-    });
-  } catch (err) {
-    console.warn('Failed to sync business profile to porto_shop_settings', err);
-  }
-
-  // Dispatch events for all active tabs and components
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('porto_business_profile_updated', { detail: profile }));
-    window.dispatchEvent(new CustomEvent('porto_settings_updated', { detail: profile }));
-    window.dispatchEvent(new CustomEvent('porto_saved'));
-  }
+/**
+ * Sync profile across all modules and databases
+ */
+export const syncProfileToAllDatabases = async (profile: BusinessProfile, sourceModule: string = 'Profil Bisnis') => {
+  return await syncUnifiedStudioData(profile, sourceModule);
 };
 
 export function useBusinessProfile() {
@@ -151,8 +75,9 @@ export function useBusinessProfile() {
               id: b.id || `bank_${idx}`,
               bankName: b.name || b.bankName || 'BCA',
               accountNumber: b.accountNumber || '',
-              accountName: b.accountName || '',
-              bankLogo: b.logo || b.bankLogo || ''
+              accountName: b.accountName || b.accountHolder || 'ARIF DARMAWAN',
+              bankLogo: b.logo || b.bankLogo || '',
+              color: b.color || '#003399'
             }))
           : (settings?.shopSettings?.paymentMethods || DEFAULT_BUSINESS_PROFILE.bankAccounts);
 
@@ -174,8 +99,8 @@ export function useBusinessProfile() {
           qris: initialQris
         };
 
-        // Auto-save so it's initialized
-        await storage.setItem(BUSINESS_PROFILE_STORAGE_KEY, data);
+        // Auto-save so it's initialized across all databases
+        await syncUnifiedStudioData(data, 'Inisialisasi');
       }
 
       setProfile(data);
@@ -208,9 +133,10 @@ export function useBusinessProfile() {
     };
   }, [loadProfile]);
 
-  const updateProfile = async (newProfile: BusinessProfile) => {
+  const updateProfile = async (newProfile: BusinessProfile, sourceModule: string = 'Profil Bisnis') => {
     setProfile(newProfile);
-    await syncProfileToAllDatabases(newProfile);
+    const result = await syncUnifiedStudioData(newProfile, sourceModule);
+    return result;
   };
 
   const getCleanWa = () => formatWhatsAppNumber(profile.whatsapp);

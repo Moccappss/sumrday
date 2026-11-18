@@ -1,12 +1,26 @@
 export type MediaVaultType = 'image' | 'video' | 'audio' | 'document';
+export type MediaStorageSource = 'drive' | 'cloudinary' | 'local' | 'external';
+
+export interface VaultFolder {
+  id: string;
+  name: string;
+  parentId?: string | null;
+  color?: string;
+  createdAt: string;
+}
 
 export interface MediaVaultItem {
   id: string;
   name: string;
   url: string;
   type: MediaVaultType;
+  source?: MediaStorageSource;
   size?: number; // in bytes
   createdAt: string;
+  folderId?: string; // ID folder (null/root jika di luar folder)
+  folder?: string; // Nama folder (human readable)
+  driveId?: string;
+  extension?: string;
 }
 
 export interface ClientReviewItem {

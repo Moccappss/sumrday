@@ -1839,7 +1839,7 @@ export const GameManagementTab: React.FC<Props> = ({ notify, confirm, isDarkMode
       {isEditingGame && editingGame && (
         <div 
           onClick={handleCloseGameModal}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'none', WebkitBackdropFilter: 'none', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
         >
           <div 
             onClick={(e) => e.stopPropagation()}
@@ -2456,7 +2456,7 @@ export const GameManagementTab: React.FC<Props> = ({ notify, confirm, isDarkMode
       {isEditingLicense && editingLicense && (
         <div 
           onClick={handleCloseLicenseModal}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'none', WebkitBackdropFilter: 'none', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
         >
           <div 
             onClick={(e) => e.stopPropagation()}
@@ -3028,7 +3028,7 @@ export const GameManagementTab: React.FC<Props> = ({ notify, confirm, isDarkMode
       {aiPromptGame && (
         <div 
           onClick={() => setAiPromptGame(null)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'none', WebkitBackdropFilter: 'none', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
         >
           <div 
             onClick={(e) => e.stopPropagation()}
@@ -3207,7 +3207,7 @@ KETENTUAN ASSETS & BRANDING:
       {isManagingTags && (
         <div
           onClick={() => setIsManagingTags(false)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'none', WebkitBackdropFilter: 'none', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
@@ -3262,10 +3262,11 @@ KETENTUAN ASSETS & BRANDING:
                   padding: '0 20px', height: 42, borderRadius: 100,
                   background: 'var(--cms-accent, #7c3aed)', color: '#fff',
                   border: 'none', fontWeight: 800, fontSize: 12.5, cursor: 'pointer',
-                  boxShadow: '0 2px 8px rgba(124,58,237,0.3)'
+                  boxShadow: '0 2px 8px rgba(124,58,237,0.3)',
+                  display: 'flex', alignItems: 'center', gap: 6
                 }}
               >
-                + Tambah
+                <Plus size={14} /> Tambah
               </button>
             </div>
 

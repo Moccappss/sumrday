@@ -11,17 +11,101 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    function isAdmin() {
+      return isAuthenticated() && (
+        (request.auth.token.get('role', '') in ['Admin', 'Super Admin']) ||
+        (request.auth.token.get('admin', false) == true) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['Admin', 'Super Admin'])
+      );
+    }
+
+    function isSuperAdmin() {
+      return isAuthenticated() && (
+        (request.auth.token.get('role', '') == 'Super Admin') ||
+        (request.auth.token.get('superAdmin', false) == true) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Super Admin')
+      );
+    }
+
     // Public readable CMS data (Landing page, Blog, Portfolio, Custom Pages)
-    // Only authenticated users can write/modify CMS settings
+    // Only authenticated admins / studio staff can modify CMS settings
     match /cms/{docId} {
       allow read: if true;
-      allow write: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Client Directory & Registration (Klien sumr.day)
+    // Strictly forbid plaintext rawPassword from ever being stored
+    match /porto_clients/{clientId} {
+      allow create: if request.resource.data.keys().hasAll(['id', 'email', 'name'])
+                    && request.resource.data.email is string
+                    && request.resource.data.email.size() > 3
+                    && !('rawPassword' in request.resource.data.keys());
+      // Single doc lookup allowed for login/profile, list restricted to admin or small targeted query
+      allow get: if true;
+      allow list: if isAdmin() || (request.query.limit <= 5);
+      allow update: if isAuthenticated()
+                    && !('rawPassword' in request.resource.data.keys())
+                    && (isAdmin() || request.resource.data.email == resource.data.email);
+      allow delete: if isAdmin();
+    }
+
+    // Client Orders & Checkout Submissions (porto_orders & client_orders)
+    // - Anyone can create a valid order during checkout
+    // - Direct lookup by exact order ID is allowed for customer order tracking
+    // - Bulk listing/scraping and order status updates strictly require admin
+    match /porto_orders/{orderId} {
+      allow create: if request.resource.data.keys().hasAll(['id', 'productName', 'price']);
+      allow get: if true;
+      allow list: if isAdmin();
+      allow update, delete: if isAdmin();
+    }
+    match /client_orders/{orderId} {
+      allow create: if request.resource.data.keys().hasAll(['id', 'productName', 'price']);
+      allow get: if true;
+      allow list: if isAdmin();
+      allow update, delete: if isAdmin();
+    }
+
+    // Game Showcase & Engine Licenses (Publik dapat melihat katalog game & verifikasi lisensi)
+    match /custom_games/{gameId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /game_licenses/{licenseId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Push Notification Subscriptions & Broadcasts
+    match /push_subscriptions/{subId} {
+      allow create, update: if true;
+      allow read, delete: if isAdmin();
+    }
+    match /notifications/{notifId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    match /porto_notifications/{notifId} {
+      allow read, write: if isAdmin();
+    }
+    match /user_storage_meta/{metaId} {
+      allow read: if isSuperAdmin() || isOwner(metaId);
+      allow write: if isAdmin() || isOwner(metaId);
     }
 
     // Users Collection: User can read and update their own document, admin can manage
+    // PREVENTS PRIVILEGE ESCALATION: Only Super Admin can modify 'role' or 'allowedPages'
     match /users/{userId} {
       allow read: if isAuthenticated();
-      allow write: if isOwner(userId) || isAuthenticated();
+      allow create: if isSuperAdmin() || !exists(/databases/$(database)/documents/users/$(userId));
+      allow update: if isSuperAdmin() || (
+        isAuthenticated() && request.auth.uid == userId &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'allowedPages'])
+      );
+      allow delete: if isSuperAdmin();
     }
 
     // Activity Logs: Authenticated users can write log entries, only authenticated can read
@@ -39,18 +123,81 @@ service cloud.firestore {
       allow read, update, delete: if isAuthenticated();
     }
 
-    // Live Chat Messages: Validated creation, admin can update/delete
-    match /live_chat/{chatId} {
+    // Live Chat Conversations & Messages (Public visitors & registered clients)
+    match /porto_conversations/{convId} {
+      allow read, create, update: if true;
+      allow delete: if isAuthenticated();
+    }
+
+    match /porto_messages/{msgId} {
       allow read: if true;
-      allow create: if request.resource.data.keys().hasAll(['text', 'createdAt'])
+      allow create: if request.resource.data.keys().hasAll(['roomId', 'text'])
                     && request.resource.data.text is string
-                    && request.resource.data.text.size() <= 2000;
+                    && request.resource.data.text.size() <= 5000;
       allow update, delete: if isAuthenticated();
+    }
+
+    // Live Chat Legacy Messages
+    match /live_chat/{chatId} {
+      allow read, create, update: if true;
+      allow delete: if isAuthenticated();
+    }
+
+    // Creative Studio Inquiries & Brief Leads
+    match /porto_studio_inquiries/{inquiryId} {
+      allow create: if request.resource.data.keys().hasAll(['clientName', 'phone', 'serviceType'])
+                    && request.resource.data.phone is string
+                    && request.resource.data.clientName.size() > 0;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // Client Asset Drop & Vault Submissions
+    match /client_asset_drops/{dropId} {
+      allow create: if request.resource.data.keys().hasAll(['clientName', 'fileUrl']);
+      allow read, update, delete: if isAdmin();
+    }
+
+    // Client Design Proofing & Feedback Comments
+    match /porto_feedback/{feedbackId} {
+      allow create: if request.resource.data.keys().size() <= 20;
+      allow read: if true;
+      allow update, delete: if isAdmin();
+    }
+
+    // Flash Sale Campaigns (Public read, Admin manage)
+    match /flash_sales/{saleId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Partnership & Reseller Submissions
+    match /partnerships/{partnerId} {
+      allow create: if request.resource.data.keys().size() <= 25;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // Contracts & SPK (Admin only)
+    match /contracts_spk/{contractId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Broadcast Newsletter Subscribers
+    match /porto_broadcast_subscribers/{subId} {
+      allow create: if request.resource.data.keys().hasAny(['email', 'contact'])
+                    && request.resource.data.keys().size() <= 15;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // Visitor Traffic & Analytics Aggregations
+    match /porto_visitor_stats/{statId} {
+      allow create, update: if request.resource.data.keys().size() <= 25;
+      allow read, delete: if isAdmin();
     }
 
     // Default deny for anything not explicitly matched
     match /{document=**} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if false;
     }
   }
 }
+

@@ -1,7 +1,13 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { X, Upload, Plus, Trash2, Bold, Heading1, Heading2, List, Image as ImageIcon, CheckCircle2, Loader2, Wrench } from 'lucide-react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import {
+  X, Upload, Plus, Trash2, Bold, Heading1, Heading2, List,
+  Image as ImageIcon, CheckCircle2, Loader2, Wrench, Box,
+  Video, Play, BookOpen, Monitor, Smartphone
+} from 'lucide-react';
 import GlassSelect from './GlassSelect';
-import { uploadToCloudinary } from '../../utils/cloudinary';
+import Model3DViewer from '../common/Model3DViewer';
+import PdfFlipbookViewer from '../common/PdfFlipbookViewer';
+import { uploadToCloudinary, getCloudinaryPdfPageUrl } from '../../utils/cloudinary';
 import { storage } from '../../utils/storage';
 import { notifyPortfolio } from '../../utils/notifications';
 import { POPULAR_SOFTWARE_LIST } from '../../utils/softwareEmblems';
@@ -20,9 +26,9 @@ interface CustomProjectModalProps {
 }
 
 // ── Native WYSIWYG Editor ──
-const NativeWysiwygEditor: React.FC<{ value: string, onChange: (val: string) => void, placeholder?: string }> = ({ value, onChange, placeholder }) => {
+const NativeWysiwygEditor: React.FC<{ value: string; onChange: (val: string) => void; placeholder?: string }> = ({ value, onChange, placeholder }) => {
   const editorRef = useRef<HTMLDivElement>(null);
-  
+
   useEffect(() => {
     if (editorRef.current && editorRef.current.innerHTML !== value) {
       editorRef.current.innerHTML = value || '';
@@ -43,11 +49,12 @@ const NativeWysiwygEditor: React.FC<{ value: string, onChange: (val: string) => 
     }
   };
 
-  const btnStyle = {
-    padding: '6px 10px',
+  const btnStyle: React.CSSProperties = {
+    width: 28,
+    height: 28,
     background: 'var(--cms-switcher-bg)',
     border: 'none',
-    borderRadius: 6,
+    borderRadius: 7,
     color: 'var(--cms-text)',
     cursor: 'pointer',
     display: 'flex',
@@ -56,12 +63,12 @@ const NativeWysiwygEditor: React.FC<{ value: string, onChange: (val: string) => 
   };
 
   return (
-    <div style={{ border: '1.5px solid var(--glass-border)', borderRadius: 10, overflow: 'hidden', background: 'var(--cms-input-bg, var(--cms-card-bg))' }}>
-      <div style={{ display: 'flex', gap: 6, padding: '8px', borderBottom: '1.5px solid var(--glass-border)', background: 'var(--cms-card-bg)' }}>
-        <button type="button" onClick={() => execCmd('bold')} style={btnStyle} title="Bold"><Bold size={14} /></button>
-        <button type="button" onClick={() => execCmd('formatBlock', 'H3')} style={btnStyle} title="Heading 1"><Heading1 size={14} /></button>
-        <button type="button" onClick={() => execCmd('formatBlock', 'H4')} style={btnStyle} title="Heading 2"><Heading2 size={14} /></button>
-        <button type="button" onClick={() => execCmd('insertUnorderedList')} style={btnStyle} title="Bullet List"><List size={14} /></button>
+    <div style={{ border: '1.5px solid var(--glass-border)', borderRadius: 12, overflow: 'hidden', background: 'var(--cms-input-bg, var(--cms-card-bg))' }}>
+      <div style={{ display: 'flex', gap: 5, padding: '5px 8px', borderBottom: '1px solid var(--glass-border)', background: 'var(--cms-card-bg)' }}>
+        <button type="button" onClick={() => execCmd('bold')} style={btnStyle} title="Tebal"><Bold size={13} /></button>
+        <button type="button" onClick={() => execCmd('formatBlock', 'H3')} style={btnStyle} title="Judul 1"><Heading1 size={13} /></button>
+        <button type="button" onClick={() => execCmd('formatBlock', 'H4')} style={btnStyle} title="Judul 2"><Heading2 size={13} /></button>
+        <button type="button" onClick={() => execCmd('insertUnorderedList')} style={btnStyle} title="Daftar"><List size={13} /></button>
       </div>
       <div
         ref={editorRef}
@@ -69,13 +76,14 @@ const NativeWysiwygEditor: React.FC<{ value: string, onChange: (val: string) => 
         onInput={handleInput}
         onBlur={handleInput}
         style={{
-          minHeight: 200,
-          padding: 16,
+          minHeight: 110,
+          maxHeight: 180,
+          padding: 12,
           outline: 'none',
           color: 'var(--cms-text)',
           fontFamily: "'Inter', sans-serif",
-          fontSize: 14,
-          lineHeight: 1.6,
+          fontSize: 13,
+          lineHeight: 1.55,
           overflowY: 'auto'
         }}
         placeholder={placeholder}
@@ -84,57 +92,119 @@ const NativeWysiwygEditor: React.FC<{ value: string, onChange: (val: string) => 
   );
 };
 
-const CustomProjectModal: React.FC<CustomProjectModalProps> = ({ initialData, availableLabels = [], availableCategories = [], onClose, onSave, onDelete, notify }) => {
+const MEDIA_MODES = [
+  { id: 'image', label: 'Gambar', icon: ImageIcon },
+  { id: 'video', label: 'Video', icon: Video },
+  { id: 'youtube', label: 'YouTube', icon: Play },
+  { id: '3d', label: '3D', icon: Box },
+  { id: 'flipbook', label: 'Flipbook', icon: BookOpen },
+] as const;
+
+const parseYoutubeEmbed = (rawUrl: string): string => {
+  const raw = (rawUrl || '').trim();
+  if (!raw) return '';
+  try {
+    const match = raw.match(/(?:youtube\.com\/(?:[^/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/|youtube\.com\/shorts\/)([^"&?/\s]{11})/i);
+    if (match && match[1]) {
+      return `https://www.youtube.com/embed/${match[1]}?rel=0&modestbranding=1`;
+    }
+    if (raw.length === 11) {
+      return `https://www.youtube.com/embed/${raw}?rel=0&modestbranding=1`;
+    }
+  } catch {}
+  return '';
+};
+
+const CustomProjectModal: React.FC<CustomProjectModalProps> = ({
+  initialData,
+  availableLabels = [],
+  availableCategories = [],
+  onClose,
+  onSave,
+  onDelete,
+  notify
+}) => {
   const [isUploading, setIsUploading] = useState(false);
   const [customToolInput, setCustomToolInput] = useState('');
   const [showGalleryModal, setShowGalleryModal] = useState(false);
-  const [galleryTarget, setGalleryTarget] = useState<'cover' | 'gallery' | 'video'>('cover');
+  const [galleryTarget, setGalleryTarget] = useState<'cover' | 'gallery' | 'video' | 'flipbook'>('cover');
+  const [localPdfBlobUrl, setLocalPdfBlobUrl] = useState<string>('');
+  const pdfBlobRef = useRef<string | null>(null);
 
   // Native 1-step back navigation
   useNativeBackHandler(true, onClose, 'custom_project_modal', 12);
-  
+
+  useEffect(() => {
+    return () => {
+      if (pdfBlobRef.current) {
+        URL.revokeObjectURL(pdfBlobRef.current);
+        pdfBlobRef.current = null;
+      }
+    };
+  }, []);
+
+  const resolvedInitialMediaType =
+    initialData?.mediaType ||
+    (initialData?.pdfUrl ? 'flipbook' : initialData?.model3dUrl ? '3d' : initialData?.youtubeUrl ? 'youtube' : initialData?.videoUrl ? 'video' : 'image');
+
   const [formData, setFormData] = useState({
     name: initialData?.name || initialData?.title || '',
     category: initialData?.category || '',
     featuredLabel: initialData?.featuredLabel || '',
     client: initialData?.client || '',
     year: initialData?.year || new Date().getFullYear().toString(),
-    coverImage: initialData?.coverImage || '',
+    coverImage: initialData?.coverImage || initialData?.image || '',
     description: initialData?.description || '',
-    images: initialData?.images || ([] as string[]),
+    images: (initialData?.images || initialData?.gallery || []) as string[],
     tools: (initialData?.tools || initialData?.software || []) as string[],
-    mediaType: initialData?.mediaType || 'image',
+    mediaType: resolvedInitialMediaType,
     youtubeUrl: initialData?.youtubeUrl || '',
     videoUrl: initialData?.videoUrl || '',
-    videoOrientation: initialData?.videoOrientation || 'landscape'
+    videoOrientation: initialData?.videoOrientation || 'landscape',
+    model3dUrl: initialData?.model3dUrl || '',
+    pdfUrl: initialData?.pdfUrl || '',
+    pdfTotalPages: initialData?.pdfTotalPages || 8
   });
+
+  const extractUrl = (res: any): string => {
+    if (!res) return '';
+    return typeof res === 'string' ? res : (res.url || '');
+  };
 
   const handleSelectFromGallery = (url: string) => {
     if (galleryTarget === 'cover') {
       setFormData(prev => ({ ...prev, coverImage: url }));
-      notify('✅ Cover dipilih dari galeri!');
+      notify('✅ Sampul dipilih');
     } else if (galleryTarget === 'gallery') {
       setFormData(prev => ({ ...prev, images: [...prev.images, url] }));
-      notify('✅ Gambar ditambahkan ke galeri proyek!');
+      notify('✅ Ditambahkan ke galeri');
     } else if (galleryTarget === 'video') {
       setFormData(prev => ({ ...prev, videoUrl: url }));
-      notify('✅ Video dipilih dari galeri!');
+      notify('✅ Video dipilih');
+    } else if (galleryTarget === 'flipbook') {
+      const coverCandidate = getCloudinaryPdfPageUrl(url, 1, { width: 1000 });
+      setFormData(prev => ({
+        ...prev,
+        pdfUrl: url,
+        coverImage: prev.coverImage || coverCandidate || prev.coverImage
+      }));
+      notify('✅ Flipbook dipilih');
     }
   };
 
   const handleSave = async () => {
     if (!formData.name) {
-      notify('Judul proyek wajib diisi', 'error');
+      notify('Judul wajib diisi', 'error');
       return;
     }
-    
+
     try {
-      const existing = await storage.getItem('porto_portfolio', []);
+      const existing = await storage.getItem<any[]>('porto_portfolio', []);
       let savedProject;
       const isNew = !initialData?.id;
       if (initialData?.id) {
         savedProject = { ...initialData, ...formData, updatedAt: Date.now() };
-        const updated = existing.map((p: any) => p.id === initialData.id ? savedProject : p);
+        const updated = (existing || []).map((p: any) => p.id === initialData.id ? savedProject : p);
         await storage.setItem('porto_portfolio', updated);
       } else {
         savedProject = {
@@ -142,12 +212,12 @@ const CustomProjectModal: React.FC<CustomProjectModalProps> = ({ initialData, av
           ...formData,
           createdAt: Date.now()
         };
-        await storage.setItem('porto_portfolio', [savedProject, ...existing]);
+        await storage.setItem('porto_portfolio', [savedProject, ...(existing || [])]);
       }
-      
+
       onSave(savedProject);
       notifyPortfolio(formData.name, isNew ? 'dibuat' : 'disimpan');
-      notify(`✅ Karya custom berhasil ${initialData?.id ? 'diperbarui' : 'ditambahkan'}`);
+      notify(`✅ Karya ${initialData?.id ? 'diperbarui' : 'ditambahkan'}`);
       onClose();
     } catch (err) {
       console.error(err);
@@ -160,11 +230,14 @@ const CustomProjectModal: React.FC<CustomProjectModalProps> = ({ initialData, av
     if (!file) return;
     setIsUploading(true);
     try {
-      const url = await uploadToCloudinary(file);
-      setFormData(prev => ({ ...prev, coverImage: url }));
-      notify('✅ Cover berhasil diunggah');
-    } catch (err) {
-      notify('Gagal unggah cover', 'error');
+      const res = await uploadToCloudinary(file);
+      const url = extractUrl(res);
+      if (url) {
+        setFormData(prev => ({ ...prev, coverImage: url }));
+        notify('✅ Sampul diunggah');
+      }
+    } catch {
+      notify('Gagal unggah sampul', 'error');
     } finally {
       setIsUploading(false);
     }
@@ -175,360 +248,821 @@ const CustomProjectModal: React.FC<CustomProjectModalProps> = ({ initialData, av
     if (files.length === 0) return;
     setIsUploading(true);
     try {
-      const urls = await Promise.all(files.map(f => uploadToCloudinary(f)));
-      setFormData(prev => ({ ...prev, images: [...prev.images, ...urls] }));
-      notify(`✅ ${urls.length} gambar berhasil diunggah`);
-    } catch (err) {
+      const results = await Promise.all(files.map(f => uploadToCloudinary(f)));
+      const urls = results.map(extractUrl).filter(Boolean);
+      setFormData(prev => ({
+        ...prev,
+        images: [...prev.images, ...urls],
+        coverImage: prev.coverImage || urls[0] || ''
+      }));
+      notify(`✅ ${urls.length} gambar diunggah`);
+    } catch {
       notify('Gagal unggah galeri', 'error');
     } finally {
       setIsUploading(false);
     }
   };
 
-  const inputStyle = {
+  const youtubeEmbedUrl = useMemo(() => parseYoutubeEmbed(formData.youtubeUrl), [formData.youtubeUrl]);
+  const activeImagePreview = formData.coverImage || formData.images[0] || '';
+
+  const inputStyle: React.CSSProperties = {
     width: '100%',
-    padding: '10px 18px',
+    height: 36,
+    padding: '0 12px',
     background: 'var(--cms-input-bg, var(--cms-card-bg))',
     border: '1.5px solid var(--glass-border)',
-    borderRadius: 100,
+    borderRadius: 10,
     color: 'var(--cms-text)',
     fontFamily: "'Inter', sans-serif",
-    fontSize: 14,
+    fontSize: 12.5,
     outline: 'none',
-    boxSizing: 'border-box' as const,
+    boxSizing: 'border-box',
   };
+
+  const iconBtnStyle: React.CSSProperties = {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    border: '1.5px solid var(--glass-border)',
+    background: 'var(--cms-card-bg)',
+    color: 'var(--cms-text)',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    flexShrink: 0,
+    boxSizing: 'border-box',
+  };
+
+  const labelStyle: React.CSSProperties = {
+    display: 'block',
+    fontFamily: "'Outfit', sans-serif",
+    fontSize: 12,
+    fontWeight: 800,
+    color: 'var(--cms-text)',
+    marginBottom: 5,
+    letterSpacing: '0.01em'
+  };
+
+  const renderOrientationToggle = () => (
+    <div style={{ display: 'flex', gap: 2, padding: 3, borderRadius: 10, background: 'var(--cms-card-bg)', border: '1.5px solid var(--glass-border)', flexShrink: 0, height: 36, boxSizing: 'border-box', alignItems: 'center' }}>
+      <button
+        type="button"
+        onClick={() => setFormData(prev => ({ ...prev, videoOrientation: 'landscape' }))}
+        title="Horizontal (16:9)"
+        style={{
+          width: 28, height: 28, borderRadius: 7, border: 'none', cursor: 'pointer',
+          background: formData.videoOrientation !== 'portrait' ? 'var(--cms-accent)' : 'transparent',
+          color: formData.videoOrientation !== 'portrait' ? '#fff' : 'var(--cms-text-muted)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}
+      >
+        <Monitor size={13} />
+      </button>
+      <button
+        type="button"
+        onClick={() => setFormData(prev => ({ ...prev, videoOrientation: 'portrait' }))}
+        title="Vertikal (9:16)"
+        style={{
+          width: 28, height: 28, borderRadius: 7, border: 'none', cursor: 'pointer',
+          background: formData.videoOrientation === 'portrait' ? 'var(--cms-accent)' : 'transparent',
+          color: formData.videoOrientation === 'portrait' ? '#fff' : 'var(--cms-text-muted)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}
+      >
+        <Smartphone size={13} />
+      </button>
+    </div>
+  );
 
   return (
     <>
       <style>{`
         .cpm-overlay {
-          position: fixed; inset: 0; z-index: 2147483640; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(0,0,0,0.72); backdrop-filter: blur(16px) saturate(180%); -webkit-backdrop-filter: blur(16px) saturate(180%); animation: cmsFadeIn 0.2s ease both;
+          position: fixed; inset: 0; z-index: 2147483640; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(4, 4, 8, 0.78); animation: cmsFadeIn 0.18s ease both;
         }
         .cpm-modal {
-          width: 100%; max-width: 800px; background: var(--cms-card-bg, #ffffff); border-radius: 24px; border: 1.5px solid var(--glass-border); backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%); display: flex; flex-direction: column; max-height: 90vh; box-shadow: 0 28px 80px rgba(0,0,0,0.6), 0 8px 24px rgba(0,0,0,0.3); overflow: hidden;
+          width: 960px; max-width: calc(100vw - 32px); height: 86vh; min-height: 640px; max-height: 820px; background: var(--cms-card-bg, #181924); border-radius: 20px; border: 1.5px solid var(--glass-border); display: flex; flex-direction: column; box-shadow: 0 24px 64px rgba(0,0,0,0.45); overflow: hidden;
         }
         .cpm-header {
-          display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; border-bottom: 1px solid var(--glass-border); flex-shrink: 0;
+          display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-bottom: 1px solid var(--glass-border); flex-shrink: 0;
         }
         .cpm-body {
-          flex: 1; overflow-y: auto; display: flex;
+          flex: 1; min-height: 0; overflow: hidden; display: flex;
         }
         .cpm-main {
-          flex: 1; padding: 24px; border-right: 1px solid var(--glass-border); min-width: 0;
+          flex: 1; padding: 16px 20px; border-right: 1px solid var(--glass-border); min-width: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 14px;
         }
         .cpm-sidebar {
-          width: 280px; padding: 24px; background: var(--cms-card-bg); flex-shrink: 0;
+          width: 280px; padding: 16px 18px; background: var(--cms-card-bg); flex-shrink: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;
         }
         .cpm-footer {
-          padding: 16px 24px; border-top: 1px solid var(--glass-border); display: flex; justify-content: space-between; gap: 12px; background: var(--cms-card-bg); flex-shrink: 0; align-items: center;
+          padding: 10px 20px; border-top: 1px solid var(--glass-border); display: flex; justify-content: space-between; gap: 10px; background: var(--cms-card-bg); flex-shrink: 0; align-items: center;
         }
         .cpm-footer-left, .cpm-footer-right {
-           display: flex; gap: 12px; align-items: center;
+          display: flex; gap: 8px; align-items: center;
         }
         @media (max-width: 768px) {
-          .cpm-overlay {
-            padding: 0;
-          }
-          .cpm-modal {
-            max-height: 100vh; height: 100vh; border-radius: 0; border: none;
-          }
-          .cpm-header {
-            padding: 16px;
-          }
-          .cpm-body {
-            flex-direction: column;
-          }
-          .cpm-main {
-            border-right: none; padding: 16px;
-          }
-          .cpm-sidebar {
-            width: 100%; padding: 16px; border-top: 1px solid var(--glass-border);
-          }
-          .cpm-footer {
-            padding: 16px; padding-bottom: 90px; flex-direction: row; align-items: center; gap: 8px;
-          }
-          .cpm-footer-left {
-            flex: 0 0 auto;
-          }
-          .cpm-footer-right {
-            flex: 1; justify-content: flex-end;
-          }
-          .cpm-footer button span {
-            display: none;
-          }
-          .cpm-footer button {
-            padding: 12px !important;
-            border-radius: 12px !important;
-            aspect-ratio: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-          }
-          .cpm-btn-save {
-            aspect-ratio: auto !important;
-            flex: 1;
-          }
-          .cpm-btn-save span {
-            display: inline !important;
-          }
+          .cpm-overlay { padding: 0; }
+          .cpm-modal { width: 100vw; max-width: 100vw; height: 100vh; max-height: 100vh; min-height: 100vh; border-radius: 0; border: none; }
+          .cpm-body { flex-direction: column; overflow-y: auto; }
+          .cpm-main { border-right: none; padding: 14px; overflow-y: visible; }
+          .cpm-sidebar { width: 100%; padding: 14px; border-top: 1px solid var(--glass-border); overflow-y: visible; }
+          .cpm-footer { padding: 12px 14px 86px; }
         }
       `}</style>
-      <div className="cpm-overlay">
-        <div className="cpm-modal">
-          
+      <div className="cpm-overlay" onClick={onClose}>
+        <div className="cpm-modal" onClick={e => e.stopPropagation()}>
+
           {/* Header */}
           <div className="cpm-header">
-            <h2 style={{ margin: 0, fontFamily: "'Outfit', sans-serif", fontSize: 18, fontWeight: 800, color: 'var(--cms-text)' }}>Tambah Karya Custom</h2>
-            <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--cms-text-muted)', cursor: 'pointer' }}><X size={20} /></button>
+            <h2 style={{ margin: 0, fontFamily: "'Outfit', sans-serif", fontSize: 16, fontWeight: 850, color: 'var(--cms-text)' }}>
+              {initialData?.id ? 'Edit Karya' : 'Tambah Karya'}
+            </h2>
+            <button
+              type="button"
+              onClick={onClose}
+              title="Tutup"
+              style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--cms-input-bg)', border: 'none', color: 'var(--cms-text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+            >
+              <X size={16} />
+            </button>
           </div>
 
           {/* Body */}
           <div className="cpm-body">
-            
+
             {/* Main Content Area */}
             <div className="cpm-main">
-              <div style={{ marginBottom: 20 }}>
-                <label style={{ display: 'block', fontFamily: "'Outfit', sans-serif", fontSize: 13, fontWeight: 700, color: 'var(--cms-text)', marginBottom: 6 }}>Judul Proyek</label>
-                <input type="text" value={formData.name} onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))} style={inputStyle} placeholder="Contoh: Rebranding Apple" />
+              {/* Judul */}
+              <div>
+                <label style={labelStyle}>Judul</label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  style={inputStyle}
+                  placeholder="Judul karya..."
+                />
               </div>
 
-              {/* Media Type Selection */}
-              <div style={{ marginBottom: 24 }}>
-                <label style={{ display: 'block', fontFamily: "'Outfit', sans-serif", fontSize: 13, fontWeight: 700, color: 'var(--cms-text)', marginBottom: 6 }}>Tipe Media Utama</label>
-                <div style={{ display: 'flex', gap: 12 }}>
-                  {['image', 'video', 'youtube'].map(type => (
-                    <label key={type} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontFamily: "'Inter', sans-serif", fontSize: 13, color: 'var(--cms-text)' }}>
-                      <input 
-                        type="radio" 
-                        name="mediaType" 
-                        value={type} 
-                        checked={formData.mediaType === type} 
-                        onChange={(e) => setFormData(prev => ({ ...prev, mediaType: e.target.value }))}
-                        style={{ accentColor: 'var(--cms-accent)' }}
+              {/* Media Mode Switch (Icon + 1-Word Label) + Unified Fixed-Height Large Preview Stage */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div>
+                  <label style={labelStyle}>Media</label>
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(5, 1fr)',
+                    gap: 4,
+                    padding: 4,
+                    borderRadius: 12,
+                    background: 'var(--cms-switcher-bg, rgba(255,255,255,0.04))',
+                    border: '1.5px solid var(--glass-border)'
+                  }}>
+                    {MEDIA_MODES.map((m) => {
+                      const Icon = m.icon;
+                      const isActive = formData.mediaType === m.id;
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => setFormData(prev => ({ ...prev, mediaType: m.id }))}
+                          title={m.label}
+                          style={{
+                            height: 32,
+                            borderRadius: 8,
+                            border: 'none',
+                            background: isActive ? 'var(--cms-accent, #6366f1)' : 'transparent',
+                            color: isActive ? '#ffffff' : 'var(--cms-text-muted, #94a3b8)',
+                            fontFamily: "'Outfit', sans-serif",
+                            fontSize: 12,
+                            fontWeight: isActive ? 800 : 650,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 6,
+                            cursor: 'pointer',
+                            transition: 'background 0.15s ease, color 0.15s ease',
+                            boxShadow: 'none',
+                            padding: '0 6px',
+                            minWidth: 0
+                          }}
+                        >
+                          <Icon size={14} strokeWidth={2.3} style={{ flexShrink: 0 }} />
+                          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {m.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* ── UNIFIED FIXED-HEIGHT MEDIA STAGE (414px across ALL 5 modes -> ZERO HEIGHT JUMP!) ── */}
+                <div style={{
+                  padding: 12,
+                  background: 'var(--cms-switcher-bg)',
+                  border: '1.5px solid var(--glass-border)',
+                  borderRadius: 14,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
+                  height: 414,
+                  minHeight: 414,
+                  maxHeight: 414,
+                  boxSizing: 'border-box',
+                  overflow: 'hidden'
+                }}>
+                  {/* 1. MODE: GAMBAR */}
+                  {formData.mediaType === 'image' && (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, height: 36, flexShrink: 0 }}>
+                        <label
+                          title="Upload Gambar"
+                          style={{
+                            ...iconBtnStyle,
+                            borderColor: 'var(--cms-accent-border)',
+                            color: 'var(--cms-accent)',
+                            background: 'var(--cms-accent-soft)',
+                            cursor: isUploading ? 'not-allowed' : 'pointer'
+                          }}
+                        >
+                          {isUploading ? <Loader2 size={15} className="cms-spin" /> : <Upload size={15} />}
+                          <input type="file" accept="image/*" style={{ display: 'none' }} onChange={uploadCover} disabled={isUploading} />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => { setGalleryTarget('cover'); setShowGalleryModal(true); }}
+                          style={iconBtnStyle}
+                          title="Galeri Media"
+                        >
+                          <ImageIcon size={15} />
+                        </button>
+                        <input
+                          type="text"
+                          value={formData.coverImage}
+                          onChange={e => setFormData(prev => ({ ...prev, coverImage: e.target.value }))}
+                          style={{ ...inputStyle, flex: 1 }}
+                          placeholder="URL Gambar Utama..."
+                        />
+                        {formData.coverImage && (
+                          <button
+                            type="button"
+                            onClick={() => setFormData(prev => ({ ...prev, coverImage: '' }))}
+                            style={{ ...iconBtnStyle, background: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.25)', color: '#ef4444' }}
+                            title="Hapus Gambar"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+
+                      <div style={{
+                        flex: 1,
+                        height: 344,
+                        minHeight: 344,
+                        maxHeight: 344,
+                        borderRadius: 12,
+                        background: 'radial-gradient(circle at 50% 35%, #181d28 0%, #0d111a 75%, #080a0f 100%)',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        overflow: 'hidden',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        position: 'relative'
+                      }}>
+                        {activeImagePreview ? (
+                          <img
+                            src={activeImagePreview}
+                            alt="Preview"
+                            style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+                          />
+                        ) : (
+                          <label
+                            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, cursor: 'pointer', color: 'var(--cms-text-muted)' }}
+                            title="Klik untuk Upload Gambar"
+                          >
+                            <div style={{ width: 52, height: 52, borderRadius: 16, background: 'rgba(255,255,255,0.06)', border: '1.5px dashed rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--cms-accent)' }}>
+                              <Upload size={22} />
+                            </div>
+                            <span style={{ fontSize: 12, fontWeight: 700, fontFamily: "'Outfit', sans-serif" }}>Upload Gambar</span>
+                            <input type="file" accept="image/*" style={{ display: 'none' }} onChange={uploadCover} disabled={isUploading} />
+                          </label>
+                        )}
+                      </div>
+                    </>
+                  )}
+
+                  {/* 2. MODE: VIDEO */}
+                  {formData.mediaType === 'video' && (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, height: 36, flexShrink: 0 }}>
+                        <label
+                          title="Upload Video (MP4/WebM)"
+                          style={{
+                            ...iconBtnStyle,
+                            borderColor: 'var(--cms-accent-border)',
+                            color: 'var(--cms-accent)',
+                            background: 'var(--cms-accent-soft)',
+                            cursor: isUploading ? 'not-allowed' : 'pointer'
+                          }}
+                        >
+                          {isUploading ? <Loader2 size={15} className="cms-spin" /> : <Upload size={15} />}
+                          <input
+                            type="file"
+                            accept="video/mp4,video/webm"
+                            style={{ display: 'none' }}
+                            disabled={isUploading}
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              setIsUploading(true);
+                              try {
+                                const res = await uploadToCloudinary(file, 'video');
+                                const url = extractUrl(res);
+                                if (url) {
+                                  setFormData(prev => ({ ...prev, videoUrl: url }));
+                                  notify('✅ Video diunggah');
+                                }
+                              } catch {
+                                notify('Gagal unggah video', 'error');
+                              } finally {
+                                setIsUploading(false);
+                              }
+                            }}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => { setGalleryTarget('video'); setShowGalleryModal(true); }}
+                          style={iconBtnStyle}
+                          title="Galeri Media"
+                        >
+                          <ImageIcon size={15} />
+                        </button>
+                        <input
+                          type="text"
+                          value={formData.videoUrl}
+                          onChange={e => setFormData(prev => ({ ...prev, videoUrl: e.target.value }))}
+                          style={{ ...inputStyle, flex: 1 }}
+                          placeholder="URL Video MP4/WebM..."
+                        />
+                        {renderOrientationToggle()}
+                      </div>
+
+                      <div style={{
+                        flex: 1,
+                        height: 344,
+                        minHeight: 344,
+                        maxHeight: 344,
+                        borderRadius: 12,
+                        background: 'radial-gradient(circle at 50% 35%, #181d28 0%, #0d111a 75%, #080a0f 100%)',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        overflow: 'hidden',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}>
+                        {formData.videoUrl ? (
+                          <video
+                            src={formData.videoUrl}
+                            controls
+                            playsInline
+                            style={{
+                              width: formData.videoOrientation === 'portrait' ? 'auto' : '100%',
+                              height: '100%',
+                              aspectRatio: formData.videoOrientation === 'portrait' ? '9/16' : undefined,
+                              objectFit: 'contain',
+                              background: '#000'
+                            }}
+                          />
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, color: 'var(--cms-text-muted)' }}>
+                            <Video size={28} opacity={0.45} />
+                            <span style={{ fontSize: 12, fontWeight: 700, fontFamily: "'Outfit', sans-serif" }}>Preview Video</span>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+
+                  {/* 3. MODE: YOUTUBE */}
+                  {formData.mediaType === 'youtube' && (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, height: 36, flexShrink: 0 }}>
+                        <input
+                          type="text"
+                          value={formData.youtubeUrl}
+                          onChange={e => setFormData(prev => ({ ...prev, youtubeUrl: e.target.value }))}
+                          style={{ ...inputStyle, flex: 1 }}
+                          placeholder="https://www.youtube.com/watch?v=..."
+                        />
+                        {renderOrientationToggle()}
+                      </div>
+
+                      <div style={{
+                        flex: 1,
+                        height: 344,
+                        minHeight: 344,
+                        maxHeight: 344,
+                        borderRadius: 12,
+                        background: 'radial-gradient(circle at 50% 35%, #181d28 0%, #0d111a 75%, #080a0f 100%)',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        overflow: 'hidden',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}>
+                        {youtubeEmbedUrl ? (
+                          <iframe
+                            src={youtubeEmbedUrl}
+                            title={formData.name || 'YouTube'}
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                            style={{
+                              width: formData.videoOrientation === 'portrait' ? 'auto' : '100%',
+                              height: '100%',
+                              aspectRatio: formData.videoOrientation === 'portrait' ? '9/16' : undefined,
+                              border: 'none',
+                              display: 'block'
+                            }}
+                          />
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, color: 'var(--cms-text-muted)' }}>
+                            <Play size={28} opacity={0.45} />
+                            <span style={{ fontSize: 12, fontWeight: 700, fontFamily: "'Outfit', sans-serif" }}>Preview YouTube</span>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+
+                  {/* 4. MODE: 3D */}
+                  {formData.mediaType === '3d' && (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, height: 36, flexShrink: 0 }}>
+                        <label
+                          title="Upload File .glb / .gltf"
+                          style={{
+                            ...iconBtnStyle,
+                            borderColor: 'var(--cms-accent-border)',
+                            color: 'var(--cms-accent)',
+                            background: 'var(--cms-accent-soft)',
+                            cursor: isUploading ? 'not-allowed' : 'pointer'
+                          }}
+                        >
+                          {isUploading ? <Loader2 size={15} className="cms-spin" /> : <Upload size={15} />}
+                          <input
+                            type="file"
+                            accept=".glb,.gltf"
+                            style={{ display: 'none' }}
+                            disabled={isUploading}
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              setIsUploading(true);
+                              try {
+                                notify('⏳ Mengunggah 3D...');
+                                const res = await uploadToCloudinary(file, 'raw');
+                                const url = extractUrl(res);
+                                if (url) {
+                                  setFormData(prev => ({ ...prev, model3dUrl: url }));
+                                  notify('✅ Model 3D terunggah');
+                                }
+                              } catch {
+                                notify('Gagal unggah 3D', 'error');
+                              } finally {
+                                setIsUploading(false);
+                              }
+                            }}
+                          />
+                        </label>
+                        <input
+                          type="text"
+                          value={formData.model3dUrl}
+                          onChange={e => setFormData(prev => ({ ...prev, model3dUrl: e.target.value }))}
+                          style={{ ...inputStyle, flex: 1 }}
+                          placeholder="URL .glb atau /models/nama.glb"
+                        />
+                      </div>
+
+                      <Model3DViewer
+                        src={formData.model3dUrl}
+                        height={344}
+                        title={formData.name || '3D'}
+                        allowLocalUpload={true}
                       />
-                      {type === 'image' ? 'Gambar' : type === 'video' ? 'Video Upload' : 'YouTube Embed'}
-                    </label>
-                  ))}
+                    </>
+                  )}
+
+                  {/* 5. MODE: FLIPBOOK */}
+                  {formData.mediaType === 'flipbook' && (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, height: 36, flexShrink: 0 }}>
+                        <label
+                          title="Upload PDF Flipbook"
+                          style={{
+                            ...iconBtnStyle,
+                            borderColor: 'var(--cms-accent-border)',
+                            color: 'var(--cms-accent)',
+                            background: 'var(--cms-accent-soft)',
+                            cursor: isUploading ? 'not-allowed' : 'pointer'
+                          }}
+                        >
+                          {isUploading ? <Loader2 size={15} className="cms-spin" /> : <Upload size={15} />}
+                          <input
+                            type="file"
+                            accept=".pdf,application/pdf"
+                            style={{ display: 'none' }}
+                            disabled={isUploading}
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              // Create instant local blob URL so PDF.js renders immediately
+                              if (pdfBlobRef.current) {
+                                URL.revokeObjectURL(pdfBlobRef.current);
+                              }
+                              const blobUrl = URL.createObjectURL(file);
+                              pdfBlobRef.current = blobUrl;
+                              setLocalPdfBlobUrl(blobUrl);
+
+                              setIsUploading(true);
+                              try {
+                                notify('⏳ Mengunggah PDF...');
+                                const res = await uploadToCloudinary(file, 'auto');
+                                const url = extractUrl(res);
+                                if (url) {
+                                  const detectedPages = (res && typeof res === 'object' && res.pages) ? res.pages : undefined;
+                                  const firstPageCover = getCloudinaryPdfPageUrl(url, 1, { width: 1000 });
+                                  setFormData(prev => ({
+                                    ...prev,
+                                    pdfUrl: url,
+                                    pdfTotalPages: detectedPages || prev.pdfTotalPages || 8,
+                                    coverImage: prev.coverImage || firstPageCover || prev.coverImage
+                                  }));
+                                  notify('✅ PDF Flipbook terunggah');
+                                }
+                              } catch {
+                                notify('Gagal unggah PDF', 'error');
+                              } finally {
+                                setIsUploading(false);
+                              }
+                            }}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => { setGalleryTarget('flipbook'); setShowGalleryModal(true); }}
+                          style={iconBtnStyle}
+                          title="Galeri Media"
+                        >
+                          <ImageIcon size={15} />
+                        </button>
+                        <input
+                          type="text"
+                          value={formData.pdfUrl}
+                          onChange={e => {
+                            setLocalPdfBlobUrl('');
+                            setFormData(prev => ({ ...prev, pdfUrl: e.target.value }));
+                          }}
+                          style={{ ...inputStyle, flex: 1 }}
+                          placeholder="URL PDF / Flipbook..."
+                        />
+                        <input
+                          type="number"
+                          min={1}
+                          max={300}
+                          value={formData.pdfTotalPages}
+                          onChange={e => setFormData(prev => ({ ...prev, pdfTotalPages: Math.max(1, Number(e.target.value) || 1) }))}
+                          style={{ ...inputStyle, width: 58, textAlign: 'center', padding: '0 6px' }}
+                          title="Jumlah Halaman"
+                          placeholder="Hal"
+                        />
+                      </div>
+
+                      <div style={{
+                        flex: 1,
+                        height: 344,
+                        minHeight: 344,
+                        maxHeight: 344,
+                        borderRadius: 12,
+                        background: 'radial-gradient(circle at 50% 35%, #181d28 0%, #0d111a 75%, #080a0f 100%)',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        overflow: 'hidden',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}>
+                        <PdfFlipbookViewer
+                          pdfUrl={localPdfBlobUrl || formData.pdfUrl}
+                          totalPages={Number(formData.pdfTotalPages) || 8}
+                          title={formData.name || 'Flipbook'}
+                          height={344}
+                          allowDownload={true}
+                          showModeSwitch={true}
+                          onTotalPagesDetected={(num) => {
+                            setFormData(prev => (prev.pdfTotalPages === num ? prev : { ...prev, pdfTotalPages: num }));
+                          }}
+                          onFirstPageRendered={(dataUrl) => {
+                            setFormData(prev => (prev.coverImage ? prev : { ...prev, coverImage: dataUrl }));
+                          }}
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
-              {/* YouTube URL */}
-              {formData.mediaType === 'youtube' && (
-                <div style={{ marginBottom: 24, padding: 16, background: 'rgba(239,68,68,0.05)', border: '1.5px solid rgba(239,68,68,0.2)', borderRadius: 12 }}>
-                  <label style={{ display: 'block', fontFamily: "'Outfit', sans-serif", fontSize: 13, fontWeight: 700, color: 'var(--cms-text)', marginBottom: 6 }}>URL Video YouTube</label>
-                  <input type="text" value={formData.youtubeUrl} onChange={e => setFormData(prev => ({ ...prev, youtubeUrl: e.target.value }))} style={inputStyle} placeholder="https://www.youtube.com/watch?v=..." />
-                </div>
-              )}
-
-              {/* Video Upload */}
-              {formData.mediaType === 'video' && (
-                <div style={{ marginBottom: 24, padding: 16, background: 'var(--cms-switcher-bg)', border: '1.5px solid var(--glass-border)', borderRadius: 12 }}>
-                  <label style={{ display: 'block', fontFamily: "'Outfit', sans-serif", fontSize: 13, fontWeight: 700, color: 'var(--cms-text)', marginBottom: 6 }}>Unggah Video (MP4/WebM)</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: 'var(--cms-card-bg)', border: '1.5px solid var(--glass-border)', borderRadius: 10, color: 'var(--cms-text)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                      <Upload size={16} /> {isUploading ? 'Mengunggah...' : 'Pilih Video'}
-                      <input type="file" accept="video/mp4,video/webm" style={{ display: 'none' }} disabled={isUploading} onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        setIsUploading(true);
-                        try {
-                          const url = await uploadToCloudinary(file);
-                          setFormData(prev => ({ ...prev, videoUrl: url }));
-                          notify('✅ Video berhasil diunggah');
-                        } catch (err) {
-                          notify('Gagal unggah video', 'error');
-                        } finally {
-                          setIsUploading(false);
-                        }
-                      }} />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => { setGalleryTarget('video'); setShowGalleryModal(true); }}
-                      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', background: 'var(--cms-accent-soft)', border: '1.5px solid var(--cms-accent-border)', borderRadius: 10, color: 'var(--cms-accent)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
-                      title="Pilih dari Galeri Video"
-                    >
-                      <ImageIcon size={15} /> <span>Galeri</span>
-                    </button>
-                    {formData.videoUrl && <span style={{ fontSize: 12, color: '#10b981', fontWeight: 600 }}>✓ Video Terunggah</span>}
-                  </div>
-                </div>
-              )}
-
-              {/* Video Orientation (for both video and youtube) */}
-              {(formData.mediaType === 'video' || formData.mediaType === 'youtube') && (
-                <div style={{ marginBottom: 24 }}>
-                  <label style={{ display: 'block', fontFamily: "'Outfit', sans-serif", fontSize: 13, fontWeight: 700, color: 'var(--cms-text)', marginBottom: 6 }}>Orientasi Video (Tampilan Layar)</label>
-                  <GlassSelect 
-                    value={formData.videoOrientation}
-                    onChange={(e: any) => setFormData(prev => ({ ...prev, videoOrientation: e.target.value }))}
-                    options={[
-                      { value: 'landscape', label: 'Landscape (Horizontal - YouTube style)' },
-                      { value: 'portrait', label: 'Portrait (Vertikal - TikTok/Reels style)' }
-                    ]}
-                    style={inputStyle}
-                  />
-                </div>
-              )}
-
-              {/* Cover Uploader */}
-              <div style={{ marginBottom: 24 }}>
-                <label style={{ display: 'block', fontFamily: "'Outfit', sans-serif", fontSize: 13, fontWeight: 700, color: 'var(--cms-text)', marginBottom: 6 }}>Thumbnail / Cover Image</label>
-                <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <div style={{ width: 120, height: 90, borderRadius: 12, background: 'var(--cms-switcher-bg)', border: '1.5px dashed var(--glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
-                    {formData.coverImage ? <img src={formData.coverImage} alt="Cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <ImageIcon size={24} color="var(--cms-text-muted)" opacity={0.5} />}
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', background: 'var(--cms-card-bg)', border: '1.5px solid var(--glass-border)', borderRadius: 10, color: 'var(--cms-text)', fontSize: 12.5, fontWeight: 650, cursor: 'pointer', whiteSpace: 'nowrap' }} title="Unggah Cover Baru">
-                      <Upload size={15} /> <span>{isUploading ? '...' : 'Upload'}</span>
-                      <input type="file" accept="image/*" style={{ display: 'none' }} onChange={uploadCover} disabled={isUploading} />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => { setGalleryTarget('cover'); setShowGalleryModal(true); }}
-                      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', background: 'var(--cms-accent-soft)', border: '1.5px solid var(--cms-accent-border)', borderRadius: 10, color: 'var(--cms-accent)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
-                      title="Pilih dari Galeri Media"
-                    >
-                      <ImageIcon size={15} /> <span>Galeri</span>
-                    </button>
-                  </div>
-                </div>
-                <p style={{ margin: '8px 0 0', fontFamily: "'Inter', sans-serif", fontSize: 12, color: 'var(--cms-text-muted)' }}>
-                  Rekomendasi ukuran: 1200x800px, Rasio 3:2.
-                </p>
-              </div>
-
-              {/* Case Study Editor */}
-              <div style={{ marginBottom: 24 }}>
-                <label style={{ display: 'block', fontFamily: "'Outfit', sans-serif", fontSize: 13, fontWeight: 700, color: 'var(--cms-text)', marginBottom: 6 }}>Case Study (Deskripsi Proyek)</label>
-                <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--cms-text-muted)', fontFamily: "'Inter', sans-serif" }}>Ceritakan latar belakang, tantangan, dan solusi dari proyek ini.</p>
-                <NativeWysiwygEditor value={formData.description} onChange={(val) => setFormData(prev => ({ ...prev, description: val }))} />
-              </div>
-
-              {/* Gallery Uploader */}
-              <div style={{ marginBottom: 24 }}>
+              {/* ── GALERI (Icon-Only Header Actions) ── */}
+              <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <label style={{ display: 'block', fontFamily: "'Outfit', sans-serif", fontSize: 13, fontWeight: 700, color: 'var(--cms-text)', margin: 0 }}>Galeri Proyek (Multiple Images)</label>
-                  <button
-                    type="button"
-                    onClick={() => { setGalleryTarget('gallery'); setShowGalleryModal(true); }}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', background: 'var(--cms-accent-soft)', border: '1px solid var(--cms-accent-border)', borderRadius: 100, color: 'var(--cms-accent)', fontSize: 12, fontWeight: 750, cursor: 'pointer' }}
-                  >
-                    <ImageIcon size={13} /> Galeri
-                  </button>
+                  <label style={{ ...labelStyle, marginBottom: 0 }}>Galeri ({formData.images.length})</label>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <label
+                      style={{ ...iconBtnStyle, width: 30, height: 30, borderRadius: 8 }}
+                      title="Upload Galeri"
+                    >
+                      <Upload size={13} />
+                      <input type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={uploadGallery} disabled={isUploading} />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => { setGalleryTarget('gallery'); setShowGalleryModal(true); }}
+                      style={{ ...iconBtnStyle, width: 30, height: 30, borderRadius: 8, background: 'var(--cms-accent-soft)', borderColor: 'var(--cms-accent-border)', color: 'var(--cms-accent)' }}
+                      title="Galeri Media"
+                    >
+                      <ImageIcon size={13} />
+                    </button>
+                  </div>
                 </div>
-                <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--cms-text-muted)', fontFamily: "'Inter', sans-serif" }}>
-                  Unggah beberapa gambar pendukung yang akan ditampilkan bersusun ke bawah.<br/>
-                  Rekomendasi ukuran: Lebar 1400px (tinggi menyesuaikan, kualitas tinggi).
-                </p>
-                
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                   {formData.images.map((url, idx) => (
-                    <div key={idx} style={{ position: 'relative', width: 100, height: 100, borderRadius: 10, overflow: 'hidden', border: '1px solid var(--glass-border)' }}>
+                    <div key={idx} style={{ position: 'relative', width: 64, height: 64, borderRadius: 9, overflow: 'hidden', border: '1px solid var(--glass-border)' }}>
                       <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      <button 
+                      <button
+                        type="button"
                         onClick={() => setFormData(prev => ({ ...prev, images: prev.images.filter((_, i) => i !== idx) }))}
-                        style={{ position: 'absolute', top: 4, right: 4, background: 'rgba(239,68,68,0.9)', color: '#fff', border: 'none', borderRadius: 6, width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                        title="Hapus"
+                        style={{ position: 'absolute', top: 3, right: 3, background: 'rgba(239,68,68,0.9)', color: '#fff', border: 'none', borderRadius: 5, width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                       >
-                        <Trash2 size={12} />
+                        <Trash2 size={10} />
                       </button>
                     </div>
                   ))}
-                  <label style={{ width: 100, height: 100, borderRadius: 10, background: 'var(--cms-switcher-bg)', border: '1.5px dashed var(--glass-border)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--cms-text-muted)', fontSize: 12, fontWeight: 600, gap: 8 }}>
-                    <Plus size={20} /> Upload
+                  <label
+                    title="Tambah Gambar"
+                    style={{ width: 64, height: 64, borderRadius: 9, background: 'var(--cms-switcher-bg)', border: '1.5px dashed var(--glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--cms-text-muted)' }}
+                  >
+                    <Plus size={18} />
                     <input type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={uploadGallery} disabled={isUploading} />
                   </label>
                 </div>
               </div>
 
+              {/* ── DESKRIPSI ── */}
+              <div>
+                <label style={labelStyle}>Deskripsi</label>
+                <NativeWysiwygEditor
+                  value={formData.description}
+                  onChange={(val) => setFormData(prev => ({ ...prev, description: val }))}
+                />
+              </div>
+
             </div>
 
-            {/* Right Sidebar (Advanced Settings) */}
+            {/* Right Sidebar (Atribut & Sampul) */}
             <div className="cpm-sidebar">
-              <h3 style={{ margin: '0 0 16px', fontFamily: "'Outfit', sans-serif", fontSize: 14, fontWeight: 800, color: 'var(--cms-text)' }}>Pengaturan Lanjutan</h3>
-              
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ display: 'block', fontFamily: "'Outfit', sans-serif", fontSize: 13, fontWeight: 700, color: 'var(--cms-text)', marginBottom: 6 }}>Kategori</label>
-                <GlassSelect 
-                  value={formData.category} 
-                  onChange={e => setFormData(prev => ({ ...prev, category: e.target.value }))} 
-                  options={[{value: '', label: 'Pilih...'}, ...availableCategories.map(cat => ({ value: cat, label: cat }))]}
+              {/* Sampul (Always consistent in Sidebar) */}
+              <div>
+                <label style={labelStyle}>Sampul</label>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <div style={{ width: 72, height: 50, borderRadius: 9, background: 'var(--cms-switcher-bg)', border: '1.5px dashed var(--glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+                    {formData.coverImage ? (
+                      <img src={formData.coverImage} alt="Sampul" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <ImageIcon size={16} color="var(--cms-text-muted)" opacity={0.5} />
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <label style={iconBtnStyle} title="Upload Sampul">
+                      {isUploading ? <Loader2 size={15} className="cms-spin" /> : <Upload size={15} />}
+                      <input type="file" accept="image/*" style={{ display: 'none' }} onChange={uploadCover} disabled={isUploading} />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => { setGalleryTarget('cover'); setShowGalleryModal(true); }}
+                      style={{ ...iconBtnStyle, background: 'var(--cms-accent-soft)', borderColor: 'var(--cms-accent-border)', color: 'var(--cms-accent)' }}
+                      title="Galeri Media"
+                    >
+                      <ImageIcon size={15} />
+                    </button>
+                    {formData.coverImage && (
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, coverImage: '' }))}
+                        style={{ ...iconBtnStyle, background: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.25)', color: '#ef4444' }}
+                        title="Hapus Sampul"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label style={labelStyle}>Kategori</label>
+                <GlassSelect
+                  value={formData.category}
+                  onChange={(e: any) => setFormData(prev => ({ ...prev, category: e.target.value }))}
+                  options={[{ value: '', label: 'Pilih...' }, ...availableCategories.map(cat => ({ value: cat, label: cat }))]}
                   style={inputStyle}
                   placeholder="Pilih..."
                 />
               </div>
 
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ display: 'block', fontFamily: "'Outfit', sans-serif", fontSize: 13, fontWeight: 700, color: 'var(--cms-text)', marginBottom: 6 }}>Label Unggulan</label>
-                <GlassSelect 
-                  value={formData.featuredLabel} 
-                  onChange={e => setFormData(prev => ({ ...prev, featuredLabel: e.target.value }))} 
-                  options={[{value: '', label: '-- Tidak ada --'}, ...availableLabels.map(label => ({ value: label, label: label }))]}
+              <div>
+                <label style={labelStyle}>Label</label>
+                <GlassSelect
+                  value={formData.featuredLabel}
+                  onChange={(e: any) => setFormData(prev => ({ ...prev, featuredLabel: e.target.value }))}
+                  options={[{ value: '', label: '-- Tidak ada --' }, ...availableLabels.map(label => ({ value: label, label: label }))]}
                   style={inputStyle}
                   placeholder="-- Tidak ada --"
                 />
               </div>
 
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ display: 'block', fontFamily: "'Outfit', sans-serif", fontSize: 13, fontWeight: 700, color: 'var(--cms-text)', marginBottom: 6 }}>Klien</label>
-                <input type="text" value={formData.client} onChange={e => setFormData(prev => ({ ...prev, client: e.target.value }))} style={inputStyle} placeholder="Contoh: PT Studio Kreatif" />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 84px', gap: 8 }}>
+                <div>
+                  <label style={labelStyle}>Klien</label>
+                  <input
+                    type="text"
+                    value={formData.client}
+                    onChange={e => setFormData(prev => ({ ...prev, client: e.target.value }))}
+                    style={inputStyle}
+                    placeholder="Klien..."
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>Tahun</label>
+                  <input
+                    type="text"
+                    value={formData.year}
+                    onChange={e => setFormData(prev => ({ ...prev, year: e.target.value }))}
+                    style={{ ...inputStyle, textAlign: 'center', padding: '0 6px' }}
+                    placeholder="2026"
+                  />
+                </div>
               </div>
 
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ display: 'block', fontFamily: "'Outfit', sans-serif", fontSize: 13, fontWeight: 700, color: 'var(--cms-text)', marginBottom: 6 }}>Tahun Proyek</label>
-                <input type="text" value={formData.year} onChange={e => setFormData(prev => ({ ...prev, year: e.target.value }))} style={inputStyle} placeholder="2026" />
-              </div>
-
-              {/* Software / Tools Emblems */}
-              <div style={{ marginBottom: 16 }}>
+              {/* Tools */}
+              <div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: "'Outfit', sans-serif", fontSize: 13, fontWeight: 700, color: 'var(--cms-text)', margin: 0 }}>
-                    <Wrench size={14} color="var(--cms-accent)" /> Software & Tools ({formData.tools.length})
+                  <label style={{ ...labelStyle, marginBottom: 0, display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <Wrench size={13} color="var(--cms-accent)" /> Tools ({formData.tools.length})
                   </label>
                   {formData.tools.length > 0 && (
                     <button
                       type="button"
                       onClick={() => setFormData(prev => ({ ...prev, tools: [] }))}
+                      title="Reset Tools"
                       style={{
+                        width: 24,
+                        height: 24,
                         background: 'rgba(239, 68, 68, 0.12)',
                         border: 'none',
                         color: '#ef4444',
-                        fontSize: 11,
-                        fontWeight: 700,
-                        padding: '3px 8px',
                         borderRadius: 6,
                         cursor: 'pointer',
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: 4
+                        justifyContent: 'center'
                       }}
                     >
-                      <Trash2 size={11} /> Hapus
+                      <Trash2 size={12} />
                     </button>
                   )}
                 </div>
-                <p style={{ margin: '0 0 10px', fontSize: 11.5, color: 'var(--cms-text-muted)', fontFamily: "'Inter', sans-serif" }}>
-                  Pilih emblem software yang digunakan pada karya ini:
-                </p>
 
                 {/* Active Selected Tools */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-                  {formData.tools.map((t) => (
-                    <SoftwareBadge
-                      key={t}
-                      name={t}
-                      size="sm"
-                      isDark={false}
-                      onRemove={() => setFormData(prev => ({ ...prev, tools: prev.tools.filter(x => x !== t) }))}
-                    />
-                  ))}
-                  {formData.tools.length === 0 && (
-                    <span style={{ fontSize: 12, color: 'var(--cms-text-muted)', fontStyle: 'italic' }}>Belum ada software dipilih</span>
-                  )}
-                </div>
+                {formData.tools.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 8 }}>
+                    {formData.tools.map((t) => (
+                      <SoftwareBadge
+                        key={t}
+                        name={t}
+                        size="sm"
+                        isDark={false}
+                        onRemove={() => setFormData(prev => ({ ...prev, tools: prev.tools.filter(x => x !== t) }))}
+                      />
+                    ))}
+                  </div>
+                )}
 
                 {/* Quick Add Popular Software Chips */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, maxHeight: 125, overflowY: 'auto', padding: '8px', background: 'var(--cms-input-bg, #f8fafc)', borderRadius: 12, border: '1.5px solid var(--glass-border)', marginBottom: 8 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, maxHeight: 120, overflowY: 'auto', padding: 6, background: 'var(--cms-input-bg)', borderRadius: 10, border: '1.5px solid var(--glass-border)', marginBottom: 6 }}>
                   {POPULAR_SOFTWARE_LIST.map((sw) => {
                     const isSelected = formData.tools.includes(sw.name) || formData.tools.includes(sw.id);
                     return (
@@ -543,18 +1077,17 @@ const CustomProjectModal: React.FC<CustomProjectModalProps> = ({ initialData, av
                           }
                         }}
                         style={{
-                          padding: '4px 10px',
+                          padding: '3px 9px',
                           borderRadius: 100,
-                          border: `1.5px solid ${isSelected ? sw.color : 'var(--glass-border, #cbd5e1)'}`,
-                          background: isSelected ? `${sw.color}22` : 'var(--cms-card-bg, #ffffff)',
-                          color: isSelected ? sw.color : 'var(--cms-text, #334155)',
-                          fontSize: 11.5,
+                          border: `1.5px solid ${isSelected ? sw.color : 'var(--glass-border)'}`,
+                          background: isSelected ? `${sw.color}20` : 'var(--cms-card-bg)',
+                          color: isSelected ? sw.color : 'var(--cms-text)',
+                          fontSize: 11,
                           fontWeight: 700,
                           cursor: 'pointer',
                           display: 'flex',
                           alignItems: 'center',
-                          gap: 4,
-                          transition: 'all 0.15s'
+                          gap: 3
                         }}
                       >
                         {isSelected ? '✓ ' : '+ '}{sw.name}
@@ -579,8 +1112,8 @@ const CustomProjectModal: React.FC<CustomProjectModalProps> = ({ initialData, av
                         }
                       }
                     }}
-                    placeholder="Tambah software lain..."
-                    style={{ ...inputStyle, padding: '6px 12px', fontSize: 12 }}
+                    placeholder="Tambah tool..."
+                    style={{ ...inputStyle, height: 34, fontSize: 12 }}
                   />
                   <button
                     type="button"
@@ -591,40 +1124,75 @@ const CustomProjectModal: React.FC<CustomProjectModalProps> = ({ initialData, av
                         setCustomToolInput('');
                       }
                     }}
+                    title="Tambah Tool"
                     style={{
-                      padding: '6px 12px',
-                      borderRadius: 100,
+                      width: 34,
+                      height: 34,
+                      borderRadius: 10,
                       background: 'var(--cms-accent)',
                       color: '#fff',
                       border: 'none',
-                      fontSize: 12,
-                      fontWeight: 700,
                       cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
                       flexShrink: 0
                     }}
                   >
-                    +
+                    <Plus size={15} />
                   </button>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Footer */}
+          {/* Footer (Icon-Focused & Compact) */}
           <div className="cpm-footer">
             <div className="cpm-footer-left">
               {initialData?.id && onDelete && (
-                <button onClick={() => { if (confirm('Yakin ingin menghapus karya ini?')) onDelete(initialData.id); }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', borderRadius: 10, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer', fontWeight: 600 }}>
-                  <Trash2 size={16} /> <span>Hapus</span>
+                <button
+                  type="button"
+                  onClick={() => { if (confirm('Hapus karya ini?')) onDelete(initialData.id); }}
+                  title="Hapus Karya"
+                  style={{ ...iconBtnStyle, background: 'rgba(239,68,68,0.1)', color: '#ef4444', borderColor: 'rgba(239,68,68,0.22)' }}
+                >
+                  <Trash2 size={15} />
                 </button>
               )}
             </div>
             <div className="cpm-footer-right">
-              <button onClick={onClose} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', borderRadius: 10, background: 'transparent', color: 'var(--cms-text)', border: '1px solid var(--glass-border)', cursor: 'pointer', fontWeight: 600 }}>
-                <X size={16} /> <span>Batal</span>
+              <button
+                type="button"
+                onClick={onClose}
+                title="Batal"
+                style={iconBtnStyle}
+              >
+                <X size={15} />
               </button>
-              <button className="cpm-btn-save" onClick={handleSave} disabled={isUploading} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 24px', borderRadius: 10, background: 'var(--cms-accent)', color: '#fff', border: 'none', cursor: isUploading ? 'not-allowed' : 'pointer', fontWeight: 600, opacity: isUploading ? 0.7 : 1 }}>
-                {isUploading ? <Loader2 size={16} className="cms-spin" /> : <CheckCircle2 size={16} />} <span>Simpan</span>
+              <button
+                type="button"
+                className="cpm-btn-save"
+                onClick={handleSave}
+                disabled={isUploading}
+                style={{
+                  height: 36,
+                  padding: '0 18px',
+                  borderRadius: 10,
+                  background: 'var(--cms-accent)',
+                  color: '#fff',
+                  border: 'none',
+                  cursor: isUploading ? 'not-allowed' : 'pointer',
+                  fontWeight: 750,
+                  fontSize: 13,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  opacity: isUploading ? 0.7 : 1,
+                  boxShadow: 'none'
+                }}
+              >
+                {isUploading ? <Loader2 size={15} className="cms-spin" /> : <CheckCircle2 size={15} />}
+                <span>Simpan</span>
               </button>
             </div>
           </div>

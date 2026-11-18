@@ -110,7 +110,10 @@ const Notification: React.FC<NotificationProps> = ({
   onClose 
 }) => {
   const [isVisible, setIsVisible] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(() => {
+    const raw = typeof message === 'string' ? message : (message?.message || message?.text || '');
+    return Boolean(raw && (raw.includes('\n') || raw.includes('Tersinkron') || raw.includes('tersambung')));
+  });
   const notifRef = useRef<HTMLDivElement>(null);
 
   const isConfirm = type === 'confirm';
@@ -163,14 +166,15 @@ const Notification: React.FC<NotificationProps> = ({
     // Must be set for BOTH confirm modals and toast notifications
     setIsVisible(true);
 
-    // Confirmation modals and expanded cards should NEVER auto-dismiss
-    if (isConfirm || isExpanded) {
+    // Confirmation modals should NEVER auto-dismiss
+    if (isConfirm) {
       return;
     }
 
+    const duration = isExpanded ? 6500 : 3200;
     const timer = setTimeout(() => {
       handleDismiss();
-    }, 3200);
+    }, duration);
 
     return () => clearTimeout(timer);
   }, [message, isConfirm, isExpanded, handleDismiss]);
@@ -458,7 +462,8 @@ const Notification: React.FC<NotificationProps> = ({
               lineHeight: 1.55,
               color: 'var(--cms-text, #e2e8f0)',
               wordBreak: 'break-word',
-              fontFamily: "'Inter', sans-serif"
+              fontFamily: "'Inter', sans-serif",
+              whiteSpace: 'pre-line'
             }}>
               {detail}
             </p>

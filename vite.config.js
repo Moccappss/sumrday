@@ -189,6 +189,41 @@ ${rules}`;
               res.end(JSON.stringify({ error: err.message }));
             }
           });
+        } else if (req.url === '/api/deploy/targets' && req.method === 'GET') {
+          try {
+            const targetsPath = path.resolve(__dirname, 'deploy-targets.json');
+            let targets = [];
+            if (fs.existsSync(targetsPath)) {
+              const content = fs.readFileSync(targetsPath, 'utf-8');
+              targets = JSON.parse(content || '[]');
+            }
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ success: true, targets }));
+          } catch (err) {
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: err.message, targets: [] }));
+          }
+        } else if (req.url === '/api/deploy/targets' && req.method === 'POST') {
+          let body = '';
+          req.on('data', chunk => { body += chunk; });
+          req.on('end', () => {
+            try {
+              const data = JSON.parse(body || '{}');
+              const targets = Array.isArray(data.targets) ? data.targets : [];
+              const targetsPath = path.resolve(__dirname, 'deploy-targets.json');
+              fs.writeFileSync(targetsPath, JSON.stringify(targets, null, 2), 'utf-8');
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ 
+                success: true, 
+                message: 'Target berhasil disinkronkan ke file deploy-targets.json!' 
+              }));
+            } catch (err) {
+              res.statusCode = 500;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          });
         } else {
           next();
         }
@@ -197,27 +232,96 @@ ${rules}`;
   };
 }
 
+const BUILD_TIMESTAMP = Date.now();
+
+function buildInfoManifestPlugin() {
+  return {
+    name: 'build-info-manifest',
+    closeBundle() {
+      const distDir = path.resolve(__dirname, 'dist');
+      if (!fs.existsSync(distDir)) return;
+      const projectId = (process.env.VITE_FIREBASE_PROJECT_ID || 'sumr-day').trim();
+      const prefix = (process.env.VITE_STORAGE_PREFIX || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+      const apkAssetName =
+        projectId === 'websiteagenzie'
+          ? 'agenzie-admin-debug.apk'
+          : projectId === 'sumr-day'
+            ? 'sumrday-admin-debug.apk'
+            : `${prefix || projectId.replace(/[^a-z0-9]/gi, '').toLowerCase()}-admin-debug.apk`;
+
+      const info = {
+        buildTime: BUILD_TIMESTAMP,
+        buildDate: new Date(BUILD_TIMESTAMP).toISOString(),
+        projectId,
+        apkAssetName,
+      };
+      fs.writeFileSync(path.join(distDir, 'build-info.json'), JSON.stringify(info, null, 2), 'utf-8');
+    },
+  };
+}
+
+function adminStaticEntryPlugin() {
+  return {
+    name: 'admin-static-entry',
+    closeBundle() {
+      const distDir = path.resolve(__dirname, 'dist');
+      const indexHtmlPath = path.join(distDir, 'index.html');
+      if (!fs.existsSync(indexHtmlPath)) return;
+
+      const adminDir = path.join(distDir, 'admin');
+      if (!fs.existsSync(adminDir)) fs.mkdirSync(adminDir, { recursive: true });
+
+      let html = fs.readFileSync(indexHtmlPath, 'utf-8');
+      html = html.replace(/<link[^>]*rel=["']manifest["'][^>]*>/gi, '');
+      html = html.replace(
+        '</head>',
+        '  <link rel="manifest" href="/manifest-admin.json" />\n</head>'
+      );
+      html = html.replace(
+        /<title>[\s\S]*?<\/title>/i,
+        '<title>sumr.day OS — Studio &amp; Admin Workspace</title>'
+      );
+      fs.writeFileSync(path.join(adminDir, 'index.html'), html, 'utf-8');
+    }
+  };
+}
+
 export default defineConfig({
+  define: {
+    __APP_BUILD_TIME__: JSON.stringify(BUILD_TIMESTAMP),
+  },
   plugins: [
     localAppsApiPlugin(),
+    adminStaticEntryPlugin(),
+    buildInfoManifestPlugin(),
     react(),
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'icons.svg'],
+      includeAssets: [
+        'favicon.svg', 
+        'icons.svg', 
+        'logo.png',
+        'pwa-192x192.png', 
+        'pwa-512x512.png', 
+        'pwa-admin-192x192.png', 
+        'pwa-admin-512x512.png', 
+        'manifest-client.json', 
+        'manifest-admin.json', 
+        'manifest.json'
+      ],
       manifest: {
-        name: 'sumr.day OS — Studio & Admin Workspace',
-        short_name: 'sumr.day OS',
-        description: 'Portal Manajemen & Kontrol Studio sumr.day OS — Desktop, Tablet & Mobile',
+        short_name: 'sumr.day',
+        description: 'Studio kreatif digital, katalog layanan, showcase portofolio, dan mini games interaktif sumr.day.',
         theme_color: '#f59e0b',
-        background_color: '#050507',
+        background_color: '#09090e',
         display: 'standalone',
-        display_override: ['standalone', 'window-controls-overlay', 'minimal-ui'],
-        orientation: 'natural',
+        display_override: ['standalone', 'minimal-ui'],
+        orientation: 'any',
         scope: '/',
-        start_url: '/admin',
-        id: 'sumrday-os-admin',
-        categories: ['business', 'productivity', 'utilities', 'design'],
+        start_url: '/',
+        id: 'sumrday-client-app',
+        categories: ['lifestyle', 'shopping', 'entertainment', 'productivity'],
         icons: [
           {
             src: '/pwa-192x192.png',
@@ -246,24 +350,123 @@ export default defineConfig({
         ],
         shortcuts: [
           {
-            name: 'Dashboard Admin',
-            url: '/admin',
-            description: 'Buka Dashboard Utama sumr.day OS'
+            name: 'Katalog Layanan',
+            url: '/katalog',
+            description: 'Eksplorasi paket desain dan produk digital'
           },
           {
-            name: 'Manajemen Proyek',
-            url: '/admin/projects',
-            description: 'Buka modul manajemen proyek dan tugas'
+            name: 'Portofolio Karya',
+            url: '/portfolio',
+            description: 'Lihat galeri hasil karya dan studi kasus'
           },
           {
-            name: 'Live Chat & Inbox',
-            url: '/admin/chat',
-            description: 'Buka pesan masuk dan percakapan klien'
+            name: 'Play Space (Apps & Game)',
+            url: '/apps',
+            description: 'Mainkan mini game & interactive apps'
+          },
+          {
+            name: 'Portal Akun Klien',
+            url: '/client',
+            description: 'Cek progres pesanan & invoice'
           }
         ]
       },
       workbox: {
+        navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/api\//, /^\/engines\//],
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff,woff2}'],
+        globIgnores: [
+          '**/google_apps_script*',
+          '**/build-info.json',
+          '**/Code.gs',
+          '**/engines/**',
+          '**/sw-*.js',
+          '**/vendor-xlsx*',
+          '**/vendor-pdf*',
+          '**/vendor-charts*',
+          '**/vendor-ai*',
+          '**/vendor-zip*',
+          '**/html2canvas*',
+          '**/index.es*',
+          '**/DashboardTrafficBarChart*',
+          '**/LivePreview*',
+          '**/QuickActionDrawer*',
+          '**/ToolkitSidebar*',
+          '**/vendor-dates*',
+          '**/vendor-recaptcha*',
+          '**/vendor-firebase*',
+          '**/offlineTemplates*',
+          '**/ProjectsModule*',
+          '**/VisualWebEditor*',
+          '**/DatabasePortal*',
+          '**/MemoManager*',
+          '**/GameManagementTab*',
+          '**/SettingsPanel*',
+          '**/CmsDashboard*',
+          '**/UserManager*',
+          '**/TransactionManager*',
+          '**/BroadcastStudio*',
+          '**/WhiteboardModule*',
+          '**/CatalogManager*',
+          '**/BlogManager*',
+          '**/UpdatesFeedManager*',
+          '**/DashboardOverview*',
+          '**/LinksStudio*',
+          '**/StorageMonitor*',
+          '**/ActivityManager*',
+          '**/PortfolioManager*',
+          '**/ChatManager*',
+          '**/GoogleSyncModal*',
+          '**/GlobalSearchCenter*',
+          '**/PageSettingsPanel*',
+          '**/ClientVoiceManager*',
+          '**/googleSync*',
+          '**/ClientWebsitePreviewModal*',
+          '**/BlockEditPanel*',
+          '**/StickerEditPanel*',
+          '**/FrameEditPanel*',
+          '**/LPCompanyUpdatesHub*',
+          '**/LPCompanySolutions*',
+          '**/AppsManager*',
+          '**/ClientAccountPage*',
+          '**/CartCheckoutPage*',
+          '**/ClientInvitationAdminPage*',
+          '**/GameShowcasePage*',
+          '**/CustomWebPage*',
+          '**/GuidelinePage*',
+          '**/ClientView*',
+          '**/AboutPage*',
+          '**/Blog*',
+          '**/BlogPost*',
+          '**/Katalog*',
+          '**/PublicRateCardPage*',
+          '**/PublicFeedbackPage*',
+          '**/PublicInvitationPage*',
+          '**/PublicFormPage*',
+          '**/LinksPage*',
+          '**/react-datepicker*',
+          '**/jspdf*',
+          '**/html2canvas*',
+          '**/canvg*',
+          '**/recharts*',
+          '**/SocialPosterStudio*',
+          '**/StudioIntelligenceAnalytics*',
+          '**/RateCardManager*',
+          '**/LinksStudio*',
+          '**/MediaGalleryModal*',
+          '**/PublicNotePreviewPage*',
+          '**/LPFloatingStickers*',
+          '**/FormEditor*',
+          '**/FormResponsesView*',
+          '**/ProofingManager*',
+          '**/DesignProofingCanvas*',
+          '**/ThirdPartyIntegrationsHub*',
+          '**/QrStudio*',
+          '**/WhatsAppStudio*',
+          '**/UpdateStickerRenderer*',
+          '**/PdfFlipbookViewer*',
+          '**/Model3DViewer*'
+        ],
         cleanupOutdatedCaches: true,
         clientsClaim: true,
         skipWaiting: true,
@@ -323,6 +526,34 @@ export default defineConfig({
                 statuses: [0, 200]
               }
             }
+          },
+          {
+            urlPattern: /\/assets\/.*\.js$/i,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'app-dynamic-scripts-cache',
+              expiration: {
+                maxEntries: 60,
+                maxAgeSeconds: 60 * 60 * 24 * 7
+              },
+              cacheableResponse: {
+                statuses: [0, 200]
+              }
+            }
+          },
+          {
+            urlPattern: /\/assets\/.*\.css$/i,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'app-styles-cache',
+              expiration: {
+                maxEntries: 20,
+                maxAgeSeconds: 60 * 60 * 24 * 14
+              },
+              cacheableResponse: {
+                statuses: [0, 200]
+              }
+            }
           }
         ]
       }
@@ -344,32 +575,56 @@ export default defineConfig({
       'zustand'
     ]
   },
+
   build: {
+    target: 'es2020',
     cssCodeSplit: true,
+    cssMinify: true,
+    assetsInlineLimit: 4096,
+    reportCompressedSize: false,
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {
-            if (id.includes('xlsx')) return 'vendor-xlsx';
-            if (id.includes('jszip')) return 'vendor-zip';
-            if (id.includes('@tanstack/react-query')) return 'vendor-query';
-            if (id.includes('react-google-recaptcha')) return 'vendor-recaptcha';
-            if (id.includes('recharts') || id.includes('d3-') || id.includes('victory-')) return 'vendor-charts';
-            if (id.includes('jspdf') || id.includes('html-to-image')) return 'vendor-pdf';
-            if (id.includes('@google/generative-ai')) return 'vendor-ai';
-            if (id.includes('date-fns') || id.includes('react-datepicker')) return 'vendor-dates';
-            if (id.includes('firebase')) return 'vendor-firebase';
-            if (id.includes('lucide-react')) return 'vendor-icons';
-            if (id.includes('dompurify')) return 'vendor-dompurify';
-            if (id.includes('react-router-dom') || id.includes('react-router')) return 'vendor-react-router';
-            if (id.includes('zustand') || id.includes('idb-keyval')) return 'vendor-storage';
-            if (id.includes('react') || id.includes('scheduler')) return 'vendor-react';
-            return 'vendor';
+            const normId = id.replace(/\\/g, '/');
+            // 1. Core React runtime FIRST so jsx-runtime / react-is / scheduler never leak into lazy feature chunks
+            if (
+              normId.includes('/react/') ||
+              normId.includes('/react-dom/') ||
+              normId.includes('/scheduler/') ||
+              normId.includes('/react-is/') ||
+              normId.includes('use-sync-external-store') ||
+              normId.includes('/prop-types/') ||
+              normId.includes('/object-assign/') ||
+              normId.includes('@babel/runtime') ||
+              normId.includes('/tslib/')
+            ) return 'vendor-react';
+            if (normId.includes('xlsx')) return 'vendor-xlsx';
+            if (normId.includes('recharts') || normId.includes('victory-vendor') || normId.includes('/d3-')) return 'vendor-charts';
+            if (normId.includes('jspdf') || normId.includes('html2canvas') || normId.includes('canvg') || normId.includes('html-to-image')) return 'vendor-export';
+            if (normId.includes('jszip') || normId.includes('pako')) return 'vendor-zip';
+            if (normId.includes('@tanstack') || normId.includes('query-core')) return 'vendor-query';
+            if (normId.includes('react-google-recaptcha')) return 'vendor-recaptcha';
+            if (normId.includes('@google/generative-ai')) return 'vendor-ai';
+            if (normId.includes('firebase')) return 'vendor-firebase';
+            if (normId.includes('lucide-react')) return 'vendor-icons';
+            if (normId.includes('dompurify')) return 'vendor-dompurify';
+            if (normId.includes('react-router-dom') || normId.includes('react-router')) return 'vendor-react-router';
+            if (normId.includes('zustand') || normId.includes('idb-keyval') || normId.includes('/idb/')) return 'vendor-storage';
+            if (normId.includes('@floating-ui')) return 'vendor-ui';
+            if (normId.includes('workbox-window')) return 'vendor-pwa';
           }
         },
       },
     },
-    chunkSizeWarningLimit: 800,
+  },
+  server: {
+    port: 5173,
+    host: true,
+    hmr: {
+      clientPort: 5173,
+    },
   },
   test: {
     globals: true,

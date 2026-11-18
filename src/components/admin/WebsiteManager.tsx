@@ -854,6 +854,12 @@ const WebsiteManager: React.FC<WebsiteManagerProps> = ({ notify, confirm }) => {
     const t = setTimeout(async () => {
       try {
         await storage.setItem('porto_main_website', data, false);
+        const logoText = (data?.navbar?.logoText || '').trim();
+        if (logoText && typeof localStorage !== 'undefined') {
+          localStorage.setItem('porto_cached_logotext', logoText);
+          window.dispatchEvent(new CustomEvent('porto_logotext_updated', { detail: { logoText } }));
+        }
+        window.dispatchEvent(new CustomEvent('landing_data_updated', { detail: data }));
         setIsDirty(false);
       } catch (err) {
         console.error('[WebsiteManager] Auto-save failed:', err);
@@ -867,13 +873,24 @@ const WebsiteManager: React.FC<WebsiteManagerProps> = ({ notify, confirm }) => {
     setIsSaving(true);
     try {
       await storage.setItem('porto_main_website', data);
-      
-      // Also ensure accentColor is synced to porto_settings
+
+      const logoText = (data?.navbar?.logoText || '').trim();
+      if (logoText && typeof localStorage !== 'undefined') {
+        localStorage.setItem('porto_cached_logotext', logoText);
+        window.dispatchEvent(new CustomEvent('porto_logotext_updated', { detail: { logoText } }));
+      }
+
+      // Also ensure accentColor & cmsName are synced to porto_settings
+      const currentSettings = await storage.getItem('porto_settings', {}) || {};
+      const nextSettings: any = { ...currentSettings };
       if (data.theme?.accentColor) {
-        const currentSettings = await storage.getItem('porto_settings', {}) || {};
-        await storage.setItem('porto_settings', { ...currentSettings, accentColor: data.theme.accentColor }, false);
+        nextSettings.accentColor = data.theme.accentColor;
         applyAccentColor(data.theme.accentColor);
       }
+      if (logoText) {
+        nextSettings.cmsName = logoText;
+      }
+      await storage.setItem('porto_settings', nextSettings, false);
 
       window.dispatchEvent(new CustomEvent('landing_data_updated', { detail: data }));
       window.dispatchEvent(new CustomEvent('porto_settings_updated', { detail: { settings: data } }));
@@ -1324,6 +1341,7 @@ const WebsiteManager: React.FC<WebsiteManagerProps> = ({ notify, confirm }) => {
   // CLEAN, CONCISE CATEGORIES (1-4 Words Titles, Tooltips for Detail)
   const globalSettingCategories = [
     { id: 'concierge_chat', title: 'Studio Concierge & Chat', tooltip: 'Pengaturan teks formulir brief proyek, pilihan kategori desain, target waktu, tombol WhatsApp, dan live chat.', icon: MessageCircle, color: '#7c3aed', keywords: ['concierge', 'chat', 'brief', 'live chat', 'kebutuhan', 'layanan', 'konsultasi', 'pesan', 'whatsapp'] },
+    { id: 'scroll_radar', title: 'Scroll Radar & Pill', tooltip: 'Pengaturan navigasi melayang vertikal, radar scroll, persentase, tombol atas/bawah, dan label bab halaman.', icon: Compass, color: '#ea580c', keywords: ['scroll', 'radar', 'pill', 'bar', 'persentase', 'navigasi', 'sticky', 'melayang'] },
     { id: 'page_headers', title: 'Header Halaman', tooltip: 'Badge, judul, dan deskripsi header halaman publik (Blog, Portofolio, Katalog, Tentang, Links) dengan bantuan AI.', icon: Sparkles, color: '#ec4899', keywords: ['header', 'judul', 'badge', 'blog', 'portfolio', 'katalog', 'about', 'links', 'ai'] },
     { id: 'theme', title: 'Tema & Warna', tooltip: 'Palet warna aksen visual utama website dan pengaturan mode tampilan.', icon: Palette, color: '#8b5cf6', keywords: ['tema', 'warna', 'accent', 'color', 'palet', 'ungu', 'hijau', 'biru'] },
     { id: 'nav', title: 'Menu Navigasi', tooltip: 'Pengaturan teks logo, tombol login/kontak, dan tautan menu di header navbar.', icon: Navigation, color: '#3b82f6', keywords: ['navigasi', 'navbar', 'menu', 'logo', 'link', 'dropdown'] },
@@ -2605,6 +2623,218 @@ const WebsiteManager: React.FC<WebsiteManagerProps> = ({ notify, confirm }) => {
                       </div>
                     )}
 
+                    {/* --- 0.1 SCROLL RADAR & FLOATING PILL SETTINGS --- */}
+                    {activeGlobalSetting === 'scroll_radar' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                        {/* Header Box */}
+                        <div style={{ background: 'var(--cms-card-bg)', border: '1.5px solid var(--glass-border)', borderRadius: 18, padding: isMobile ? 14 : 20, boxShadow: 'var(--cms-shadow-md)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(234, 88, 12, 0.15)', color: '#ea580c', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <Compass size={20} />
+                              </div>
+                              <div>
+                                <h4 style={{ margin: 0, fontFamily: "'Outfit', sans-serif", fontSize: 16, fontWeight: 800, color: 'var(--cms-text)' }}>
+                                  Scroll Radar & Pill Melayang
+                                </h4>
+                                <div style={{ fontSize: 12, color: 'var(--cms-text-muted)', marginTop: 2 }}>
+                                  Kontrol visual indikator scroll, tombol cepat ke atas/bawah, dan label bagian halaman (1 baris minimalis).
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Master Toggle */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const current = data.scrollRadar?.enabled !== false;
+                                update('scrollRadar', { enabled: !current });
+                              }}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 8,
+                                padding: '7px 14px',
+                                borderRadius: 999,
+                                background: (data.scrollRadar?.enabled !== false) ? 'rgba(16, 185, 129, 0.15)' : 'var(--cms-input-bg)',
+                                color: (data.scrollRadar?.enabled !== false) ? '#10b981' : 'var(--cms-text-muted)',
+                                border: `1.5px solid ${(data.scrollRadar?.enabled !== false) ? 'rgba(16, 185, 129, 0.3)' : 'var(--glass-border)'}`,
+                                fontWeight: 800,
+                                fontSize: 12.5,
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease'
+                              }}
+                            >
+                              {(data.scrollRadar?.enabled !== false) ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
+                              <span>{(data.scrollRadar?.enabled !== false) ? 'Status: Aktif' : 'Status: Nonaktif'}</span>
+                            </button>
+                          </div>
+
+                          <div style={{ fontSize: 12.5, color: 'var(--cms-text-muted)', lineHeight: 1.6, background: 'var(--cms-switcher-bg)', borderRadius: 12, padding: '10px 14px', border: '1px solid var(--glass-border)' }}>
+                            💡 <strong>Bebas Scrollbar Ganda:</strong> Scrollbar standar browser telah disembunyikan secara otomatis pada landing page agar tampilan bersih dan serasi. Pengunjung hanya akan melihat pill navigasi radar yang melayang secara mulus di sisi layar.
+                          </div>
+                        </div>
+
+                        {/* Controls Grid */}
+                        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14 }}>
+                          {/* Toggles Card */}
+                          <div style={{ background: 'var(--cms-card-bg)', border: '1.5px solid var(--glass-border)', borderRadius: 16, padding: isMobile ? 14 : 18, boxShadow: 'var(--cms-shadow-md)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                            <h5 style={{ margin: 0, fontSize: 13.5, fontWeight: 800, color: 'var(--cms-text)', display: 'flex', alignItems: 'center', gap: 7 }}>
+                              <Sliders size={15} style={{ color: 'var(--cms-accent)' }} /> Elemen Tampilan
+                            </h5>
+
+                            {/* Toggle Tombol Atas & Bawah */}
+                            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 12, background: 'var(--cms-switcher-bg)', border: '1px solid var(--glass-border)', cursor: 'pointer' }}>
+                              <div>
+                                <div style={{ fontSize: 13, fontWeight: 750, color: 'var(--cms-text)' }}>Tombol Lingkaran Atas & Bawah</div>
+                                <div style={{ fontSize: 11, color: 'var(--cms-text-muted)' }}>Tombol pintas untuk lompat ke 0% atau 100% halaman</div>
+                              </div>
+                              <input
+                                type="checkbox"
+                                checked={data.scrollRadar?.showTopBottomButtons !== false}
+                                onChange={(e) => update('scrollRadar', { showTopBottomButtons: e.target.checked })}
+                                style={{ width: 17, height: 17, accentColor: 'var(--cms-accent)', cursor: 'pointer' }}
+                              />
+                            </label>
+
+                            {/* Toggle Persentase */}
+                            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 12, background: 'var(--cms-switcher-bg)', border: '1px solid var(--glass-border)', cursor: 'pointer' }}>
+                              <div>
+                                <div style={{ fontSize: 13, fontWeight: 750, color: 'var(--cms-text)' }}>Persentase Scroll (%)</div>
+                                <div style={{ fontSize: 11, color: 'var(--cms-text-muted)' }}>Angka kemajuan scroll (0% - 100%) di ujung pill</div>
+                              </div>
+                              <input
+                                type="checkbox"
+                                checked={data.scrollRadar?.showPercentage !== false}
+                                onChange={(e) => update('scrollRadar', { showPercentage: e.target.checked })}
+                                style={{ width: 17, height: 17, accentColor: 'var(--cms-accent)', cursor: 'pointer' }}
+                              />
+                            </label>
+
+                            {/* Toggle Label 1 Baris */}
+                            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 12, background: 'var(--cms-switcher-bg)', border: '1px solid var(--glass-border)', cursor: 'pointer' }}>
+                              <div>
+                                <div style={{ fontSize: 13, fontWeight: 750, color: 'var(--cms-text)' }}>Label Seksi 1 Garis (Minimalis)</div>
+                                <div style={{ fontSize: 11, color: 'var(--cms-text-muted)' }}>Pill kapsul horizontal penunjuk nama bagian aktif</div>
+                              </div>
+                              <input
+                                type="checkbox"
+                                checked={data.scrollRadar?.showSectionLabel !== false}
+                                onChange={(e) => update('scrollRadar', { showSectionLabel: e.target.checked })}
+                                style={{ width: 17, height: 17, accentColor: 'var(--cms-accent)', cursor: 'pointer' }}
+                              />
+                            </label>
+                          </div>
+
+                          {/* Sizing & Geometry Card */}
+                          <div style={{ background: 'var(--cms-card-bg)', border: '1.5px solid var(--glass-border)', borderRadius: 16, padding: isMobile ? 14 : 18, boxShadow: 'var(--cms-shadow-md)', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                            <h5 style={{ margin: 0, fontSize: 13.5, fontWeight: 800, color: 'var(--cms-text)', display: 'flex', alignItems: 'center', gap: 7 }}>
+                              <Sparkles size={15} style={{ color: 'var(--cms-accent)' }} /> Dimensi & Posisi
+                            </h5>
+
+                            {/* Track Height Slider */}
+                            <div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                <span style={{ fontSize: 13, fontWeight: 750, color: 'var(--cms-text)' }}>Panjang Garis Radar:</span>
+                                <span style={{ fontSize: 12, fontWeight: 850, color: 'var(--cms-accent)' }}>{data.scrollRadar?.trackHeight || 240}px</span>
+                              </div>
+                              <input
+                                type="range"
+                                min={160}
+                                max={360}
+                                step={10}
+                                value={data.scrollRadar?.trackHeight || 240}
+                                onChange={(e) => update('scrollRadar', { trackHeight: Number(e.target.value) })}
+                                style={{ width: '100%', accentColor: 'var(--cms-accent)', cursor: 'pointer' }}
+                              />
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: 'var(--cms-text-muted)', marginTop: 2 }}>
+                                <span>Kompak (160px)</span>
+                                <span>Sedang (240px)</span>
+                                <span>Ekstra Panjang (360px)</span>
+                              </div>
+                            </div>
+
+                            {/* Pill Width Slider */}
+                            <div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                <span style={{ fontSize: 13, fontWeight: 750, color: 'var(--cms-text)' }}>Ketebalan Pill:</span>
+                                <span style={{ fontSize: 12, fontWeight: 850, color: 'var(--cms-accent)' }}>{data.scrollRadar?.pillWidth || 26}px</span>
+                              </div>
+                              <input
+                                type="range"
+                                min={22}
+                                max={32}
+                                step={2}
+                                value={data.scrollRadar?.pillWidth || 26}
+                                onChange={(e) => update('scrollRadar', { pillWidth: Number(e.target.value) })}
+                                style={{ width: '100%', accentColor: 'var(--cms-accent)', cursor: 'pointer' }}
+                              />
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: 'var(--cms-text-muted)', marginTop: 2 }}>
+                                <span>Ramping (22px)</span>
+                                <span>Standar Rapi (26px)</span>
+                                <span>Tebal (32px)</span>
+                              </div>
+                            </div>
+
+                            {/* Position Choice */}
+                            <div>
+                              <span style={{ display: 'block', fontSize: 13, fontWeight: 750, color: 'var(--cms-text)', marginBottom: 6 }}>Posisi Sisi Layar:</span>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                {(['right', 'left'] as const).map(pos => {
+                                  const active = (data.scrollRadar?.position || 'right') === pos;
+                                  return (
+                                    <button
+                                      key={pos}
+                                      type="button"
+                                      onClick={() => update('scrollRadar', { position: pos })}
+                                      style={{
+                                        padding: '8px 12px',
+                                        borderRadius: 10,
+                                        border: `1.5px solid ${active ? 'var(--cms-accent)' : 'var(--glass-border)'}`,
+                                        background: active ? 'var(--cms-accent-soft)' : 'var(--cms-input-bg)',
+                                        color: active ? 'var(--cms-accent)' : 'var(--cms-text)',
+                                        fontWeight: 850,
+                                        fontSize: 12,
+                                        cursor: 'pointer',
+                                        transition: 'all 0.15s ease'
+                                      }}
+                                    >
+                                      {pos === 'right' ? '👉 Sisi Kanan (Default)' : '👈 Sisi Kiri'}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Save Button Footer */}
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+                          <button
+                            type="button"
+                            onClick={handleSave}
+                            disabled={isSaving}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 8,
+                              padding: '10px 22px',
+                              borderRadius: 14,
+                              background: 'var(--cms-accent)',
+                              color: '#ffffff',
+                              border: 'none',
+                              fontSize: 13.5,
+                              fontWeight: 850,
+                              cursor: 'pointer',
+                              boxShadow: '0 4px 16px var(--cms-accent-soft)'
+                            }}
+                          >
+                            <Save size={15} /> Simpan Pengaturan Scroll Radar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     {/* --- 1. TEMA & PALET WARNA (NAVIGASI KE SETTING GLOBAL) --- */}
                     {activeGlobalSetting === 'theme' && (
                       <div style={{ background: 'var(--cms-card-bg)', border: '1.5px solid var(--glass-border)', borderRadius: 20, padding: isMobile ? 20 : 32, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18, boxShadow: 'var(--cms-shadow-md)' }}>
@@ -2817,12 +3047,40 @@ const WebsiteManager: React.FC<WebsiteManagerProps> = ({ notify, confirm }) => {
                           </div>
                         </div>
 
+                        <div style={{ marginBottom: 16 }}>
+                          <FormField label="Logo Gambar Navbar (1:1 / Lingkaran)">
+                            <ImageUploader 
+                              value={data.navbar.logoImage || ''} 
+                              onChange={(url) => {
+                                update('navbar', { logoImage: url });
+                                storage.getItem('porto_settings', {}).then((st: any) => {
+                                  storage.setItem('porto_settings', { ...st, cmsLogo: url || null }, true).catch(() => {});
+                                });
+                                window.dispatchEvent(new CustomEvent('porto_logo_updated', { detail: { logo: url } }));
+                              }} 
+                              label="Upload Logo Navbar" 
+                              aspectRatio="1/1" 
+                            />
+                          </FormField>
+                        </div>
+
                         <div style={{ marginBottom: 16, display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
-                          <FormField label="Teks Logo">
-                            <CmsInput value={data.navbar.logoText || 'Arif.'} onChange={(e) => update('navbar', { logoText: e.target.value })} placeholder="Arif." />
+                          <FormField label="Nama Brand / Teks Logo Navbar">
+                            <CmsInput
+                              value={data.navbar.logoText ?? ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                update('navbar', { logoText: val });
+                                if (val.trim()) {
+                                  try { localStorage.setItem('porto_cached_logotext', val.trim()); } catch (_) {}
+                                  window.dispatchEvent(new CustomEvent('porto_logotext_updated', { detail: { logoText: val.trim() } }));
+                                }
+                              }}
+                              placeholder="sumr.day"
+                            />
                           </FormField>
                           <FormField label="Label Tombol Aksi">
-                            <CmsInput value={data.navbar.loginBtnLabel || 'Login'} onChange={(e) => update('navbar', { loginBtnLabel: e.target.value })} placeholder="Login" />
+                            <CmsInput value={data.navbar.loginBtnLabel ?? 'Masuk'} onChange={(e) => update('navbar', { loginBtnLabel: e.target.value })} placeholder="Masuk" />
                           </FormField>
                         </div>
 

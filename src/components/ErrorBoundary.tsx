@@ -38,7 +38,11 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   };
 
   handleGoHome = () => {
-    window.location.href = '/';
+    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/admin')) {
+      window.location.href = '/admin/dashboard';
+    } else {
+      window.location.href = '/';
+    }
   };
 
   toggleDetails = () => {
@@ -235,7 +239,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
                 }}
               >
                 <Home size={14} />
-                Home
+                {typeof window !== 'undefined' && window.location.pathname.startsWith('/admin') ? 'Dashboard' : 'Home'}
               </button>
             </div>
 

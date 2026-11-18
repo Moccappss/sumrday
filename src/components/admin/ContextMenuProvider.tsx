@@ -291,7 +291,7 @@ export const ContextMenuProvider: React.FC<{ children: React.ReactNode }> = ({ c
               backdropFilter: 'none',
               WebkitBackdropFilter: 'none',
               border: '1.5px solid var(--cms-border, rgba(255, 255, 255, 0.15))',
-              borderRadius: isMobile ? 22 : 14,
+              borderRadius: isMobile ? 24 : 20,
               boxShadow: '0 24px 60px rgba(0, 0, 0, 0.55), 0 8px 24px rgba(0, 0, 0, 0.35)',
               padding: '8px',
               zIndex: 10000000,
@@ -393,7 +393,7 @@ export const ContextMenuProvider: React.FC<{ children: React.ReactNode }> = ({ c
                       justifyContent: 'space-between',
                       width: '100%',
                       padding: isMobile ? '11px 14px' : '8px 12px',
-                      borderRadius: isMobile ? 12 : 10,
+                      borderRadius: 14,
                       border: 'none',
                       background: 'transparent',
                       color: isDanger 

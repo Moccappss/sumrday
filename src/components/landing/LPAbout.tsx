@@ -14,14 +14,8 @@ const ICON_MAP: Record<string, React.ComponentType<{ size?: number }>> = {
   Camera: Monitor,
 };
 
-const CARD_PALETTES = [
-  { accent: '#6366f1', bg: 'rgba(99, 102, 241, 0.08)', border: 'rgba(99, 102, 241, 0.2)', glow: 'rgba(99, 102, 241, 0.18)' },
-  { accent: '#10b981', bg: 'rgba(16, 185, 129, 0.08)', border: 'rgba(16, 185, 129, 0.2)', glow: 'rgba(16, 185, 129, 0.18)' },
-  { accent: '#f59e0b', bg: 'rgba(245, 158, 11, 0.08)', border: 'rgba(245, 158, 11, 0.2)', glow: 'rgba(245, 158, 11, 0.18)' },
-  { accent: '#ec4899', bg: 'rgba(236, 72, 153, 0.08)', border: 'rgba(236, 72, 153, 0.2)', glow: 'rgba(236, 72, 153, 0.18)' },
-  { accent: '#0ea5e9', bg: 'rgba(14, 165, 233, 0.08)', border: 'rgba(14, 165, 233, 0.2)', glow: 'rgba(14, 165, 233, 0.18)' },
-  { accent: '#a855f7', bg: 'rgba(168, 85, 247, 0.08)', border: 'rgba(168, 85, 247, 0.2)', glow: 'rgba(168, 85, 247, 0.18)' },
-];
+// kept for reference (unused icon import retained to avoid behavioral diffs)
+void CheckCircle2;
 
 const getIconComponent = (iconName?: string): React.ComponentType<{ size?: number }> => {
   if (!iconName) return Sparkles;
@@ -39,76 +33,96 @@ interface LPAboutProps {
 
 const LPAbout: React.FC<LPAboutProps> = ({ bio, image, skills = [], isDark, accentColor, localization }) => {
   const navigate = useNavigate();
-  const textColor = isDark ? '#f8fafc' : '#0f172a';
-  const subTextColor = isDark ? '#94a3b8' : '#64748b';
-  const sectionBg = isDark ? '#0b0f19' : '#f8fafc';
-  const cardBorder = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)';
+  // Bento 2.0 Solid tokens
+  const pageBg = isDark ? '#06070a' : '#eef2f6';
+  const surface = isDark ? '#151824' : '#ffffff';
+  const surface2 = isDark ? '#1f2436' : '#f1f5f9';
+  const cardBorder = isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(15, 23, 42, 0.08)';
+  const ink = isDark ? '#ffffff' : '#0f172a';
+  const sub = isDark ? '#94a3b8' : '#64748b';
+  const inkBtnBg = isDark ? '#ffffff' : '#0f1115';
+  const inkBtnText = isDark ? '#0f1115' : '#ffffff';
+  const tint = `color-mix(in srgb, ${accentColor} 14%, transparent)`;
 
   const firstSentence = bio ? bio.split('.')[0] + '.' : "Desainer & developer yang fokus pada kesederhanaan, keindahan, dan dampak nyata.";
   const restOfBio = bio && bio.split('.').length > 1 ? bio.split('.').slice(1).join('.').trim() : '';
+
+  const badgeStyle: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 8,
+    alignSelf: 'flex-start',
+    padding: '6px 14px',
+    borderRadius: 999,
+    background: surface,
+    border: `1px solid ${cardBorder}`,
+    color: ink,
+    fontFamily: "'Inter', sans-serif",
+    fontSize: 12,
+    fontWeight: 700,
+  };
+  const dot = <span style={{ width: 6, height: 6, borderRadius: '50%', background: accentColor, display: 'inline-block' }} />;
 
   return (
     <section
       id="about"
       style={{
-        padding: '110px 24px',
-        background: sectionBg,
+        padding: 'clamp(56px, 7vw, 84px) clamp(16px, 3.5vw, 24px)',
+        background: pageBg,
         position: 'relative',
         overflow: 'hidden',
+        boxSizing: 'border-box'
       }}
     >
-      <div style={{ maxWidth: 1240, margin: '0 auto' }}>
+      <div style={{ maxWidth: 1240, width: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
 
-        {/* ── ABOUT ME BENTO ── */}
-        <div 
+        {/* ── ABOUT ME ── */}
+        <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-            gap: 48,
+            gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
+            gap: 'clamp(28px, 5vw, 64px)',
             alignItems: 'center',
-            marginBottom: 88,
+            marginBottom: 'clamp(56px, 8vw, 96px)',
           }}
         >
-          {/* Visual block with soft ambient glow */}
+          {/* Visual block */}
           <div data-reveal="true" className="reveal-delay-1" style={{ display: 'flex', justifyContent: 'center' }}>
             <div
               style={{
                 width: '100%',
-                maxWidth: 480,
+                maxWidth: 520,
                 aspectRatio: '4/3',
-                borderRadius: 28,
+                borderRadius: 22,
                 position: 'relative',
                 overflow: 'hidden',
                 padding: 10,
-                background: isDark
-                  ? 'linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(168, 85, 247, 0.08) 100%)'
-                  : 'linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%)',
-                boxShadow: isDark
-                  ? '0 20px 50px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.08)'
-                  : '0 20px 50px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)',
+                background: surface,
+                border: `1px solid ${cardBorder}`,
+                boxShadow: 'none',
               }}
             >
               <div
                 style={{
                   width: '100%',
                   height: '100%',
-                  borderRadius: 20,
+                  borderRadius: 16,
                   overflow: 'hidden',
                   position: 'relative',
-                  background: isDark ? '#111827' : '#e2e8f0',
+                  background: surface2,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
               >
                 {image ? (
-                  <img src={image} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <img src={image} alt="Profile" loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, color: accentColor }}>
-                    <div style={{ width: 64, height: 64, borderRadius: '50%', background: `${accentColor}18`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ width: 64, height: 64, borderRadius: '50%', background: tint, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <User size={32} />
                     </div>
-                    <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: 16, fontWeight: 700 }}>sumr.day</span>
+                    <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: 16, fontWeight: 800, color: ink }}>sumr.day</span>
                   </div>
                 )}
               </div>
@@ -116,30 +130,20 @@ const LPAbout: React.FC<LPAboutProps> = ({ bio, image, skills = [], isDark, acce
           </div>
 
           {/* Text block */}
-          <div data-reveal="true" className="reveal-delay-2" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div style={{
-              fontFamily: "'Inter', sans-serif",
-              fontSize: 12,
-              fontWeight: 700,
-              color: accentColor,
-              letterSpacing: '0.14em',
-              textTransform: 'uppercase',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-            }}>
-              <Sparkles size={14} />
+          <div data-reveal="true" className="reveal-delay-2" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            <div style={badgeStyle}>
+              {dot}
               <span>{localization?.aboutSectionTitle || 'TENTANG SAYA'}</span>
             </div>
 
             <h2 style={{
               fontFamily: "'Outfit', sans-serif",
-              fontSize: 'clamp(28px, 3.4vw, 42px)',
-              fontWeight: 850,
-              color: textColor,
-              lineHeight: 1.18,
+              fontSize: 'clamp(1.9rem, 4vw, 3rem)',
+              fontWeight: 800,
+              color: ink,
+              lineHeight: 1.1,
               margin: 0,
-              letterSpacing: '-0.02em',
+              letterSpacing: '-0.035em',
             }}>
               {localization?.aboutMainTitle || firstSentence}
             </h2>
@@ -147,9 +151,9 @@ const LPAbout: React.FC<LPAboutProps> = ({ bio, image, skills = [], isDark, acce
             {(localization?.aboutMainTitle ? bio : restOfBio) && (
               <p style={{
                 fontFamily: "'Inter', sans-serif",
-                fontSize: 15,
-                color: subTextColor,
-                lineHeight: 1.8,
+                fontSize: 16,
+                color: sub,
+                lineHeight: 1.6,
                 margin: 0,
               }}>
                 {restOfBio || bio}
@@ -162,147 +166,103 @@ const LPAbout: React.FC<LPAboutProps> = ({ bio, image, skills = [], isDark, acce
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: 8,
-                  padding: '12px 24px',
-                  background: accentColor,
-                  color: '#ffffff',
+                  gap: 12,
+                  height: 44,
+                  padding: '6px 6px 6px 20px',
+                  background: inkBtnBg,
+                  color: inkBtnText,
                   border: 'none',
                   cursor: 'pointer',
-                  borderRadius: 100,
+                  borderRadius: 999,
                   fontFamily: "'Outfit', sans-serif",
                   fontWeight: 700,
                   fontSize: 14,
-                  boxShadow: `0 8px 24px ${accentColor}35`,
-                  transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+                  boxShadow: 'none',
+                  transition: 'transform .2s ease',
                 }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                  e.currentTarget.style.boxShadow = `0 12px 32px ${accentColor}50`;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = `0 8px 24px ${accentColor}35`;
-                }}
+                onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.03)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
               >
                 <span>Pelajari Lebih Lengkap</span>
-                <ArrowUpRight size={16} />
+                <span style={{ width: 32, height: 32, borderRadius: '50%', background: accentColor, color: '#ffffff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <ArrowUpRight size={16} />
+                </span>
               </button>
             </div>
           </div>
         </div>
 
-        {/* ── COLORFUL SERVICES & TOOLKIT CARDS ── */}
-        <div data-reveal="true" style={{ textAlign: 'center', marginBottom: 48 }}>
-          <div style={{
-            fontFamily: "'Inter', sans-serif",
-            fontSize: 12,
-            fontWeight: 700,
-            color: accentColor,
-            letterSpacing: '0.14em',
-            textTransform: 'uppercase',
-            marginBottom: 10,
-          }}>
-            — LAYANAN & KEAHLIAN
+        {/* ── SERVICES & TOOLKIT ── */}
+        <div data-reveal="true" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 14, marginBottom: 40 }}>
+          <div style={{ ...badgeStyle, alignSelf: 'center' }}>
+            {dot}
+            <span>LAYANAN &amp; KEAHLIAN</span>
           </div>
           <h2 style={{
             fontFamily: "'Outfit', sans-serif",
-            fontSize: 'clamp(28px, 3.5vw, 42px)',
-            fontWeight: 850,
-            color: textColor,
+            fontSize: 'clamp(1.9rem, 4vw, 3rem)',
+            fontWeight: 800,
+            color: ink,
             margin: 0,
-            letterSpacing: '-0.02em',
+            lineHeight: 1.1,
+            letterSpacing: '-0.035em',
           }}>
-            Layanan & Toolkit Profesional
+            Layanan &amp; Toolkit Profesional
           </h2>
         </div>
 
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-            gap: 20,
+            gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 250px), 1fr))',
+            gap: 16,
           }}
         >
           {skills && skills.length > 0 ? skills.map((skill, index) => {
             const IconComponent = getIconComponent(skill.icon);
-            const palette = CARD_PALETTES[index % CARD_PALETTES.length];
+            const isAccent = index === 0;
             return (
               <div
                 key={skill.id || index}
                 data-reveal="true"
+                data-card-3d="true"
                 className={`reveal-delay-${(index % 4) + 1}`}
                 style={{
-                  background: isDark ? 'rgba(15, 23, 42, 0.65)' : '#ffffff',
-                  backdropFilter: 'blur(16px)',
-                  WebkitBackdropFilter: 'blur(16px)',
-                  border: `1px solid ${isDark ? palette.border : 'rgba(0,0,0,0.06)'}`,
+                  background: isAccent ? accentColor : surface,
+                  border: isAccent ? 'none' : `1px solid ${cardBorder}`,
                   borderRadius: 22,
-                  padding: '28px 22px',
+                  padding: '26px 24px',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'flex-start',
                   textAlign: 'left',
-                  boxShadow: isDark ? '0 8px 24px rgba(0,0,0,0.2)' : '0 8px 24px rgba(0,0,0,0.03)',
-                  transition: 'box-shadow 0.35s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.35s ease',
+                  boxShadow: 'none',
                   position: 'relative',
                   overflow: 'hidden',
                 }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = palette.accent;
-                  e.currentTarget.style.transform = 'translateY(-6px)';
-                  e.currentTarget.style.boxShadow = `0 16px 36px ${palette.glow}, 0 0 0 1px ${palette.accent}40`;
-                  const badge = e.currentTarget.querySelector('.skill-icon-badge') as HTMLElement;
-                  if (badge) {
-                    badge.style.transform = 'scale(1.1) rotate(5deg)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = isDark ? palette.border : 'rgba(0,0,0,0.06)';
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = isDark ? '0 8px 24px rgba(0,0,0,0.2)' : '0 8px 24px rgba(0,0,0,0.03)';
-                  const badge = e.currentTarget.querySelector('.skill-icon-badge') as HTMLElement;
-                  if (badge) {
-                    badge.style.transform = 'scale(1) rotate(0deg)';
-                  }
-                }}
               >
-                {/* Colorful top corner glow */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: -30,
-                    right: -30,
-                    width: 90,
-                    height: 90,
-                    borderRadius: '50%',
-                    background: palette.accent,
-                    opacity: 0.12,
-                    filter: 'blur(25px)',
-                    pointerEvents: 'none',
-                  }}
-                />
-
-                {/* Colorful Icon Badge */}
                 <div
                   className="skill-icon-badge"
                   style={{
-                    width: 50,
-                    height: 50,
-                    borderRadius: 16,
-                    background: palette.bg,
-                    border: `1px solid ${palette.border}`,
-                    color: palette.accent,
+                    width: 44,
+                    height: 44,
+                    minWidth: 44,
+                    minHeight: 44,
+                    aspectRatio: '1 / 1',
+                    flexShrink: 0,
+                    borderRadius: 14,
+                    background: isAccent ? 'rgba(255,255,255,0.22)' : tint,
+                    color: isAccent ? '#ffffff' : accentColor,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     marginBottom: 20,
-                    transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
                   }}
                 >
                   {skill.icon?.startsWith('http') ? (
-                    <img src={skill.icon} alt={skill.name} style={{ width: 24, height: 24, objectFit: 'contain' }} />
+                    <img src={skill.icon} alt={skill.name} style={{ width: 22, height: 22, objectFit: 'contain' }} />
                   ) : (
-                    <IconComponent size={24} />
+                    <IconComponent size={22} />
                   )}
                 </div>
 
@@ -310,17 +270,17 @@ const LPAbout: React.FC<LPAboutProps> = ({ bio, image, skills = [], isDark, acce
                   fontFamily: "'Outfit', sans-serif",
                   fontSize: 18,
                   fontWeight: 800,
-                  color: textColor,
+                  color: isAccent ? '#ffffff' : ink,
                   margin: '0 0 8px',
-                  letterSpacing: '-0.01em',
+                  letterSpacing: '-0.02em',
                 }}>
                   {skill.name}
                 </h3>
 
                 <p style={{
                   fontFamily: "'Inter', sans-serif",
-                  fontSize: 13.5,
-                  color: subTextColor,
+                  fontSize: 14,
+                  color: isAccent ? 'rgba(255,255,255,0.85)' : sub,
                   lineHeight: 1.6,
                   margin: 0,
                 }}>
@@ -332,10 +292,13 @@ const LPAbout: React.FC<LPAboutProps> = ({ bio, image, skills = [], isDark, acce
             <div style={{
               gridColumn: '1 / -1',
               textAlign: 'center',
-              color: subTextColor,
+              color: sub,
               padding: '40px 0',
               fontFamily: "'Inter', sans-serif",
               fontSize: 14,
+              background: surface,
+              border: `1px dashed ${cardBorder}`,
+              borderRadius: 22,
             }}>
               Belum ada layanan yang ditambahkan.
             </div>
@@ -347,7 +310,7 @@ const LPAbout: React.FC<LPAboutProps> = ({ bio, image, skills = [], isDark, acce
       <style>{`
         @media (max-width: 768px) {
           #about {
-            padding: 70px 18px !important;
+            padding: 56px 18px !important;
           }
         }
       `}</style>

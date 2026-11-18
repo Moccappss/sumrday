@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /api/
+Disallow: /lpimage/
+
+Sitemap: https://sumrday.web.app/sitemap.xml

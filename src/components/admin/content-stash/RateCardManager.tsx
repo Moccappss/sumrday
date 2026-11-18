@@ -4,9 +4,8 @@ import {
   Sparkles, CheckCircle2, Clock, RotateCcw, Share2, Tag, ArrowRight, ArrowLeft,
   MessageCircle, X, ChevronDown, LayoutGrid, Table, ShoppingBag, 
   ArrowUpRight, Link2, DollarSign, TrendingUp, Award, Zap, BarChart3, Palette,
-  Upload, Download, FileSpreadsheet
+  Upload, Download, FileSpreadsheet, Cloud
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import { storage } from '../../../utils/storage';
 import { 
   type RateCardPackage, 
@@ -1391,8 +1390,9 @@ export const RateCardManager: React.FC<RateCardManagerProps> = ({
   };
 
   // ── EXPORT BLANK TEMPLATE EXCEL (TIDAK MEMBAWA ISI PAKET LAMA) ──
-  const handleExportTemplate = () => {
+  const handleExportTemplate = async () => {
     try {
+      const XLSX = await import('xlsx');
       const headers = [
         'Nama Paket *',
         'Kategori *',
@@ -1461,6 +1461,7 @@ export const RateCardManager: React.FC<RateCardManagerProps> = ({
     if (!file) return;
 
     try {
+      const XLSX = await import('xlsx');
       const data = await file.arrayBuffer();
       const wb = XLSX.read(data, { type: 'array' });
       const firstSheetName = wb.SheetNames[0];
@@ -1638,6 +1639,33 @@ export const RateCardManager: React.FC<RateCardManagerProps> = ({
 
         {/* Action Header Buttons (Icon Only) */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const { syncRateCards } = await import('../../../utils/googleSync');
+                await syncRateCards(notify);
+              } catch (err: any) {
+                notify?.('Gagal sinkronisasi: ' + err.message, 'error');
+              }
+            }}
+            title="Sinkronkan ke Google Sheets"
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: '50%',
+              border: '1px solid var(--cms-border, rgba(255,255,255,0.15))',
+              background: 'var(--cms-switcher-bg, rgba(255,255,255,0.06))',
+              color: '#10b981',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <Cloud size={16} />
+          </button>
+
           <button
             type="button"
             onClick={() => setShowShareModal(true)}
@@ -3402,35 +3430,38 @@ export const RateCardManager: React.FC<RateCardManagerProps> = ({
         </div>
       )}
 
-      {/* ── MODAL TAMBAH/EDIT RATE CARD ── */}
+      {/* ── MODAL TAMBAH/EDIT RATE CARD (FIXED CONSISTENT DIMENSIONS) ── */}
       {showModal && (
         <div style={{
           position: 'fixed',
           inset: 0,
-          background: 'transparent',
+          background: 'rgba(2, 6, 23, 0.72)',
           backdropFilter: 'none',
           WebkitBackdropFilter: 'none',
           zIndex: 99999,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          padding: 20
+          padding: 16
         }} onClick={() => setShowModal(false)}>
           <div style={{
-            maxWidth: 560,
-            width: '100%',
+            width: 680,
+            maxWidth: 'calc(100vw - 32px)',
+            height: '82vh',
+            minHeight: 540,
+            maxHeight: 740,
             background: 'var(--cms-card-bg, #ffffff)',
             borderRadius: 22,
-            padding: '24px 26px',
+            padding: '20px 24px',
             display: 'flex',
             flexDirection: 'column',
-            gap: 16,
-            maxHeight: '90vh',
-            overflowY: 'auto',
-            boxShadow: '0 25px 70px rgba(0,0,0,0.35)',
-            border: '1.5px solid var(--cms-border, rgba(255,255,255,0.15))'
+            gap: 14,
+            overflow: 'hidden',
+            boxShadow: '0 24px 64px rgba(0,0,0,0.45)',
+            border: '1.5px solid var(--cms-border, rgba(255,255,255,0.15))',
+            boxSizing: 'border-box'
           }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, paddingBottom: 10, borderBottom: '1px solid var(--cms-border, rgba(255,255,255,0.08))' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div style={{
                   width: 32,
@@ -3470,7 +3501,7 @@ export const RateCardManager: React.FC<RateCardManagerProps> = ({
               </button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: 1, overflowY: 'auto', paddingRight: 4 }}>
               {/* Title (Paket) */}
               <div>
                 <label style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--cms-text-muted)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -4111,7 +4142,7 @@ export const RateCardManager: React.FC<RateCardManagerProps> = ({
             </div>
 
             {/* Modal Actions */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 10, borderTop: '1px solid var(--cms-border, rgba(255,255,255,0.08))', flexShrink: 0 }}>
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
@@ -4151,7 +4182,7 @@ export const RateCardManager: React.FC<RateCardManagerProps> = ({
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 6,
-                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
+                  boxShadow: 'none'
                 }}
               >
                 <Check size={14} strokeWidth={2.5} />

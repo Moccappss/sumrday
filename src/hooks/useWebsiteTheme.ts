@@ -71,12 +71,26 @@ export function getInitialWebsiteTheme(defaultMode?: 'light' | 'dark'): boolean 
   return defaultMode === 'dark';
 }
 
+let themeTransitionTimer: any = null;
+
+export function triggerSmoothThemeTransition() {
+  if (typeof document === 'undefined') return;
+  const root = document.documentElement;
+  root.classList.add('theme-transitioning');
+  if (themeTransitionTimer) clearTimeout(themeTransitionTimer);
+  themeTransitionTimer = setTimeout(() => {
+    root.classList.remove('theme-transitioning');
+  }, 170);
+}
+
 /**
  * Globally set and broadcast website theme to DOM, localStorage, and all React components + Cloud Sync
  */
 export function setGlobalWebsiteTheme(isDark: boolean, syncCloud = false) {
   if (typeof window === 'undefined') return;
   if (window.location.pathname.startsWith('/admin')) return;
+
+  triggerSmoothThemeTransition();
 
   const themeStr = isDark ? 'dark' : 'light';
   globalWebsiteThemeCache = isDark;
@@ -94,8 +108,8 @@ export function setGlobalWebsiteTheme(isDark: boolean, syncCloud = false) {
     
     // Also sync document.body styling
     if (document.body) {
-      document.body.style.backgroundColor = isDark ? '#08080f' : '#ffffff';
-      document.body.style.color = isDark ? '#f8fafc' : '#0f172a';
+      document.body.style.backgroundColor = isDark ? '#06070a' : '#eef2f6';
+      document.body.style.color = isDark ? '#ffffff' : '#0f172a';
     }
 
     notifySubscribers(isDark);
@@ -136,8 +150,8 @@ export function useWebsiteTheme(defaultMode?: 'light' | 'dark') {
         globalWebsiteThemeCache = next;
         document.documentElement.setAttribute('data-theme', next ? 'dark' : 'light');
         if (document.body) {
-          document.body.style.backgroundColor = next ? '#08080f' : '#ffffff';
-          document.body.style.color = next ? '#f8fafc' : '#0f172a';
+          document.body.style.backgroundColor = next ? '#06070a' : '#eef2f6';
+          document.body.style.color = next ? '#ffffff' : '#0f172a';
         }
         setIsDarkState(next);
         notifySubscribers(next);
@@ -170,8 +184,8 @@ export function useWebsiteTheme(defaultMode?: 'light' | 'dark') {
             document.documentElement.classList.remove('dark');
           }
           if (document.body) {
-            document.body.style.backgroundColor = savedDark ? '#08080f' : '#ffffff';
-            document.body.style.color = savedDark ? '#f8fafc' : '#0f172a';
+            document.body.style.backgroundColor = savedDark ? '#06070a' : '#eef2f6';
+            document.body.style.color = savedDark ? '#ffffff' : '#0f172a';
           }
         }
         if (isDark !== savedDark) {
@@ -183,6 +197,7 @@ export function useWebsiteTheme(defaultMode?: 'light' | 'dark') {
 
     const handleThemeChange = (e: Event) => {
       if (window.location.pathname.startsWith('/admin')) return;
+      triggerSmoothThemeTransition();
       const ce = e as CustomEvent<{ isDark: boolean }>;
       if (ce?.detail && typeof ce.detail.isDark === 'boolean') {
         globalWebsiteThemeCache = ce.detail.isDark;
@@ -197,6 +212,7 @@ export function useWebsiteTheme(defaultMode?: 'light' | 'dark') {
     const handleStorage = (e: StorageEvent) => {
       if (window.location.pathname.startsWith('/admin')) return;
       if (e.key === 'website_theme_override' && e.newValue) {
+        triggerSmoothThemeTransition();
         const nextDark = e.newValue === 'dark';
         globalWebsiteThemeCache = nextDark;
         document.documentElement.setAttribute('data-theme', nextDark ? 'dark' : 'light');

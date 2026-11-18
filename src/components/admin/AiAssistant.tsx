@@ -45,8 +45,14 @@ const AiAssistant = ({ isOpen, setIsOpen, pagesData, projects, canvases, globalS
   
   // Chat History & Sessions
   const [sessions, setSessions] = useState(() => {
-    const saved = localStorage.getItem('porto_ai_sessions');
-    return saved ? JSON.parse(saved) : [
+    try {
+      const saved = localStorage.getItem('porto_ai_sessions');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch { /* fallback to default session */ }
+    return [
       { id: 'default', title: 'Sesi Baru', messages: [
         { role: 'assistant', text: "Sistem Terhubung! Saya adalah AI Strategic Assistant Anda. Saya telah menganalisis ekosistem CMS Anda dan siap memberikan instruksi taktis. Ada yang bisa saya bantu?", type: 'text' }
       ]}

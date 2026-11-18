@@ -335,7 +335,7 @@ export const exportGameZip = async (options: GameExportOptions): Promise<void> =
   const rewrittenConfig: Record<string, any> = { ...activeConfig };
 
   // 2 & 3. Ekstrak URL Remote / Cloudinary, fetch Blob, dan rewrite ke path lokal
-  const urlKeysToProcess: (keyof GameVisualConfig)[] = [
+  const urlKeysToProcess: string[] = [
     'logoUrl',
     'heroBackgroundUrl',
     'bgmUrl',
@@ -344,7 +344,7 @@ export const exportGameZip = async (options: GameExportOptions): Promise<void> =
   ];
 
   for (const key of urlKeysToProcess) {
-    const remoteUrl = activeConfig[key];
+    const remoteUrl = (activeConfig as any)[key];
     if (remoteUrl && typeof remoteUrl === 'string' && (remoteUrl.startsWith('http://') || remoteUrl.startsWith('https://'))) {
       try {
         console.log(`[Export ZIP] Mengunduh aset: ${key} (${remoteUrl})`);

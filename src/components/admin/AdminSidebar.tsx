@@ -3,11 +3,12 @@ import { createPortal } from 'react-dom';
 import { 
   LayoutDashboard, Globe, Globe2, FolderKanban, Settings2, LogOut, 
   ExternalLink, Zap, StickyNote, Grid, Bell, ChevronLeft, ChevronRight, 
-  MessageSquareMore, ChevronDown, Database, Users, Download,
+  MessageSquareMore, Database, Users, Download, MessageCircle,
   Receipt, Search, Cloud, HardDrive, CheckCircle2, AlertCircle, FileText, RefreshCw,
-  Shield, WifiOff, Link2, QrCode, Megaphone, X, Calendar, History, Clock, ArrowRight,
+  Shield, ShieldCheck, WifiOff, Link2, QrCode, Megaphone, X, Calendar, History, Clock, ArrowRight,
   Star, Store, Layers, Gamepad2, LayoutGrid, Sun, Moon, Image as ImageIcon, Circle,
-  FileSpreadsheet, Fingerprint, Quote
+  FileSpreadsheet, Fingerprint, Quote, Activity, Compass, Sparkles, BookOpen,
+  LayoutTemplate, CloudLightning
 } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { auth } from '../../firebase';
@@ -16,22 +17,17 @@ import { storage } from '../../utils/storage';
 import { getUpdatedPages, clearPageUpdateDot, clearAllUpdateDots } from '../../utils/multiUserSync';
 import { triggerPwaInstall } from './AdminPwaSuggestion';
 import MediaGalleryModal from './MediaGalleryModal';
+import { haptic } from '../../utils/haptics';
 
 const NAV_SECTIONS = [
   {
-    title: 'Menu',
+    title: 'Navigasi Studio',
     items: [
-      { key: 'dashboard', label: 'Studio', icon: <LayoutDashboard size={22} strokeWidth={2} />, action: 'dashboard' },
-      { key: 'global-search', label: 'Search', icon: <Search size={22} strokeWidth={2} />, action: 'global-search' },
-      { key: 'visual-editor', label: 'Canvas', icon: <Globe2 size={22} strokeWidth={2} />, action: 'visual-editor' },
-      { key: 'content-database', label: 'Vault', icon: <Database size={22} strokeWidth={2} />, action: 'database', hasSub: true },
-      { key: 'builder', label: 'Blocks', icon: <Layers size={22} strokeWidth={2} />, action: 'home', hasSub: true },
-      { key: 'projects', label: 'Works', icon: <FolderKanban size={22} strokeWidth={2} />, action: 'projects' },
-      { key: 'notes', label: 'Notes', icon: <StickyNote size={22} strokeWidth={2} />, action: 'notes' },
-      { key: 'transactions', label: 'Finance', icon: <Receipt size={22} strokeWidth={2} />, action: 'transactions' },
-      { key: 'chat', label: 'Inbox', icon: <MessageSquareMore size={22} strokeWidth={2} />, action: 'chat' },
-      { key: 'users', label: 'Club', icon: <Users size={22} strokeWidth={2} />, action: 'users', superAdminOnly: true },
-      { key: 'settings', label: 'Settings', icon: <Settings2 size={22} strokeWidth={2} />, action: 'settings', hasSub: true },
+      { key: 'dashboard', label: 'Studio Hub', icon: <LayoutDashboard size={20} strokeWidth={2} />, action: 'dashboard' },
+      { key: 'management', label: 'Manajemen', icon: <FolderKanban size={20} strokeWidth={2} />, action: 'management' },
+      { key: 'content-database', label: 'Database', icon: <Database size={20} strokeWidth={2} />, action: 'database' },
+      { key: 'tools', label: 'Tool', icon: <Layers size={20} strokeWidth={2} />, action: 'tools' },
+      { key: 'settings', label: 'Setting', icon: <Settings2 size={20} strokeWidth={2} />, action: 'settings' },
     ]
   }
 ];
@@ -72,7 +68,6 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({
   ], [systemPages, pages]);
 
   const [unreadCount, setUnreadCount] = useState(0);
-  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [saveStatus, setSaveStatus] = useState('saved'); // 'saving' | 'saved' | 'error'
   const [lastSavedTime, setLastSavedTime] = useState(null);
@@ -87,6 +82,16 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({
     )
   ));
   const [showMediaVault, setShowMediaVault] = useState(false);
+  const [mediaVaultInitialTab, setMediaVaultInitialTab] = useState<'all' | 'image' | 'video' | 'unsplash' | 'logo-fetch'>('all');
+
+  useEffect(() => {
+    const handleOpenVault = (e: any) => {
+      if (e.detail?.tab) setMediaVaultInitialTab(e.detail.tab);
+      setShowMediaVault(true);
+    };
+    window.addEventListener('porto_open_media_vault', handleOpenVault);
+    return () => window.removeEventListener('porto_open_media_vault', handleOpenVault);
+  }, []);
   const [isExpanded, setIsExpanded] = useState(() => {
     const saved = localStorage.getItem('cms_sidebar_expanded');
     if (saved === null) return window.innerWidth > 1200;
@@ -104,8 +109,8 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({
     if (typeof window === 'undefined') return;
     if (window.innerWidth < 768) {
       setFlyoutPos({
-        left: 16,
-        bottom: 96
+        left: Math.round(window.innerWidth / 2),
+        bottom: 82
       });
       return;
     }
@@ -125,7 +130,7 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({
     }
   }, []);
 
-  const toggleCollapsedTools = useCallback(() => {
+  const toggleCollapsedTools = useCallback(() => { haptic.light();
     calculateFlyoutPos();
     setShowCollapsedTools(prev => !prev);
   }, [calculateFlyoutPos]);
@@ -202,6 +207,14 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({
     window.dispatchEvent(new Event('porto_open_sync_modal'));
   }, []);
 
+  const [mobilePanelMode, setMobilePanelMode] = useState<'menu' | 'tools'>('menu');
+
+  useEffect(() => {
+    if (!isExpanded) {
+      setMobilePanelMode('menu');
+    }
+  }, [isExpanded]);
+
   const [sidebarConfig, setSidebarConfig] = useState(() => ({
     style: globalSettings?.sidebarConfig?.style || 'floating',
     density: globalSettings?.sidebarConfig?.density || 'comfortable',
@@ -234,7 +247,7 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({
         if (hidden.includes(item.key)) return false;
         if (userData.role === 'Super Admin') return true;
         if (item.key === 'users' || item.key === 'storage') return false;
-        if (item.key === 'global-search') return true;
+        if (item.key === 'global-search' || item.key === 'builder' || item.key === 'management' || item.key === 'tools' || item.key === 'content-database') return true;
         const checkKey = item.key === 'builder' ? 'pages' : (item.key === 'content-database' ? 'database' : item.key);
         return (userData.allowedPages || []).includes(checkKey);
       });
@@ -244,11 +257,6 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({
   }, [userData, globalSettings, sidebarConfig]);
 
   const isExpandedRef = React.useRef(isExpanded);
-  useEffect(() => {
-    isExpandedRef.current = isExpanded;
-    localStorage.setItem('cms_sidebar_expanded', isExpanded);
-    window.dispatchEvent(new CustomEvent('cms_sidebar_toggle', { detail: { isExpanded } }));
-  }, [isExpanded]);
 
   useEffect(() => {
     // If globalSettings prop is passed and has branding, use it immediately
@@ -271,7 +279,11 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({
       setCmsBranding({ name: s.cmsName || 'sumr.day OS', logoIcon: s.cmsLogo || null });
     };
     window.addEventListener('porto_saved', loadBranding);
-    return () => window.removeEventListener('porto_saved', loadBranding);
+    window.addEventListener('porto_logo_updated', loadBranding);
+    return () => {
+      window.removeEventListener('porto_saved', loadBranding);
+      window.removeEventListener('porto_logo_updated', loadBranding);
+    };
   }, [globalSettings]);
 
   useEffect(() => {
@@ -319,7 +331,7 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({
     return () => unsub();
   }, []);
 
-  const handleNavClick = (item: any) => {
+  const handleNavClick = (item: any) => { haptic.selection();
     window.dispatchEvent(new CustomEvent('porto_close_search'));
     clearPageUpdateDot(item.key);
     if (item.action === 'media-vault') {
@@ -327,137 +339,376 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({
       if (window.innerWidth < 1200) setIsExpanded(false);
       return;
     }
-    if (item.hasSub) {
-      if (!isExpanded) {
-        // Mode ciut: hanya berpindah ke halaman utama tanpa membuka submenu agar ikon tetap rapi
-        if (item.key === 'content-database') {
-          onSwitchPage('database');
-        } else if (item.key === 'builder') {
-          onSwitchPage('home');
-        } else if (item.action) {
-          onSwitchPage(item.action);
-        }
-        return;
-      }
-      if (item.key === 'content-database') {
-        onSwitchPage('database');
-        toggleSub(item.key);
-      } else if (item.key === 'builder') {
-        onSwitchPage('home');
-        toggleSub(item.key);
-      } else if (item.action === 'settings') {
-        onSwitchPage('settings');
-        toggleSub(item.key);
-      } else {
-        if (item.action) onSwitchPage(item.action);
-        toggleSub(item.key);
-      }
-      if (window.innerWidth < 1200) {
-        setIsExpanded(false);
-      }
-      return;
-    }
     if (!item.action) return;
     onSwitchPage(item.action === 'builder' ? 'home' : item.action);
     if (window.innerWidth < 1200) setIsExpanded(false);
   };
 
-  const toggleSub = (key: string) => {
-    if (!isExpanded) return; // Mode ciut: cegah buka submenu
-    setExpandedItems(prev => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  // Reset submenu saat sidebar menciut sehingga saat dilebarkan tidak terbuka otomatis
-  useEffect(() => {
-    if (!isExpanded) {
-      setExpandedItems({});
-    }
-  }, [isExpanded]);
-
   const isActive = (item: any) => {
     if (item.key === 'media-vault') return showMediaVault;
 
     if (item.key === 'dashboard') {
-      return activePage === 'dashboard';
+      return ['dashboard', 'analytics', 'intelligence', 'traffic'].includes(activePage) || (activePage?.startsWith('analytics/') ?? false);
     }
 
-    if (item.key === 'global-search') {
-      return activePage === 'global-search';
-    }
-
-    if (item.key === 'visual-editor') {
-      return activePage === 'visual-editor' || activePage === 'website' || (activePage?.startsWith('visual-editor/') ?? false) || (activePage?.startsWith('website/') ?? false);
+    if (item.key === 'management') {
+      return [
+        'management', 'projects', 'proofing', 'design-proofing', 
+        'transactions', 'keuangan', 'whatsapp', 'wa', 'chat', 'users',
+        'booking', 'schedule', 'calendar'
+      ].includes(activePage) || 
+      (activePage?.startsWith('projects/') ?? false) || 
+      (activePage?.startsWith('proofing/') ?? false) || 
+      (activePage?.startsWith('transactions/') ?? false) || 
+      (activePage?.startsWith('whatsapp/') ?? false) || 
+      (activePage?.startsWith('chat/') ?? false) ||
+      (activePage?.startsWith('booking/') ?? false);
     }
 
     if (item.key === 'content-database') {
       return [
-        'database', 'portfolio', 'karya', 'blog', 'catalog', 'katalog', 
-        'apps', 'apps-studio', 'game-management', 'games', 
+        'database', 'content-database', 
+        'portfolio', 'karya', 'catalog', 'katalog', 'blog', 'apps', 'games', 'game-management',
         'forms', 'form-maker', 'database_forms', 
         'biodata', 'database_biodata', 
         'contacts', 'database_contacts', 
         'links', 'database_links', 
         'broadcast', 'database_broadcast', 'push',
         'media', 'vault', 'reviews', 'client-voice', 'ratecard', 'pricing'
-      ].includes(activePage) || (activePage?.startsWith('database/') ?? false) || (activePage?.startsWith('forms/') ?? false) || (activePage?.startsWith('blog/') ?? false) || (activePage?.startsWith('catalog/') ?? false);
+      ].includes(activePage) || 
+      (activePage?.startsWith('database/') ?? false) || 
+      (activePage?.startsWith('portfolio/') ?? false) || 
+      (activePage?.startsWith('forms/') ?? false) || 
+      (activePage?.startsWith('apps/') ?? false);
     }
 
-    if (item.key === 'projects') {
-      return activePage === 'projects' || (activePage?.startsWith('projects/') ?? false);
+    if (item.key === 'analytics') {
+      return ['analytics', 'intelligence', 'traffic'].includes(activePage) || (activePage?.startsWith('analytics/') ?? false);
     }
 
-    if (item.key === 'notes') {
-      return ['notes', 'memo', 'whiteboard'].includes(activePage) || (activePage?.startsWith('notes/') ?? false);
-    }
-
-    if (item.key === 'transactions') {
-      return ['transactions', 'keuangan'].includes(activePage) || (activePage?.startsWith('transactions/') ?? false);
-    }
-
-    if (item.key === 'chat') {
-      return activePage === 'chat' || (activePage?.startsWith('chat/') ?? false);
-    }
-
-    if (item.key === 'users') {
-      return activePage === 'users';
+    if (item.key === 'tools') {
+      return [
+        'tools', 'tool', 'flipbook', 'flipbook-studio', 
+        'notes', 'memo', 'whiteboard', 'visual-editor', 'website', 'qr', 'broadcast',
+        'builder', 'lpimage', 'home',
+        'poster-promo', 'poster', 'studio-poster'
+      ].includes(activePage) || 
+      (activePage?.startsWith('flipbook/') ?? false) || 
+      (activePage?.startsWith('notes/') ?? false) || 
+      (activePage?.startsWith('visual-editor/') ?? false) || 
+      (activePage?.startsWith('website/') ?? false) ||
+      (activePage?.startsWith('lpimage/') ?? false) ||
+      (activePage?.startsWith('poster-promo') ?? false) ||
+      (activePage?.startsWith('page-') ?? false) ||
+      allBuilderPages.some(p => p.slug === activePage);
     }
 
     if (item.key === 'settings' || item.action === 'settings') {
-      return activePage === 'settings' || (activePage?.startsWith('settings_') ?? false) || (activePage?.startsWith('settings/') ?? false) || activePage === 'storage';
-    }
-
-    if (item.key === 'builder') {
-      const isDb = [
-        'database', 'portfolio', 'karya', 'blog', 'catalog', 'katalog', 
-        'apps', 'apps-studio', 'game-management', 'games', 
-        'forms', 'form-maker', 'database_forms', 
-        'biodata', 'database_biodata', 
-        'contacts', 'database_contacts', 
-        'links', 'database_links', 
-        'broadcast', 'database_broadcast', 'push',
-        'media', 'vault', 'reviews', 'client-voice', 'ratecard', 'pricing'
-      ].includes(activePage) || (activePage?.startsWith('database/') ?? false);
-      if (isDb) return false;
-
-      if (['dashboard', 'global-search', 'visual-editor', 'website', 'projects', 'notes', 'memo', 'whiteboard', 'transactions', 'keuangan', 'chat', 'users', 'storage'].includes(activePage) || (activePage?.startsWith('settings') ?? false)) {
-        return false;
-      }
-
-      return activePage === 'builder' || activePage === 'home' || activePage === 'lpimage' || (activePage?.startsWith('lpimage/') ?? false) || allBuilderPages.some(p => p.slug === activePage) || (activePage?.startsWith('page-') ?? false);
+      return [
+        'settings', 'guideline', 'guide', 'panduan', 'storage'
+      ].includes(activePage) || 
+      (activePage?.startsWith('settings_') ?? false) || 
+      (activePage?.startsWith('settings/') ?? false);
     }
 
     return item.action === activePage;
   };
 
   return (
-    <aside className={`admin-sidebar ${isExpanded ? 'expanded' : 'collapsed'} sb-theme-${sidebarConfig.style || 'floating'} sb-density-${sidebarConfig.density || 'comfortable'}`}>
+    <aside
+      className={`admin-sidebar ${isExpanded ? 'expanded' : 'collapsed'} sb-theme-${sidebarConfig.style || 'floating'} sb-density-${sidebarConfig.density || 'comfortable'}`}
+      onTouchStart={(e) => {
+        if (typeof window !== 'undefined' && window.innerWidth < 768 && e.touches.length === 1) {
+          (e.currentTarget as any)._touchStartY = e.touches[0].clientY;
+        }
+      }}
+      onTouchEnd={(e) => {
+        const startY = (e.currentTarget as any)._touchStartY;
+        if (typeof startY === 'number' && e.changedTouches.length === 1) {
+          const deltaY = e.changedTouches[0].clientY - startY;
+          (e.currentTarget as any)._touchStartY = null;
+          if (deltaY > 52 && isExpanded) {
+            haptic.light();
+            setIsExpanded(false);
+          }
+        }
+      }}
+    >
+      <div
+        className="sb-mobile-sheet-handle"
+        onClick={() => {
+          haptic.light();
+          setIsExpanded(false);
+        }}
+      >
+        <div className="sb-mobile-sheet-handle-bar" />
+      </div>
 
       {/* ── Brand Header (Disembunyikan sementara sesuai permintaan user) ── */}
       {/* <div className="sb-header">...</div> */}
-      <div style={{ height: 14 }} />
+      <div className="sb-top-spacer" style={{ height: 14 }} />
 
-      {/* ── Navigation ── */}
-      <nav className="sb-nav">
+      {/* ── Mobile Quick Control Panel (Pusat Kontrol Cepat: HANYA IKON TANPA LABEL, baru muncul saat klik lingkaran) ── */}
+      {mobilePanelMode === 'tools' && (
+        <div 
+          className="sb-mobile-control-panel"
+          style={{
+            margin: '0 4px 14px 4px',
+            padding: '12px 14px',
+            borderRadius: 20,
+            background: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
+            border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+            animation: 'cmsPopIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, padding: '0 2px' }}>
+            <button
+              type="button"
+              onClick={() => setMobilePanelMode('menu')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--cms-accent, #6366f1)',
+                fontSize: 12,
+                fontWeight: 800,
+                cursor: 'pointer',
+                padding: 0
+              }}
+            >
+              <ChevronLeft size={16} />
+              <span>Kembali ke Menu</span>
+            </button>
+            <span style={{ fontSize: 10.5, fontWeight: 800, color: syncMode === 'auto' ? '#10b981' : '#f59e0b', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: syncMode === 'auto' ? '#10b981' : '#f59e0b' }} />
+              {syncMode === 'auto' ? 'Cloud Aktif' : 'Mode Hemat'}
+            </span>
+          </div>
+
+          {/* 8 Action Tiles (4 x 2 Grid) - PURE ICONS NO LABELS */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+            {/* 1. EcoHub */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                window.dispatchEvent(new CustomEvent('porto_open_quick_drawer', { detail: { type: 'ecohub' } }));
+                if (window.innerWidth < 768) setIsExpanded(false);
+              }}
+              title="Studio EcoHub & Monitoring"
+              aria-label="EcoHub"
+              style={{
+                height: 48,
+                borderRadius: 14,
+                border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid #e2e8f0',
+                background: isDark ? 'rgba(56, 189, 248, 0.12)' : 'rgba(56, 189, 248, 0.08)',
+                color: '#38bdf8',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+              }}
+            >
+              <Cloud size={20} />
+            </button>
+
+            {/* 2. Multitask Hub */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                window.dispatchEvent(new CustomEvent('porto_open_quick_drawer', { detail: { type: 'shortcuts' } }));
+                if (window.innerWidth < 768) setIsExpanded(false);
+              }}
+              title="Multitask Hub & Pintasan Cepat"
+              aria-label="Multitask"
+              style={{
+                height: 48,
+                borderRadius: 14,
+                border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid #e2e8f0',
+                background: isDark ? 'rgba(168, 85, 247, 0.12)' : 'rgba(168, 85, 247, 0.08)',
+                color: '#c084fc',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+              }}
+            >
+              <LayoutGrid size={20} />
+            </button>
+
+            {/* 3. Sync Mode */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                cycleSyncMode();
+              }}
+              title={saveStatus === 'saving' ? 'Menyimpan...' : syncMode === 'auto' ? 'Mode Otomatis' : syncMode === 'manual' ? 'Mode Hemat' : 'Mode Offline'}
+              aria-label="Sinkronisasi"
+              style={{
+                height: 48,
+                borderRadius: 14,
+                border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid #e2e8f0',
+                background: isDark ? 'rgba(16, 185, 129, 0.12)' : 'rgba(16, 185, 129, 0.08)',
+                color: syncMode === 'auto' ? '#10b981' : '#f59e0b',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+              }}
+            >
+              {saveStatus === 'saving' ? <RefreshCw size={20} className="cms-spin" /> : syncMode === 'auto' ? <Zap size={20} /> : syncMode === 'manual' ? <Shield size={20} /> : <WifiOff size={20} />}
+            </button>
+
+            {/* 4. Notifikasi */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                window.dispatchEvent(new Event('porto_toggle_notifications'));
+                if (window.innerWidth < 768) setIsExpanded(false);
+              }}
+              title={unreadCount > 0 ? `${unreadCount} Notifikasi Baru` : 'Pusat Notifikasi'}
+              aria-label="Notifikasi"
+              style={{
+                position: 'relative',
+                height: 48,
+                borderRadius: 14,
+                border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid #e2e8f0',
+                background: isDark ? 'rgba(255, 255, 255, 0.08)' : '#f8fafc',
+                color: isDark ? '#f8fafc' : '#0f172a',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+              }}
+            >
+              <Bell size={20} />
+              {unreadCount > 0 && <span className="sb-notif-dot" style={{ top: 8, right: 8 }} />}
+            </button>
+
+            {/* 5. PWA Install */}
+            <button
+              type="button"
+              onClick={async (e) => {
+                e.stopPropagation();
+                await triggerPwaInstall();
+                if (window.innerWidth < 768) setIsExpanded(false);
+              }}
+              title={isStandalone ? 'Aplikasi Web Telah Terpasang' : 'Instal Aplikasi (PWA)'}
+              aria-label="Instal Aplikasi"
+              style={{
+                height: 48,
+                borderRadius: 14,
+                border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid #e2e8f0',
+                background: isDark ? 'rgba(255, 255, 255, 0.08)' : '#f8fafc',
+                color: isStandalone ? '#10b981' : 'var(--cms-accent, #7c3aed)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+              }}
+            >
+              <Download size={20} />
+            </button>
+
+            {/* 6. Mode Terang / Gelap */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onToggleDarkMode) onToggleDarkMode();
+                else window.dispatchEvent(new Event('cms_toggle_dark_mode'));
+              }}
+              title={(isDarkMode !== undefined ? isDarkMode : (localStorage.getItem('cms_dark_mode') !== 'false')) ? 'Ganti ke Mode Terang' : 'Ganti ke Mode Gelap'}
+              aria-label="Mode Gelap / Terang"
+              style={{
+                height: 48,
+                borderRadius: 14,
+                border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid #e2e8f0',
+                background: isDark ? 'rgba(255, 255, 255, 0.08)' : '#f8fafc',
+                color: (isDarkMode !== undefined ? isDarkMode : (localStorage.getItem('cms_dark_mode') !== 'false')) ? '#f59e0b' : '#6366f1',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+              }}
+            >
+              {(isDarkMode !== undefined ? isDarkMode : (localStorage.getItem('cms_dark_mode') !== 'false')) ? (
+                <Sun size={20} strokeWidth={2.2} />
+              ) : (
+                <Moon size={20} strokeWidth={2.2} />
+              )}
+            </button>
+
+            {/* 7. Website Publik */}
+            <a
+              href="/"
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => { if (window.innerWidth < 768) setIsExpanded(false); }}
+              title="Buka Website Publik (/)"
+              aria-label="Lihat Situs"
+              style={{
+                height: 48,
+                borderRadius: 14,
+                border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid #e2e8f0',
+                background: isDark ? 'rgba(255, 255, 255, 0.08)' : '#f8fafc',
+                color: 'var(--cms-text, #f8fafc)',
+                textDecoration: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+              }}
+            >
+              <ExternalLink size={20} />
+            </a>
+
+            {/* 8. Keluar */}
+            <button
+              type="button"
+              onClick={async (e) => {
+                e.stopPropagation();
+                if (window.innerWidth < 768) setIsExpanded(false);
+                try { await storage.clearLocalCache(); } catch (err) {}
+                await signOut(auth);
+                if (onSignOut) onSignOut();
+              }}
+              title="Keluar dari Akun"
+              aria-label="Keluar"
+              style={{
+                height: 48,
+                borderRadius: 14,
+                border: '1px solid rgba(239,68,68,0.25)',
+                background: 'rgba(239,68,68,0.1)',
+                color: '#ef4444',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+              }}
+            >
+              <LogOut size={20} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Navigation (menciut / disembunyikan saat mode tools aktif) ── */}
+      {mobilePanelMode === 'menu' && (
+        <nav className="sb-nav">
         {filteredNavSections.map((section, sIdx) => (
           <div key={section.title} className="sb-section">
             {sidebarConfig.showSectionHeaders !== false && (
@@ -466,7 +717,6 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({
             {sIdx > 0 && <div className="sb-divider" />}
 
             {section.items.map((item) => {
-              const isSubOpen = isExpanded && !!expandedItems[item.key];
               const active = isActive(item);
               const hasDot = updatedPages[item.key] || 
                 (item.key === 'builder' && (updatedPages['builder'] || allBuilderPages.some(p => updatedPages[p.slug]))) ||
@@ -487,138 +737,16 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({
                       )}
                     </span>
                     <span className="sb-label">{item.label}</span>
-                    {item.hasSub && (
-                      <span 
-                        className="sb-chevron"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleSub(item.key);
-                        }}
-                      >
-                        {isSubOpen
-                          ? <ChevronDown size={12} strokeWidth={2.5} />
-                          : <ChevronRight size={12} strokeWidth={2.5} />}
-                      </span>
-                    )}
                   </button>
-
-                  {/* Database submenu */}
-                  {item.hasSub && isSubOpen && item.key === 'content-database' && (
-                    <div className="sb-submenu">
-                      {[
-                        { id: 'portfolio', label: 'Karya', icon: <Star size={18} strokeWidth={2.2} /> },
-                        { id: 'blog', label: 'Journal', icon: <FileText size={18} strokeWidth={2.2} /> },
-                        { id: 'catalog', label: 'Drops', icon: <Store size={18} strokeWidth={2.2} /> },
-                        { id: 'apps', label: 'Apps', icon: <LayoutGrid size={18} strokeWidth={2.2} /> },
-                        { id: 'forms', label: 'Forms', icon: <FileSpreadsheet size={18} strokeWidth={2.2} /> },
-                        { id: 'links', label: 'Links', icon: <Link2 size={18} strokeWidth={2.2} /> },
-                        { id: 'broadcast', label: 'Waves', icon: <Megaphone size={18} strokeWidth={2.2} /> },
-                        { id: 'biodata', label: 'Bio', icon: <Fingerprint size={18} strokeWidth={2.2} /> },
-                        { id: 'contacts', label: 'Socials', icon: <Globe size={18} strokeWidth={2.2} /> },
-                        { id: 'media', label: 'Media', icon: <ImageIcon size={18} strokeWidth={2.2} /> },
-                        { id: 'reviews', label: 'Cheers', icon: <Quote size={18} strokeWidth={2.2} /> },
-                        { id: 'ratecard', label: 'Rates', icon: <Receipt size={18} strokeWidth={2.2} /> },
-                      ].map((sub) => {
-                        const isSubActive = activePage === sub.id || 
-                          (sub.id === 'portfolio' && activePage === 'karya') || 
-                          (sub.id === 'catalog' && activePage === 'katalog') ||
-                          (sub.id === 'apps' && (activePage === 'apps' || activePage === 'apps-studio' || activePage === 'game-management' || activePage === 'games')) ||
-                          (sub.id === 'blog' && (activePage?.startsWith('blog') ?? false)) ||
-                          (sub.id === 'forms' && (activePage === 'forms' || activePage === 'form-maker' || activePage === 'database_forms')) ||
-                          (sub.id === 'links' && (activePage === 'links' || (activePage?.startsWith('links/') ?? false))) ||
-                          (sub.id === 'broadcast' && (activePage === 'broadcast' || (activePage?.startsWith('broadcast/') ?? false))) ||
-                          (sub.id === 'biodata' && (activePage === 'biodata' || activePage === 'database_biodata')) ||
-                          (sub.id === 'contacts' && (activePage === 'contacts' || activePage === 'database_contacts')) ||
-                          (sub.id === 'media' && (activePage === 'media' || activePage === 'vault')) ||
-                          (sub.id === 'reviews' && (activePage === 'reviews' || activePage === 'client-voice')) ||
-                          (sub.id === 'ratecard' && (activePage === 'ratecard' || activePage === 'pricing'));
-                        return (
-                          <button
-                            key={sub.id}
-                            type="button"
-                            onClick={() => {
-                              window.dispatchEvent(new CustomEvent('porto_close_search'));
-                              onSwitchPage(sub.id);
-                              if (window.innerWidth < 1200) setIsExpanded(false);
-                            }}
-                            className={`sb-sub-item ${isSubActive ? 'active' : ''}`}
-                            style={{ 
-                              display: 'flex', 
-                              alignItems: 'center', 
-                              gap: 10,
-                              fontSize: 13,
-                              fontWeight: isSubActive ? 800 : 700,
-                              padding: '8px 12px 8px 14px'
-                            }}
-                          >
-                            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, flexShrink: 0, opacity: isSubActive ? 1 : 0.85 }}>
-                              {sub.icon}
-                            </span>
-                            <span>{sub.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Builder submenu */}
-                  {item.hasSub && isSubOpen && item.key === 'builder' && (
-                    <div className="sb-submenu">
-                      {allBuilderPages.map((p) => (
-                        <button key={p.slug}
-                          onClick={() => { 
-                            window.dispatchEvent(new CustomEvent('porto_close_search'));
-                            clearPageUpdateDot(p.slug);
-                            onSwitchPage(p.slug); 
-                            setIsExpanded(false); 
-                          }}
-                          className={`sb-sub-item ${activePage === p.slug ? 'active' : ''}`}
-                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <span>{p.name}</span>
-                          {updatedPages[p.slug] && (
-                            <span className="cms-update-dot" style={{ width: 6, height: 6, minWidth: 6, minHeight: 6 }} />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Settings submenu */}
-                  {item.hasSub && isSubOpen && item.key === 'settings' && (
-                    <div className="sb-submenu">
-                      {[
-                        { id: 'branding', label: 'Vibe' },
-                        { id: 'access_lock', label: 'Security' },
-                        { id: 'storage', label: 'Storage' },
-                        { id: 'cloud', label: 'Sync', superAdminOnly: true },
-                        { id: 'security', label: 'Access' }
-                      ].map((s) => {
-                        if (s.superAdminOnly && userData?.role !== 'Super Admin') return null;
-                        return (
-                        <button key={s.id}
-                          type="button"
-                          onClick={() => { 
-                            window.dispatchEvent(new CustomEvent('porto_close_search'));
-                            clearPageUpdateDot('settings');
-                            onSwitchPage(`settings_${s.id}`); 
-                            window.dispatchEvent(new CustomEvent('cms_open_settings_category', { detail: { category: s.id } }));
-                            if (window.innerWidth < 1200) setIsExpanded(false); 
-                          }}
-                          className={`sb-sub-item ${activePage === `settings_${s.id}` || activePage === `settings/${s.id}` || (s.id === 'storage' && activePage === 'storage') ? 'active' : ''}`}>
-                          <span>{s.label}</span>
-                        </button>
-                        );
-                      })}
-                    </div>
-                  )}
                 </div>
               );
             })}
           </div>
         ))}
       </nav>
+      )}
 
-      {/* ── Footer / System Action Area (Desktop: column, Mobile: row side-by-side) ── */}
+      {/* ── Footer / System Action Area ── */}
       <div 
         className="sb-footer" 
         style={{ 
@@ -628,15 +756,25 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({
           boxSizing: 'border-box'
         }}
       >
-        {/* 1. Standalone Prominent Ring Circle Tool Button (DI ATAS) */}
+        {/* 1. Standalone Prominent Ring Circle Tool Button */}
         <button 
           ref={toolBtnRef}
           type="button"
-          className={`sb-item sb-footer-tool-btn ${showCollapsedTools ? 'active' : ''}`}
-          title="Tools"
+          className={`sb-item sb-footer-tool-btn ${(showCollapsedTools || mobilePanelMode === 'tools') ? 'active' : ''}`}
+          title={!isExpanded ? "Tools & Pengaturan Cepat" : undefined}
+          aria-label="Tools"
           onClick={(e) => {
             e.stopPropagation();
-            toggleCollapsedTools();
+            if (typeof window !== 'undefined' && window.innerWidth < 768) {
+              if (!isExpanded) {
+                setIsExpanded(true);
+                setMobilePanelMode('tools');
+              } else {
+                setMobilePanelMode(prev => prev === 'tools' ? 'menu' : 'tools');
+              }
+            } else {
+              toggleCollapsedTools();
+            }
           }}
           style={{
             border: 'none',
@@ -644,17 +782,52 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({
             color: showCollapsedTools ? 'var(--cms-accent, #7c3aed)' : 'var(--cms-text)',
             cursor: 'pointer',
             boxShadow: 'none',
-            transition: 'background 0.15s ease, color 0.15s ease'
+            transition: 'background 0.15s ease, color 0.15s ease',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-start',
+            padding: '0 14px'
           }}
         >
-          <span className="sb-icon" style={{ position: 'relative' }}>
+          <span className="sb-icon" style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: 0 }}>
             <Circle size={22} strokeWidth={2.4} />
             {unreadCount > 0 && <span className="sb-notif-dot" style={{ top: -2, right: -2 }} />}
           </span>
           <span className="sb-label">Tools</span>
         </button>
 
-        {/* 2. Collapse / Expand Sidebar Button (DI BAWAH) */}
+        {/* 2. Direct Search Button */}
+        <button
+          type="button"
+          className="sb-item sb-footer-search-btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            onSwitchPage('global-search');
+          }}
+          title={!isExpanded ? "Pencarian Global (Ctrl+K)" : undefined}
+          aria-label="Pencarian Global (Ctrl+K)"
+          style={{
+            border: 'none',
+            background: 'transparent',
+            color: 'var(--sb-text)',
+            cursor: 'pointer',
+            boxShadow: 'none',
+            transition: 'background 0.15s ease, color 0.15s ease',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-start',
+            padding: '0 14px'
+          }}
+        >
+          <span className="sb-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', margin: 0, color: 'var(--sb-text)' }}>
+            <Search size={20} strokeWidth={2.2} />
+          </span>
+          <span className="sb-label">
+            Pencarian
+          </span>
+        </button>
+
+        {/* 3. Collapse / Expand Sidebar Button */}
         <button 
           type="button"
           className="sb-item sb-footer-collapse-btn"
@@ -662,29 +835,35 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({
             setShowCollapsedTools(false);
             setIsExpanded(prev => !prev);
           }}
-          title={!isExpanded ? "Expand" : "Collapse"}
+          title={!isExpanded ? "Perluas Sidebar" : "Ciutkan Sidebar"}
+          aria-label={!isExpanded ? "Perluas Sidebar" : "Ciutkan Sidebar"}
           style={{
             border: 'none',
-            background: 'transparent',
-            color: 'var(--cms-text-muted)',
+            background: 'var(--cms-accent-soft, rgba(217, 86, 41, 0.15))',
+            color: 'var(--cms-text)',
             cursor: 'pointer',
             boxShadow: 'none',
-            transition: 'background 0.15s ease, color 0.15s ease'
+            transition: 'background 0.15s ease, color 0.15s ease',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-start',
+            padding: '0 14px'
           }}
         >
-          <span className="sb-icon">
+          <span className="sb-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', margin: 0 }}>
             {isExpanded ? (
               <ChevronLeft size={20} strokeWidth={2.2} />
             ) : (
               <ChevronRight size={20} strokeWidth={2.2} />
             )}
           </span>
-          <span className="sb-label">Collapse</span>
+          <span className="sb-label">
+            {isExpanded ? 'Ciutkan' : 'Perluas'}
+          </span>
         </button>
 
-
-            {/* Vertical Flyout Modal Menu rendered via createPortal to document.body */}
-            {showCollapsedTools && flyoutPos && typeof document !== 'undefined' && createPortal(
+            {/* Horizontal Icon-Only Flyout Dock Modal */}
+            {showCollapsedTools && flyoutPos && typeof document !== 'undefined' && typeof window !== 'undefined' && window.innerWidth >= 768 && createPortal(
               <>
                 {/* 1. Backdrop Overlay for tapping outside */}
                 <div 
@@ -700,82 +879,126 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({
                   style={{
                     position: 'fixed',
                     inset: 0,
-                    zIndex: 2147483649,
+                    zIndex: 2147483640,
                     background: typeof window !== 'undefined' && window.innerWidth < 768 ? 'rgba(0, 0, 0, 0.45)' : 'transparent',
                     backdropFilter: typeof window !== 'undefined' && window.innerWidth < 768 ? 'blur(4px)' : 'none',
                     WebkitBackdropFilter: typeof window !== 'undefined' && window.innerWidth < 768 ? 'blur(4px)' : 'none',
                   }}
                 />
 
-                {/* 2. Elevated Flyout Popup */}
+                {/* 2. Elevated Flyout Popup: Pure Icon-Only Toolbar */}
                 <div 
                   ref={flyoutMenuRef}
                   className="sb-flyout-popup"
                   onClick={(e) => e.stopPropagation()}
                   style={{ 
                     position: 'fixed', 
-                    left: typeof window !== 'undefined' && window.innerWidth < 768 ? 16 : flyoutPos.left, 
-                    right: typeof window !== 'undefined' && window.innerWidth < 768 ? 16 : 'auto', 
-                    bottom: typeof window !== 'undefined' && window.innerWidth < 768 ? 96 : flyoutPos.bottom, 
-                    maxWidth: typeof window !== 'undefined' && window.innerWidth < 768 ? 380 : 'none',
-                    margin: typeof window !== 'undefined' && window.innerWidth < 768 ? '0 auto' : '0',
-                    zIndex: 2147483650,
-                    background: 'var(--cms-card-bg, #ffffff)', 
+                    left: typeof window !== 'undefined' && window.innerWidth < 768 ? '50%' : flyoutPos.left, 
+                    right: 'auto', 
+                    bottom: typeof window !== 'undefined' && window.innerWidth < 768 ? 82 : flyoutPos.bottom, 
+                    transform: typeof window !== 'undefined' && window.innerWidth < 768 ? 'translate(-50%, 0)' : 'none',
+                    zIndex: 2147483641,
+                    background: isDark ? 'var(--cms-card-bg, #171824)' : '#ffffff', 
                     backdropFilter: 'blur(24px)',
                     WebkitBackdropFilter: 'blur(24px)',
-                    border: '1.5px solid var(--cms-border, rgba(0,0,0,0.12))', 
+                    border: isDark ? '1.5px solid var(--cms-border, rgba(255,255,255,0.14))' : '1.5px solid #e2e8f0', 
                     borderRadius: 20, 
-                    boxShadow: '0 20px 60px rgba(0,0,0,0.35), 0 4px 16px rgba(0,0,0,0.12)', 
-                    padding: '10px 8px', 
+                    boxShadow: isDark ? '0 20px 60px rgba(0,0,0,0.5), 0 4px 16px rgba(0,0,0,0.15)' : '0 16px 45px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.06)', 
+                    padding: '8px 10px', 
                     display: 'flex', 
-                    flexDirection: 'column', 
-                    gap: 4, 
-                    minWidth: 200,
-                    animation: 'sbSmoothFade 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards',
-                    transform: 'none',
+                    flexDirection: 'row', 
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6, 
                     whiteSpace: 'nowrap'
                   }}
                 >
-                  {/* Mobile Header Bar */}
-                  {typeof window !== 'undefined' && window.innerWidth < 768 && (
-                    <div style={{
+                  {/* Studio EcoHub & Multitask Hub (Icon Only) */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      window.dispatchEvent(new CustomEvent('porto_open_quick_drawer', { detail: { type: 'ecohub' } }));
+                      setShowCollapsedTools(false);
+                    }}
+                    title="Studio EcoHub & Multitask Drawer (Audit Database, Flipbook, Memo - Ctrl+E)"
+                    aria-label="Studio EcoHub"
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 12,
+                      border: isDark ? '1px solid var(--glass-border, rgba(255,255,255,0.1))' : '1px solid #e2e8f0',
+                      background: 'var(--cms-accent-soft, rgba(59,130,246,0.18))',
+                      color: 'var(--cms-accent, #3b82f6)',
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '4px 10px 8px 10px',
-                      borderBottom: '1px solid var(--cms-border, rgba(0,0,0,0.08))',
-                      marginBottom: 4
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <Circle size={15} color="var(--cms-accent, #7c3aed)" strokeWidth={2.5} />
-                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--cms-text, #f8fafc)' }}>
-                          Menu Alat & Sistem
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setShowCollapsedTools(false);
-                        }}
-                        style={{
-                          background: 'transparent',
-                          border: 'none',
-                          padding: 4,
-                          cursor: 'pointer',
-                          color: 'var(--cms-text-muted, #94a3b8)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}
-                        aria-label="Tutup"
-                      >
-                        <X size={17} />
-                      </button>
-                    </div>
-                  )}
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      padding: 0,
+                      flexShrink: 0
+                    }}
+                  >
+                    <Sparkles size={18} strokeWidth={2.2} />
+                  </button>
 
-                  {/* Mode Sinkronisasi */}
+                  {/* Cloud Nexus (Icon Only) */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      haptic.selection();
+                      onSwitchPage('third-party');
+                      setShowCollapsedTools(false);
+                    }}
+                    title="Cloud Nexus & Gimic Cerdas Pihak Ketiga"
+                    aria-label="Cloud Nexus"
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 12,
+                      border: isDark ? '1px solid var(--glass-border, rgba(255,255,255,0.1))' : '1px solid #e2e8f0',
+                      background: 'rgba(56, 189, 248, 0.16)',
+                      color: '#38bdf8',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      padding: 0,
+                      flexShrink: 0
+                    }}
+                  >
+                    <CloudLightning size={18} strokeWidth={2.2} />
+                  </button>
+
+                  {/* Poster Promosi (Icon Only) */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      window.dispatchEvent(new CustomEvent('porto_open_social_promo'));
+                      setShowCollapsedTools(false);
+                    }}
+                    title="Poster Promosi (Story, Feed, QR)"
+                    aria-label="Poster Promosi"
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 12,
+                      border: isDark ? '1px solid var(--glass-border, rgba(255,255,255,0.1))' : '1px solid #e2e8f0',
+                      background: 'rgba(124, 58, 237, 0.16)',
+                      color: 'var(--cms-accent, #7c3aed)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      padding: 0,
+                      flexShrink: 0
+                    }}
+                  >
+                    <LayoutTemplate size={18} strokeWidth={2.2} />
+                  </button>
+
+                  {/* Mode Sinkronisasi (Icon Only) */}
                   <button
                     type="button"
                     onClick={(e) => {
@@ -783,38 +1006,40 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({
                       cycleSyncMode();
                       setShowCollapsedTools(false);
                     }}
-                    className="sb-flyout-item"
+                    title={saveStatus === 'saving' ? 'Menyimpan...' : syncMode === 'auto' ? 'Mode Otomatis' : syncMode === 'manual' ? 'Mode Hemat' : 'Mode Offline'}
+                    aria-label="Mode Sinkronisasi"
                     style={{
-                      display: 'flex', alignItems: 'center', gap: 10,
-                      width: '100%', padding: '8px 12px', borderRadius: 8,
-                      background: 'transparent', border: 'none', cursor: 'pointer',
-                      color: 'var(--cms-text, #f8fafc)', fontSize: 12, fontWeight: 650,
-                      textAlign: 'left', transition: 'background 0.15s ease'
+                      width: 40,
+                      height: 40,
+                      borderRadius: 12,
+                      border: isDark ? '1px solid var(--glass-border, rgba(255,255,255,0.1))' : '1px solid #e2e8f0',
+                      background: isDark ? 'rgba(255,255,255,0.06)' : '#f8fafc',
+                      color: syncMode === 'auto' ? '#10b981' : '#f59e0b',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      padding: 0,
+                      flexShrink: 0,
+                      position: 'relative'
                     }}
                   >
-                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 20 }}>
-                      {saveStatus === 'saving' ? (
-                        <RefreshCw size={16} color="var(--cms-accent)" className="cms-spin" />
-                      ) : syncMode === 'auto' ? (
-                        <Zap size={16} color="#10b981" />
-                      ) : syncMode === 'manual' ? (
-                        <Shield size={16} color="#f59e0b" />
-                      ) : (
-                        <WifiOff size={16} color="#6366f1" />
-                      )}
-                    </span>
-                    <span style={{ flex: 1 }}>
-                      {saveStatus === 'saving' ? 'Menyimpan...' : 
-                       syncMode === 'auto' ? 'Mode Otomatis' : 
-                       syncMode === 'manual' ? 'Mode Hemat' : 'Mode Offline'}
-                    </span>
+                    {saveStatus === 'saving' ? (
+                      <RefreshCw size={17} color="var(--cms-accent)" className="cms-spin" />
+                    ) : syncMode === 'auto' ? (
+                      <Zap size={17} />
+                    ) : syncMode === 'manual' ? (
+                      <Shield size={17} />
+                    ) : (
+                      <WifiOff size={17} />
+                    )}
                     <span style={{
-                      width: 7, height: 7, borderRadius: '50%',
+                      position: 'absolute', top: 5, right: 5, width: 6, height: 6, borderRadius: '50%',
                       background: syncMode === 'auto' ? '#10b981' : '#f59e0b'
                     }} />
                   </button>
 
-                  {/* Notifikasi */}
+                  {/* Notifikasi (Icon Only) */}
                   <button
                     type="button"
                     onClick={(e) => {
@@ -822,28 +1047,29 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({
                       window.dispatchEvent(new Event('porto_toggle_notifications'));
                       setShowCollapsedTools(false);
                     }}
-                    className="sb-flyout-item"
+                    title={unreadCount > 0 ? `${unreadCount} Notifikasi Baru` : 'Pusat Notifikasi'}
+                    aria-label="Pusat Notifikasi"
                     style={{
-                      display: 'flex', alignItems: 'center', gap: 10,
-                      width: '100%', padding: '8px 12px', borderRadius: 8,
-                      background: 'transparent', border: 'none', cursor: 'pointer',
-                      color: 'var(--cms-text, #f8fafc)', fontSize: 12, fontWeight: 650,
-                      textAlign: 'left', transition: 'background 0.15s ease'
+                      width: 40,
+                      height: 40,
+                      borderRadius: 12,
+                      border: isDark ? '1px solid var(--glass-border, rgba(255,255,255,0.1))' : '1px solid #e2e8f0',
+                      background: isDark ? 'rgba(255,255,255,0.06)' : '#f8fafc',
+                      color: isDark ? 'var(--cms-text, #f8fafc)' : '#0f172a',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      padding: 0,
+                      flexShrink: 0,
+                      position: 'relative'
                     }}
                   >
-                    <span style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 20 }}>
-                      <Bell size={16} strokeWidth={2} />
-                      {unreadCount > 0 && <span className="sb-notif-dot" style={{ top: -2, right: -2 }} />}
-                    </span>
-                    <span style={{ flex: 1 }}>Notifikasi</span>
-                    {unreadCount > 0 && (
-                      <span style={{ fontSize: 10, background: '#ef4444', color: '#fff', borderRadius: 10, padding: '1px 6px', fontWeight: 800 }}>
-                        {unreadCount}
-                      </span>
-                    )}
+                    <Bell size={18} strokeWidth={2} />
+                    {unreadCount > 0 && <span className="sb-notif-dot" style={{ top: 5, right: 5 }} />}
                   </button>
 
-                  {/* Instal App (PWA) */}
+                  {/* Instal App PWA (Icon Only) */}
                   <button
                     type="button"
                     onClick={async (e) => {
@@ -851,22 +1077,27 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({
                       await triggerPwaInstall();
                       setShowCollapsedTools(false);
                     }}
-                    className="sb-flyout-item"
+                    title={isStandalone ? 'Aplikasi Web Telah Terpasang' : 'Instal Aplikasi (PWA)'}
+                    aria-label="Instal Aplikasi"
                     style={{
-                      display: 'flex', alignItems: 'center', gap: 10,
-                      width: '100%', padding: '8px 12px', borderRadius: 8,
-                      background: 'transparent', border: 'none', cursor: 'pointer',
-                      color: 'var(--cms-text, #f8fafc)', fontSize: 12, fontWeight: 650,
-                      textAlign: 'left', transition: 'background 0.15s ease'
+                      width: 40,
+                      height: 40,
+                      borderRadius: 12,
+                      border: isDark ? '1px solid var(--glass-border, rgba(255,255,255,0.1))' : '1px solid #e2e8f0',
+                      background: isDark ? 'rgba(255,255,255,0.06)' : '#f8fafc',
+                      color: isStandalone ? '#10b981' : 'var(--cms-accent, #7c3aed)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      padding: 0,
+                      flexShrink: 0
                     }}
                   >
-                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 20 }}>
-                      <Download size={16} color={isStandalone ? '#10b981' : 'var(--cms-accent)'} />
-                    </span>
-                    <span style={{ flex: 1 }}>{isStandalone ? 'App Terpasang' : 'Instal App (PWA)'}</span>
+                    <Download size={18} />
                   </button>
 
-                  {/* Mode Terang / Gelap */}
+                  {/* Mode Terang / Gelap (Icon Only Switch Mode) */}
                   <button
                     type="button"
                     onClick={(e) => {
@@ -875,52 +1106,58 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({
                       else window.dispatchEvent(new Event('cms_toggle_dark_mode'));
                       setShowCollapsedTools(false);
                     }}
-                    className="sb-flyout-item"
+                    title={(isDarkMode !== undefined ? isDarkMode : (localStorage.getItem('cms_dark_mode') !== 'false')) ? 'Ganti ke Mode Terang' : 'Ganti ke Mode Gelap'}
+                    aria-label="Beralih Mode Gelap / Terang"
                     style={{
-                      display: 'flex', alignItems: 'center', gap: 10,
-                      width: '100%', padding: '8px 12px', borderRadius: 8,
-                      background: 'transparent', border: 'none', cursor: 'pointer',
-                      color: 'var(--cms-text, #f8fafc)', fontSize: 12, fontWeight: 650,
-                      textAlign: 'left', transition: 'background 0.15s ease'
+                      width: 40,
+                      height: 40,
+                      borderRadius: 12,
+                      border: isDark ? '1px solid var(--glass-border, rgba(255,255,255,0.1))' : '1px solid #e2e8f0',
+                      background: isDark ? 'rgba(255,255,255,0.06)' : '#f8fafc',
+                      color: (isDarkMode !== undefined ? isDarkMode : (localStorage.getItem('cms_dark_mode') !== 'false')) ? '#f59e0b' : '#6366f1',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      padding: 0,
+                      flexShrink: 0
                     }}
                   >
-                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 20 }}>
-                      {(isDarkMode !== undefined ? isDarkMode : (localStorage.getItem('cms_dark_mode') !== 'false')) ? (
-                        <Sun size={16} color="#f59e0b" />
-                      ) : (
-                        <Moon size={16} color="#6366f1" />
-                      )}
-                    </span>
-                    <span style={{ flex: 1 }}>
-                      {(isDarkMode !== undefined ? isDarkMode : (localStorage.getItem('cms_dark_mode') !== 'false')) ? 'Mode Terang' : 'Mode Gelap'}
-                    </span>
+                    {(isDarkMode !== undefined ? isDarkMode : (localStorage.getItem('cms_dark_mode') !== 'false')) ? (
+                      <Sun size={18} strokeWidth={2.2} />
+                    ) : (
+                      <Moon size={18} strokeWidth={2.2} />
+                    )}
                   </button>
 
-                  {/* Lihat Situs */}
+                  {/* Lihat Situs Publik (Icon Only) */}
                   <a
                     href="/"
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={() => setShowCollapsedTools(false)}
-                    className="sb-flyout-item"
+                    title="Buka Website Publik (/)"
+                    aria-label="Lihat Situs Publik"
                     style={{
-                      display: 'flex', alignItems: 'center', gap: 10,
-                      width: '100%', padding: '8px 12px', borderRadius: 8,
-                      background: 'transparent', border: 'none', cursor: 'pointer',
-                      color: 'var(--cms-text, #f8fafc)', fontSize: 12, fontWeight: 650,
-                      textAlign: 'left', textDecoration: 'none', transition: 'background 0.15s ease',
-                      boxSizing: 'border-box'
+                      width: 40,
+                      height: 40,
+                      borderRadius: 12,
+                      border: '1px solid var(--glass-border, rgba(255,255,255,0.1))',
+                      background: 'rgba(255,255,255,0.06)',
+                      color: 'var(--cms-text, #f8fafc)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      textDecoration: 'none',
+                      cursor: 'pointer',
+                      padding: 0,
+                      flexShrink: 0
                     }}
                   >
-                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 20 }}>
-                      <ExternalLink size={16} />
-                    </span>
-                    <span style={{ flex: 1 }}>Lihat Situs</span>
+                    <ExternalLink size={18} />
                   </a>
 
-                  <div style={{ height: 1, background: 'var(--glass-border, rgba(255,255,255,0.08))', margin: '4px 0' }} />
-
-                  {/* Keluar */}
+                  {/* Keluar (Icon Only) */}
                   <button
                     type="button"
                     onClick={async (e) => {
@@ -930,19 +1167,51 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({
                       await signOut(auth);
                       if (onSignOut) onSignOut();
                     }}
-                    className="sb-flyout-item sb-flyout-danger"
+                    title="Keluar dari Akun"
+                    aria-label="Keluar"
                     style={{
-                      display: 'flex', alignItems: 'center', gap: 10,
-                      width: '100%', padding: '8px 12px', borderRadius: 8,
-                      background: 'transparent', border: 'none', cursor: 'pointer',
-                      color: '#ef4444', fontSize: 12, fontWeight: 650,
-                      textAlign: 'left', transition: 'background 0.15s ease'
+                      width: 40,
+                      height: 40,
+                      borderRadius: 12,
+                      border: '1px solid rgba(239,68,68,0.3)',
+                      background: 'rgba(239,68,68,0.12)',
+                      color: '#ef4444',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      padding: 0,
+                      flexShrink: 0
                     }}
                   >
-                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 20 }}>
-                      <LogOut size={16} />
-                    </span>
-                    <span style={{ flex: 1 }}>Keluar</span>
+                    <LogOut size={18} />
+                  </button>
+
+                  {/* Tutup Menu Flyout (Icon Only) */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowCollapsedTools(false);
+                    }}
+                    title="Tutup Menu"
+                    aria-label="Tutup"
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 10,
+                      border: 'none',
+                      background: 'transparent',
+                      color: 'var(--cms-text-muted, #94a3b8)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      padding: 0,
+                      flexShrink: 0
+                    }}
+                  >
+                    <X size={16} />
                   </button>
                 </div>
               </>,
@@ -958,7 +1227,7 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({
             if (typeof navigator !== 'undefined' && navigator.clipboard) {
               navigator.clipboard.writeText(url);
             }
-            window.dispatchEvent(new CustomEvent('porto_notify', { detail: { message: '📋 URL Media berhasil disalin ke clipboard!' } }));
+            window.dispatchEvent(new CustomEvent('porto_notify', { detail: { message: 'URL media berhasil disalin ke clipboard' } }));
             setShowMediaVault(false);
           }}
         />

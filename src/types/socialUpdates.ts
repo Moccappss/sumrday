@@ -1,4 +1,4 @@
-export type UpdateStickerType = 'poll' | 'this_or_that' | 'slider_rate' | 'qna';
+export type UpdateStickerType = 'poll' | 'this_or_that' | 'slider_rate' | 'qna' | 'product_card' | 'portfolio_card' | 'article_card' | 'flash_sale';
 
 export interface PollOption {
   id: string;
@@ -44,15 +44,75 @@ export interface QnASticker {
   responses?: QnAResponse[];
 }
 
-export type UpdateSticker = PollSticker | ThisOrThatSticker | SliderRateSticker | QnASticker;
+export interface ProductSticker {
+  type: 'product_card';
+  productId?: string;
+  title: string;
+  price: string | number;
+  originalPrice?: string | number;
+  imageUrl?: string;
+  productUrl?: string;
+  badge?: string;
+  buttonText?: string;
+}
+
+export interface PortfolioSticker {
+  type: 'portfolio_card';
+  projectId?: string;
+  title: string;
+  category?: string;
+  imageUrl?: string;
+  projectUrl?: string;
+  buttonText?: string;
+}
+
+export interface ArticleSticker {
+  type: 'article_card';
+  articleId?: string;
+  title: string;
+  category?: string;
+  imageUrl?: string;
+  articleUrl?: string;
+  readTime?: string;
+  buttonText?: string;
+}
+
+export interface FlashSaleSticker {
+  type: 'flash_sale';
+  productId?: string;
+  title: string;
+  originalPrice: string | number;
+  salePrice: string | number;
+  discountPercent?: number;
+  endTime: string; // ISO string
+  productUrl?: string;
+  imageUrl?: string;
+  stockLeft?: number;
+  totalStock?: number;
+}
+
+export type UpdateSticker = 
+  | PollSticker 
+  | ThisOrThatSticker 
+  | SliderRateSticker 
+  | QnASticker 
+  | ProductSticker 
+  | PortfolioSticker 
+  | ArticleSticker
+  | FlashSaleSticker;
 
 export interface SocialUpdate {
   id: string;
+  title?: string;
+  category?: 'asset' | 'product' | 'article' | 'announcement' | 'general' | string;
   content: string;
   mediaUrls: string[];
   mediaType: 'image' | 'video' | 'mixed';
   projectTag?: string;
   projectUrl?: string;
+  ctaLabel?: string;
+  badge?: string;
+  price?: string;
   customDate: string; // ISO date format 'YYYY-MM-DD' or timestamp string, supports backdating
   createdAt: string;
   likesCount: number;
@@ -69,98 +129,147 @@ export interface SocialUpdate {
 export const DEFAULT_SOCIAL_UPDATES: SocialUpdate[] = [
   {
     id: 'upd-1',
-    content: `Memulai pekan cerah dengan merilis sistem desain v2.0 untuk sumr.day! ☀️ Menyatukan estetika skena yang santai dengan arsitektur web modern yang super snappy.
+    title: 'Rilis Design System & UI Kit Studio v2.0',
+    category: 'asset',
+    content: `Memulai pekan dengan merilis paket sistem desain v2.0 untuk studio dan klien enterprise. Menyatukan arsitektur web modern yang terstruktur dengan komponen modular berkinerja tinggi.
 
-Beberapa pilar yang kami prioritaskan:
-• Arsitektur komponen modular berbasis token yang clean
-• Aksen warna Warm Tech bernuansa musim panas yang ramah di mata
-• Micro-interactions yang playful dan responsif tanpa membebani performa
+Pilar utama rilis ini:
+• Arsitektur komponen modular berbasis token desain terstandar
+• Palet warna terkalibrasi untuk antarmuka bisnis dan platform kreatif
+• Micro-interactions teroptimasi tanpa membebani performa perangkat
 
-A little sunshine for your screen! Bagikan impresi kalian dan selamat berkreasi bersama sumr.day club! 🚀✨`,
+Dokumentasi dan paket aset kini dapat diakses langsung melalui showcase studio.`,
     mediaUrls: [
       'https://images.unsplash.com/photo-1507238691740-187a5b1d37b8?auto=format&fit=crop&w=1200&q=80'
     ],
     mediaType: 'image',
-    projectTag: 'Design System v2.0',
+    projectTag: 'Aset Digital v2.0',
     projectUrl: '/portfolio',
-    customDate: '2026-09-15',
-    createdAt: '2026-09-15T09:00:00.000Z',
-    likesCount: 58,
+    ctaLabel: 'Lihat Aset Digital',
+    badge: 'Rilis Terkini',
+    price: 'Aset Studio',
+    customDate: '2026-09-20',
+    createdAt: '2026-09-20T09:00:00.000Z',
+    likesCount: 68,
     isPinned: true,
     isPublished: true,
     sticker: {
       type: 'slider_rate',
-      question: 'Seberapa hangat vibe Design System v2.0 sumr.day?',
-      emoji: '☀️',
-      minLabel: 'Biasa Saja',
-      maxLabel: 'Hangat Pol! ☀️',
+      question: 'Tingkat kepuasan arsitektur Design System v2.0?',
+      emoji: '⭐',
+      minLabel: 'Cukup',
+      maxLabel: 'Sangat Memuaskan',
       totalScore: 4032,
       ratingsCount: 42,
       averageScore: 96
     },
     author: {
       name: 'sumr.day',
-      role: 'Creative Digital Studio • Warm Tech & Skena-Aesthetic',
+      role: 'Creative Digital Studio & Enterprise Systems',
       avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80'
     }
   },
   {
     id: 'upd-2',
-    content: `Behind the scenes: Eksplorasi konsep undangan web interaktif untuk festival musim panas. Kami menggabungkan typography skena yang bold, RSVP real-time, dan playlist musik lo-fi yang hangat. 🎶🏖️
+    title: 'Drop Produk Baru: Template Undangan Interaktif & RSVP',
+    category: 'product',
+    content: `Rilis resmi produk digital terbaru pada katalog store: Template Undangan Interaktif berbasis web dengan integrasi RSVP real-time, manajemen buku tamu, dan playlist musik ambient terintegrasi.
 
-Pendekatan kami sederhana: setiap interaksi digital harus terasa personal, tidak kaku, dan membangkitkan senyum saat dibuka di layar smartphone.`,
+Keunggulan produk:
+• Desain responsif mobile-first dengan animasi halus
+• Formulir kehadiran real-time tersinkronisasi ke Google Sheets
+• Navigasi lokasi interaktif dan integrasi amplop digital aman`,
     mediaUrls: [
       'https://images.unsplash.com/photo-1581291518655-9523c932edcf?auto=format&fit=crop&w=1200&q=80',
       'https://images.unsplash.com/photo-1600132806370-bf17e65e942f?auto=format&fit=crop&w=1200&q=80'
     ],
     mediaType: 'image',
-    projectTag: 'Undangan Web Estetik',
-    projectUrl: '/portfolio',
-    customDate: '2025-07-20',
-    createdAt: '2025-07-20T14:30:00.000Z',
+    projectTag: 'Katalog Store',
+    projectUrl: '/katalog',
+    ctaLabel: 'Beli di Katalog Store',
+    badge: 'Produk Baru',
+    price: 'Katalog Tersedia',
+    customDate: '2026-09-18',
+    createdAt: '2026-09-18T14:30:00.000Z',
     likesCount: 84,
     isPinned: false,
     isPublished: true,
     sticker: {
       type: 'this_or_that',
-      question: 'Mana konsep undangan web favoritmu untuk event skena?',
-      optionA: { id: 'opt-a', text: 'Lo-Fi Chill & Playlist', emoji: '🎧', votes: 62 },
-      optionB: { id: 'opt-b', text: 'Summer Fest & RSVP Bold', emoji: '🏖️', votes: 38 }
+      question: 'Pilihan layout navigasi favorit Anda untuk undangan web?',
+      optionA: { id: 'opt-a', text: 'Floating Bottom Bar', votes: 62 },
+      optionB: { id: 'opt-b', text: 'Top Minimalist Nav', votes: 38 }
     },
     author: {
       name: 'sumr.day',
-      role: 'Creative Digital Studio • Warm Tech & Skena-Aesthetic',
+      role: 'Creative Digital Studio & Enterprise Systems',
       avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80'
     }
   },
   {
     id: 'upd-3',
-    content: `Kilas balik awal mula studio: Dari eksperimen visual santai hingga lahir menjadi creative digital studio berkonsep Warm Tech & Skena-Aesthetic.
+    title: 'Artikel Baru: Membangun Web Berorientasi Kinerja Tinggi',
+    category: 'article',
+    content: `Artikel wawasan teknis dan studi kasus terbaru kami telah terbit di blog studio. Membahas strategi optimasi rendering pada single-page applications, manajemen memori web, dan arsitektur database offline-first.
 
-Terima kasih untuk seluruh sumr.day club yang selalu menemani perjalanan ini! Banyak ide-ide segar berikutnya yang siap kami hadirkan di layar kalian. ☀️💛`,
+Ulasan mencakup:
+• Teknik hybrid caching menggunakan IndexedDB dan Service Worker
+• Pencegahan reflow dan optimasi font web modern
+• Metrik performa Google Core Web Vitals pada implementasi nyata`,
     mediaUrls: [
       'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1200&q=80'
     ],
     mediaType: 'image',
-    projectTag: 'sumr.day club',
-    projectUrl: '',
-    customDate: '2024-03-12',
-    createdAt: '2024-03-12T10:15:00.000Z',
+    projectTag: 'Wawasan Industri',
+    projectUrl: '/blog',
+    ctaLabel: 'Baca Artikel Lengkap',
+    badge: 'Artikel Baru',
+    customDate: '2026-09-12',
+    createdAt: '2026-09-12T10:15:00.000Z',
     likesCount: 112,
     isPinned: false,
     isPublished: true,
     sticker: {
       type: 'qna',
-      prompt: 'Punya ide atau saran proyek digital seru bareng sumr.day club? Tulis di sini! ☀️',
-      placeholder: 'Tulis ide kreatif atau sapaanmu...',
+      prompt: 'Topik teknis atau studi kasus apa yang ingin Anda baca selanjutnya?',
+      placeholder: 'Tulis topik saran Anda...',
       responses: [
-        { id: 'res-1', text: 'Bikin template website portofolio interaktif dengan animasi lo-fi dong kak!', authorName: 'Rian D.', createdAt: '2026-09-16T11:20:00.000Z' },
-        { id: 'res-2', text: 'Vibe warm tech-nya seger banget, suka banget perpaduan warnanya ✨', authorName: 'Maya K.', createdAt: '2026-09-17T08:15:00.000Z' }
+        { id: 'res-1', text: 'Pembahasan arsitektur state management di React 19', authorName: 'Rian D.', createdAt: '2026-09-16T11:20:00.000Z' },
+        { id: 'res-2', text: 'Tips integrasi gateway pembayaran lokal di aplikasi PWA', authorName: 'Maya K.', createdAt: '2026-09-17T08:15:00.000Z' }
       ]
     },
     author: {
       name: 'sumr.day',
-      role: 'Creative Digital Studio • Warm Tech & Skena-Aesthetic',
+      role: 'Creative Digital Studio & Enterprise Systems',
+      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80'
+    }
+  },
+  {
+    id: 'upd-4',
+    title: 'Pengumuman Resmi: Pembukaan Jalur Kolaborasi Brand Q4',
+    category: 'announcement',
+    content: `Kami membuka slot kemitraan strategis dan pengembangan proyek kustom untuk kuartal IV. Terbuka untuk transformasi digital brand, perancangan web app bespoke, dan aset identitas visual perusahaan.
+
+Fasilitas kemitraan:
+• Konsultasi teknis terarah dan audit antarmuka gratis
+• Perjanjian tingkat layanan (SLA) transparan dan timeline terukur
+• Dukungan integrasi sistem CMS mandiri dengan hak milik penuh`,
+    mediaUrls: [
+      'https://images.unsplash.com/photo-1497215728101-856f4ea42174?auto=format&fit=crop&w=1200&q=80'
+    ],
+    mediaType: 'image',
+    projectTag: 'Pengumuman Bisnis',
+    projectUrl: '#contact',
+    ctaLabel: 'Hubungi Tim Kemitraan',
+    badge: 'Pengumuman',
+    customDate: '2026-09-08',
+    createdAt: '2026-09-08T08:00:00.000Z',
+    likesCount: 95,
+    isPinned: false,
+    isPublished: true,
+    author: {
+      name: 'sumr.day',
+      role: 'Creative Digital Studio & Enterprise Systems',
       avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80'
     }
   }

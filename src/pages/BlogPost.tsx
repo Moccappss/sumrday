@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Calendar, Eye, Tag, Share2, MessageCircle, ArrowUp, Clock, Copy, BookOpen, Check, Sparkles, ArrowUpRight } from 'lucide-react';
+import { ArrowLeft, Calendar, Eye, Tag, Share2, MessageCircle, ArrowUp, Clock, Copy, BookOpen, Check, Sparkles, ArrowUpRight, ShoppingBag, ArrowRight } from 'lucide-react';
 import { storage } from '../utils/storage';
 import SEOHelmet from '../components/SEOHelmet';
 import type { BlogPostType } from './Blog';
@@ -15,15 +15,15 @@ import { safeHtml } from '../utils/security';
 import { haptic } from '../utils/haptics';
 
 /* ── Loading Skeleton ─────────────────────────────────────────────── */
-const PostSkeleton = () => (
-  <div style={{ minHeight: '100vh', background: '#f8fafc', padding: 24 }}>
+const PostSkeleton = ({ isDark = false }: { isDark?: boolean }) => (
+  <div style={{ minHeight: '100vh', background: isDark ? '#08080f' : '#f8fafc', padding: 24 }}>
     <style>{`
       @keyframes sk-shimmer {
         0% { background-position: 200% 0; }
         100% { background-position: -200% 0; }
       }
       .sk {
-        background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+        background: linear-gradient(90deg, ${isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0'} 25%, ${isDark ? 'rgba(255,255,255,0.1)' : '#f1f5f9'} 50%, ${isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0'} 75%);
         background-size: 200% 100%;
         animation: sk-shimmer 2.6s ease-in-out infinite;
         border-radius: 10px;
@@ -166,13 +166,13 @@ const BlogPost = () => {
     if (shareUrl) window.open(shareUrl, '_blank', 'width=600,height=400');
   };
 
-  if (isLoading) return <PostSkeleton />;
+  if (isLoading) return <PostSkeleton isDark={isDark} />;
 
-  const textColor  = isDark ? '#f1f5f9' : '#0f172a';
+  const textColor  = isDark ? '#ffffff' : '#0f172a';
   const subText    = isDark ? '#94a3b8' : '#64748b';
-  const border     = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)';
-  const cardBg     = isDark ? 'rgba(255,255,255,0.04)' : '#ffffff';
-  const pageBg     = isDark ? '#08080f' : '#f8fafc';
+  const border     = isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(15, 23, 42, 0.08)';
+  const cardBg     = isDark ? '#151824' : '#ffffff';
+  const pageBg     = isDark ? '#06070a' : '#eef2f6';
 
   if (!post || (post.status !== 'Published' && post.status !== 'Terbit' && post.status)) {
     return (
@@ -414,12 +414,120 @@ const BlogPost = () => {
             ))}
           </div>
         </div>
+
+        {/* ── Studio Conversion Bridge ── */}
+        <div style={{
+          marginTop: 48,
+          padding: isMobile ? '22px 20px' : '28px 32px',
+          borderRadius: 24,
+          background: isDark ? 'linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%)' : 'linear-gradient(135deg, rgba(0,0,0,0.03) 0%, rgba(0,0,0,0.01) 100%)',
+          border: `1.5px solid ${border}`,
+          boxShadow: isDark ? '0 12px 32px rgba(0,0,0,0.25)' : '0 8px 24px rgba(0,0,0,0.04)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 16
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              width: 34,
+              height: 34,
+              borderRadius: '50%',
+              background: `${accentColor}20`,
+              color: accentColor,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}>
+              <Sparkles size={18} />
+            </div>
+            <div>
+              <div style={{ fontFamily: "'Outfit',sans-serif", fontSize: 16.5, fontWeight: 900, color: textColor }}>
+                Tertarik Menerapkan Konsep Ini pada Bisnis Anda?
+              </div>
+              <div style={{ fontSize: 13, color: subText, fontFamily: "'Inter',sans-serif", marginTop: 2 }}>
+                Diskusikan ide desain, branding, atau sistem web Anda langsung bersama studio kreatif sumr.day.
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', paddingTop: 4 }}>
+            <button
+              type="button"
+              onClick={() => {
+                haptic.light();
+                window.dispatchEvent(new CustomEvent('porto_open_concierge', {
+                  detail: {
+                    service: 'web',
+                    description: `Halo tim sumr.day, saya baru saja membaca artikel "${post.title}" di blog dan tertarik mendiskusikan penerapan ide ini untuk bisnis/proyek saya.`
+                  }
+                }));
+              }}
+              style={{
+                padding: '11px 22px',
+                borderRadius: 100,
+                border: 'none',
+                background: accentColor,
+                color: '#ffffff',
+                fontFamily: "'Outfit',sans-serif",
+                fontSize: 13,
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 7,
+                boxShadow: `0 4px 16px ${accentColor}40`,
+                transition: 'transform 0.15s ease'
+              }}
+              onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+              onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+            >
+              <MessageCircle size={15} />
+              <span>Konsultasikan Ide via Live Chat</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                haptic.light();
+                navigate('/katalog');
+              }}
+              style={{
+                padding: '11px 20px',
+                borderRadius: 100,
+                border: `1px solid ${border}`,
+                background: isDark ? 'rgba(255,255,255,0.06)' : '#ffffff',
+                color: textColor,
+                fontFamily: "'Outfit',sans-serif",
+                fontSize: 13,
+                fontWeight: 750,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 7,
+                transition: 'all 0.15s ease'
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.borderColor = accentColor;
+                e.currentTarget.style.color = accentColor;
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.borderColor = border;
+                e.currentTarget.style.color = textColor;
+              }}
+            >
+              <ShoppingBag size={14} />
+              <span>Jelajahi Produk di Katalog</span>
+              <ArrowRight size={13} />
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* ── Related Posts / Saran Blog Lainnya ── */}
       {relatedPosts.length > 0 && (
         <div style={{
-          background: isDark ? 'linear-gradient(to bottom, #08080f, #0d0d1a)' : 'linear-gradient(to bottom, #f8fafc, #f1f5f9)',
+          background: isDark ? '#06070a' : '#eef2f6',
           padding: isMobile ? '50px 20px 70px' : '70px 24px 90px',
           borderTop: `1px solid ${border}`
         }}>
@@ -447,6 +555,7 @@ const BlogPost = () => {
               {relatedPosts.map(rel => (
                 <div
                   key={rel.id}
+                  data-card-3d="true"
                   className="related-card"
                   onClick={() => {
                     navigate(`/blog/${rel.slug || rel.id}`);
@@ -457,17 +566,13 @@ const BlogPost = () => {
                     borderRadius: 22, overflow: 'hidden', cursor: 'pointer',
                     boxShadow: '0 12px 32px rgba(0,0,0,0.03)',
                     display: 'flex', flexDirection: 'column',
-                    transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
+                    transition: 'border-color 0.45s cubic-bezier(0.16, 1, 0.3, 1)'
                   }}
                   onMouseEnter={e => {
-                    e.currentTarget.style.transform = 'translateY(-6px)';
                     e.currentTarget.style.borderColor = accentColor;
-                    e.currentTarget.style.boxShadow = isDark ? '0 20px 40px rgba(0,0,0,0.45)' : '0 20px 40px rgba(0,0,0,0.08)';
                   }}
                   onMouseLeave={e => {
-                    e.currentTarget.style.transform = 'translateY(0)';
                     e.currentTarget.style.borderColor = border;
-                    e.currentTarget.style.boxShadow = '0 12px 32px rgba(0,0,0,0.03)';
                   }}
                 >
                   {rel.thumbnail ? (
@@ -475,9 +580,7 @@ const BlogPost = () => {
                       <img
                         src={rel.thumbnail} alt={rel.title}
                         loading="lazy"
-                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transition: 'transform 0.4s ease' }}
-                        onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.06)'}
-                        onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                       />
                       {rel.category && (
                         <span style={{

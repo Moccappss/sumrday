@@ -1,7 +1,7 @@
 import { db } from '../firebase';
-import { 
-  collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, 
-  query, where, orderBy, onSnapshot 
+import {
+  collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
+  query, where, orderBy, onSnapshot
 } from 'firebase/firestore';
 import { GameInstance, ClientGameLicense } from '../types/gameLicense';
 import { SAMPLE_GAMES } from '../data/sampleGames';
@@ -19,7 +19,11 @@ export const STORAGE_LICENSES_KEY = 'porto_game_licenses';
 
 export const getGames = async (): Promise<GameInstance[]> => {
   try {
-    // 1. Cek storage lokal (IndexedDB) terlebih dahulu sesuai arsitektur website utama
+    // 1. Cek storage lokal (IndexedDB / sync memori) terlebih dahulu
+    const syncCached = storage.getSync<GameInstance[]>(STORAGE_GAMES_KEY, null);
+    if (syncCached && Array.isArray(syncCached) && syncCached.length > 0) {
+      return syncCached;
+    }
     const cached = await storage.getItem<GameInstance[]>(STORAGE_GAMES_KEY, null);
     if (cached && Array.isArray(cached) && cached.length > 0) {
       return cached;
@@ -31,40 +35,87 @@ export const getGames = async (): Promise<GameInstance[]> => {
     const cloudGames = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as GameInstance));
     if (cloudGames.length > 0) {
       await storage.setItem(STORAGE_GAMES_KEY, cloudGames, false);
+      return cloudGames;
     }
-    return cloudGames;
+
+    // 3. Fallback default ke SAMPLE_GAMES jika belum ada game kustom
+    const sampleList = (SAMPLE_GAMES as GameInstance[]).filter(g => g.isActive !== false);
+    await storage.setItem(STORAGE_GAMES_KEY, sampleList, false);
+    return sampleList;
   } catch (error) {
-    console.error('Error fetching games:', error);
-    // Fallback safe return from local storage
+    console.error('Error fetching games, falling back to sample:', error);
     const fallback = await storage.getItem<GameInstance[]>(STORAGE_GAMES_KEY, []);
-    return fallback || [];
+    return (fallback && fallback.length > 0) ? fallback : ((SAMPLE_GAMES as GameInstance[]) || []);
   }
 };
 
 export const subscribeToGames = (callback: (games: GameInstance[]) => void) => {
-  // Langsung panggil callback dengan data cache lokal tercepat
-  storage.getItem<GameInstance[]>(STORAGE_GAMES_KEY, []).then(local => {
-    if (Array.isArray(local) && local.length > 0) {
-      callback(local);
-    }
-  }).catch(() => {});
+  const sampleList = (SAMPLE_GAMES as GameInstance[]).filter(g => g.isActive !== false);
+  const filterActive = (list: any[]): GameInstance[] => {
+    if (!Array.isArray(list)) return [];
+    return list.filter((g: any) => g && g.isActive !== false);
+  };
 
-  // Listen perubahan lokal (melalui event storage website utama)
+  // 1. Langsung panggil callback secara sinkron dengan cache tercepat atau SAMPLE_GAMES (0ms)
+  const syncGames = storage.getSync<GameInstance[]>(STORAGE_GAMES_KEY, null);
+  const activeSync = filterActive(syncGames);
+  if (activeSync.length > 0) {
+    callback(activeSync);
+  } else {
+    storage.getItem<GameInstance[]>(STORAGE_GAMES_KEY, []).then(local => {
+      const activeLocal = filterActive(local);
+      if (activeLocal.length > 0) {
+        callback(activeLocal);
+      } else {
+        callback(sampleList);
+      }
+    }).catch(() => {
+      callback(sampleList);
+    });
+  }
+
+  // 2. Listen perubahan lokal (melalui event storage website utama)
   const unsubStorage = storage.listenItem(STORAGE_GAMES_KEY, (val) => {
-    if (Array.isArray(val)) {
-      callback(val);
+    const active = filterActive(val);
+    if (active.length > 0) {
+      callback(active);
     }
   }, []);
 
-  // Listen perubahan dari Firestore collection secara real-time
+  // 3. Listen perubahan dari Firestore collection secara real-time
   const q = query(collection(db, GAMES_COLLECTION), orderBy('createdAt', 'desc'));
   const unsubFirestore = onSnapshot(q, (snapshot) => {
     const cloudGames = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as GameInstance));
-    // Simpan ke storage lokal website utama agar konsisten
-    storage.setItem(STORAGE_GAMES_KEY, cloudGames, false).catch(() => {});
-    callback(cloudGames);
+    const activeCloud = filterActive(cloudGames);
+    if (activeCloud.length > 0) {
+      storage.setItem(STORAGE_GAMES_KEY, activeCloud, false).catch(() => { });
+      callback(activeCloud);
+    } else {
+      // Jika Firestore belum memiliki data, pertahankan data lokal atau fallback ke sampel
+      storage.getItem<GameInstance[]>(STORAGE_GAMES_KEY, []).then(local => {
+        const activeLocal = filterActive(local);
+        if (activeLocal.length > 0) {
+          callback(activeLocal);
+        } else {
+          storage.setItem(STORAGE_GAMES_KEY, sampleList, false).catch(() => { });
+          callback(sampleList);
+        }
+      }).catch(() => {
+        callback(sampleList);
+      });
+    }
   }, (err) => {
     console.warn('Firestore games listener error, running from local storage:', err);
+    storage.getItem<GameInstance[]>(STORAGE_GAMES_KEY, []).then(local => {
+      const activeLocal = filterActive(local);
+      if (activeLocal.length > 0) {
+        callback(activeLocal);
+      } else {
+        callback(sampleList);
+      }
+    }).catch(() => {
+      callback(sampleList);
+    });
   });
 
   return () => {
@@ -232,7 +283,7 @@ export const subscribeToLicenses = (callback: (licenses: ClientGameLicense[]) =>
     if (Array.isArray(local) && local.length > 0) {
       callback(local);
     }
-  }).catch(() => {});
+  }).catch(() => { });
 
   const unsubStorage = storage.listenItem(STORAGE_LICENSES_KEY, (val) => {
     if (Array.isArray(val)) {
@@ -243,7 +294,7 @@ export const subscribeToLicenses = (callback: (licenses: ClientGameLicense[]) =>
   const q = query(collection(db, LICENSES_COLLECTION), orderBy('createdAt', 'desc'));
   const unsubFirestore = onSnapshot(q, (snapshot) => {
     const licenses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ClientGameLicense));
-    storage.setItem(STORAGE_LICENSES_KEY, licenses, false).catch(() => {});
+    storage.setItem(STORAGE_LICENSES_KEY, licenses, false).catch(() => { });
     callback(licenses);
   }, (err) => {
     console.warn('Firestore licenses listener error:', err);
@@ -320,7 +371,7 @@ export const deleteClientLicense = async (id: string): Promise<void> => {
 export const fetchClientLicensesFromFirestore = async (clientId: string, clientEmail?: string): Promise<ClientGameLicense[]> => {
   try {
     if (!clientId && !clientEmail) return [];
-    
+
     // Ambil lisensi berdasarkan clientId
     const q1 = query(collection(db, LICENSES_COLLECTION), where('clientId', '==', clientId));
     const snap1 = await getDocs(q1);

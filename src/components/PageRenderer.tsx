@@ -10,6 +10,7 @@ import ParallaxMedia from './renderer/ParallaxMedia';
 import ContactFormBlock from './renderer/ContactFormBlock';
 import BiodataWidget from './public/BiodataWidget';
 import LpImagePopupModal from './renderer/LpImagePopupModal';
+import Model3DViewer from './common/Model3DViewer';
 import { useScrollReveal } from '../hooks/useScrollReveal';
 
 interface PageRendererProps {
@@ -207,7 +208,7 @@ const PageRenderer: React.FC<PageRendererProps> = ({ pageKey }) => {
         const hasMedia = Boolean(
           block.url || 
           block.embedId || 
-          ['solid', 'spacer', 'form', 'biodata'].includes(mediaType) ||
+          ['solid', 'spacer', 'form', 'biodata', '3d'].includes(mediaType) ||
           (isCarousel && ((block.urls && block.urls.length > 0) || block.url))
         );
         if (!hasMedia) return null;
@@ -225,7 +226,18 @@ const PageRenderer: React.FC<PageRendererProps> = ({ pageKey }) => {
 
         let mediaEl = null;
 
-        if (mediaType === 'youtube' && block.embedId) {
+        if (mediaType === '3d') {
+          mediaEl = (
+            <div className="w-full my-2 relative" style={{ height: block.height || 450 }}>
+              <Model3DViewer 
+                src={block.url} 
+                height={block.height || 450} 
+                allowLocalUpload={false} 
+                title={block.name || 'Model 3D'} 
+              />
+            </div>
+          );
+        } else if (mediaType === 'youtube' && block.embedId) {
           mediaEl = (
             <div className="relative w-full aspect-video">
               <iframe
@@ -390,6 +402,7 @@ const PageRenderer: React.FC<PageRendererProps> = ({ pageKey }) => {
         return (
           <LpImagePopupModal
             isOpen={Boolean(activePopupId)}
+            popupId={activePopupId || ''}
             title={activePopup?.title || 'Pop-up Modal'}
             blocks={popupBlocks}
             stickers={popupStickers}

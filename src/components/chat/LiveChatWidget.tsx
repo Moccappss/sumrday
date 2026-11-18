@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  MessageCircle, Send, X, CheckCheck, Sparkles, FileText, 
+import {
+  MessageCircle, Send, X, CheckCheck, Sparkles, FileText,
   ExternalLink, ChevronRight, Phone, Clock, ShieldCheck, CheckCircle2,
-  Palette, Layout, Video, Wand2, Compass, Layers
+  Palette, Layout, Video, Wand2, Compass, Layers,
+  Edit3, Plus, Trash2, Save, RotateCcw
 } from 'lucide-react';
-import { db } from '../../firebase';
+import { auth, db } from '../../firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 import { collection, query, where, onSnapshot, addDoc, serverTimestamp, setDoc, doc, updateDoc } from 'firebase/firestore';
 import { haptic } from '../../utils/haptics';
 import { useClientAuth } from '../../context/ClientAuthContext';
@@ -111,16 +113,17 @@ export default function LiveChatWidget() {
 
   // Native 1-step back navigation
   useNativeBackHandler(isOpen, () => setIsOpen(false), 'live_chat_widget', 10);
-  
+
   // Dynamic Settings
   const [cSettings, setCSettings] = useState<ConciergeSettings>(DEFAULT_CONCIERGE_SETTINGS);
   const [chatTemplates, setChatTemplates] = useState<ChatTemplate[]>(DEFAULT_CHAT_TEMPLATES);
-  
+
   // Chat state
   const [messages, setMessages] = useState<any[]>([]);
   const [inputText, setInputText] = useState('');
   const [chatId, setChatId] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastSentTimeRef = useRef<number>(0);
   const { client } = useClientAuth();
 
   // Project Brief Form State
@@ -129,10 +132,68 @@ export default function LiveChatWidget() {
   const [selectedTimeline, setSelectedTimeline] = useState('standard');
   const [projectDescription, setProjectDescription] = useState('');
 
+  // In client widget, text editing is strictly disabled (configured via CMS Admin Dashboard)
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [isSavedNotify, setIsSavedNotify] = useState(false);
+
+  const handleSaveSettings = async () => {
+    await storage.setItem('porto_concierge_settings', cSettings);
+    window.dispatchEvent(new CustomEvent('porto_concierge_settings_updated', { detail: cSettings }));
+    haptic.success();
+    setIsSavedNotify(true);
+    setTimeout(() => setIsSavedNotify(false), 2500);
+    setIsEditMode(false);
+  };
+
+  const handleResetSettings = async () => {
+    if (window.confirm('Kembalikan semua teks widget Studio Concierge ke pengaturan default?')) {
+      setCSettings(DEFAULT_CONCIERGE_SETTINGS);
+      await storage.setItem('porto_concierge_settings', DEFAULT_CONCIERGE_SETTINGS);
+      window.dispatchEvent(new CustomEvent('porto_concierge_settings_updated', { detail: DEFAULT_CONCIERGE_SETTINGS }));
+      haptic.warning();
+    }
+  };
+
+  const handleAddCategory = () => {
+    const newId = `srv_${Date.now()}`;
+    setCSettings(prev => ({
+      ...prev,
+      serviceCategories: [
+        ...(prev.serviceCategories || DEFAULT_CONCIERGE_SETTINGS.serviceCategories || []),
+        { id: newId, name: 'Layanan Baru', desc: 'Deskripsi singkat layanan...', icon: 'Sparkles' }
+      ]
+    }));
+  };
+
+  const handleDeleteCategory = (id: string) => {
+    setCSettings(prev => ({
+      ...prev,
+      serviceCategories: (prev.serviceCategories || DEFAULT_CONCIERGE_SETTINGS.serviceCategories || []).filter(s => s.id !== id)
+    }));
+  };
+
+  const handleAddTimeline = () => {
+    const newId = `tml_${Date.now()}`;
+    setCSettings(prev => ({
+      ...prev,
+      timelineOptions: [
+        ...(prev.timelineOptions || DEFAULT_CONCIERGE_SETTINGS.timelineOptions || []),
+        { id: newId, name: 'Opsi Waktu Baru' }
+      ]
+    }));
+  };
+
+  const handleDeleteTimeline = (id: string) => {
+    setCSettings(prev => ({
+      ...prev,
+      timelineOptions: (prev.timelineOptions || DEFAULT_CONCIERGE_SETTINGS.timelineOptions || []).filter(t => t.id !== id)
+    }));
+  };
+
   // Theme support
   const [isDark, setIsDark] = useState(() => {
     return document.documentElement.getAttribute('data-theme') === 'dark' ||
-           document.documentElement.getAttribute('data-cms-theme') === 'dark';
+      document.documentElement.getAttribute('data-cms-theme') === 'dark';
   });
 
   useEffect(() => {
@@ -151,10 +212,10 @@ export default function LiveChatWidget() {
     });
 
     storage.getItem('porto_settings', {}).then(s => setGlobalSettings(s || {}));
-    
+
     const handleThemeChange = () => {
       const dark = document.documentElement.getAttribute('data-theme') === 'dark' ||
-                   document.documentElement.getAttribute('data-cms-theme') === 'dark';
+        document.documentElement.getAttribute('data-cms-theme') === 'dark';
       setIsDark(dark);
     };
 
@@ -183,7 +244,7 @@ export default function LiveChatWidget() {
   }, []);
 
   // Do not render on Admin or LP Image routes
-  const isHiddenRoute = typeof window !== 'undefined' && 
+  const isHiddenRoute = typeof window !== 'undefined' &&
     (window.location.pathname.startsWith('/lpimage') || window.location.pathname.startsWith('/admin'));
 
   // Hide floating button when modals request it
@@ -199,15 +260,27 @@ export default function LiveChatWidget() {
   }, []);
 
   useEffect(() => {
-    const handleOpen = () => {
+    const handleOpen = (e?: any) => {
       haptic.light();
       setActiveTab('chat');
       setIsOpen(true);
+      if (e?.detail?.message) {
+        setInputText(e.detail.message);
+      }
     };
-    const handleOpenConcierge = () => {
+    const handleOpenConcierge = (e?: any) => {
       haptic.light();
       setActiveTab('brief');
       setIsOpen(true);
+      if (e?.detail?.service) {
+        setSelectedService(e.detail.service);
+      }
+      if (e?.detail?.timeline) {
+        setSelectedTimeline(e.detail.timeline);
+      }
+      if (e?.detail?.description) {
+        setProjectDescription(e.detail.description);
+      }
     };
     window.addEventListener('porto_open_chat', handleOpen);
     window.addEventListener('porto_open_concierge', handleOpenConcierge);
@@ -368,6 +441,12 @@ export default function LiveChatWidget() {
     const text = inputText.trim();
     if (!text) return;
 
+    const now = Date.now();
+    if (now - lastSentTimeRef.current < 1500) {
+      return; // Anti-spam throttle (min 1.5s interval)
+    }
+    lastSentTimeRef.current = now;
+
     haptic.medium();
     setInputText('');
 
@@ -408,7 +487,7 @@ export default function LiveChatWidget() {
           text: text,
           createdAt: new Date().toISOString()
         }]);
-      } catch (e) {}
+      } catch (e) { }
     } catch (err) {
       console.error('Failed to send message:', err);
     }
@@ -438,10 +517,10 @@ export default function LiveChatWidget() {
             height: 48,
             padding: '0 18px',
             borderRadius: 100,
-            background: 'linear-gradient(135deg, var(--cms-accent, #7c3aed), #9333ea)',
+            background: 'var(--cms-accent, #7c3aed)',
             color: '#ffffff',
-            border: '1.5px solid rgba(255,255,255,0.25)',
-            boxShadow: '0 10px 30px rgba(124, 58, 237, 0.45), 0 2px 8px rgba(0,0,0,0.15)',
+            border: '1px solid rgba(255,255,255,0.2)',
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.28)',
             display: 'flex',
             alignItems: 'center',
             gap: 9,
@@ -479,10 +558,11 @@ export default function LiveChatWidget() {
             height: 'min(600px, calc(100dvh - 80px))',
             zIndex: 9999,
             borderRadius: 24,
-            background: isDark ? 'rgba(15, 15, 25, 0.96)' : '#ffffff',
-            boxShadow: isDark 
-              ? '0 24px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.1)' 
-              : '0 24px 60px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.06)',
+            border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(15, 23, 42, 0.08)'}`,
+            background: isDark ? '#151824' : '#ffffff',
+            boxShadow: isDark
+              ? '0 24px 60px rgba(0, 0, 0, 0.8)'
+              : '0 24px 60px rgba(15, 23, 42, 0.14)',
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
@@ -493,7 +573,7 @@ export default function LiveChatWidget() {
           {/* Header with Title & Action Buttons */}
           <div style={{
             background: accent,
-            padding: '14px 18px',
+            padding: '12px 16px',
             color: '#ffffff',
             display: 'flex',
             justifyContent: 'space-between',
@@ -501,40 +581,82 @@ export default function LiveChatWidget() {
             boxShadow: '0 4px 16px rgba(0,0,0,0.1)'
           }}>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontSize: 16, fontWeight: 900, fontFamily: "'Outfit', sans-serif", display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {cSettings.txtHeaderTitle || 'Studio Concierge'}
-                </span>
-                <Sparkles size={14} style={{ flexShrink: 0 }} />
-              </div>
-              <div style={{ fontSize: 11.5, opacity: 0.9, marginTop: 1, fontFamily: "'Inter', sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {client ? `Halo, ${client.name}!` : (cSettings.txtHeaderSubtitle || 'Konsultasi desain & pesan langsung')}
-              </div>
+              {isEditMode ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingRight: 8 }}>
+                  <input
+                    type="text"
+                    value={cSettings.txtHeaderTitle}
+                    onChange={e => setCSettings({ ...cSettings, txtHeaderTitle: e.target.value })}
+                    placeholder="Judul Header"
+                    style={{
+                      background: 'rgba(255,255,255,0.22)',
+                      border: '1px solid rgba(255,255,255,0.45)',
+                      borderRadius: 8,
+                      color: '#ffffff',
+                      fontSize: 13.5,
+                      fontWeight: 850,
+                      padding: '3px 8px',
+                      outline: 'none',
+                      width: '100%',
+                      fontFamily: "'Outfit', sans-serif"
+                    }}
+                  />
+                  <input
+                    type="text"
+                    value={cSettings.txtHeaderSubtitle}
+                    onChange={e => setCSettings({ ...cSettings, txtHeaderSubtitle: e.target.value })}
+                    placeholder="Sub-judul Header"
+                    style={{
+                      background: 'rgba(255,255,255,0.18)',
+                      border: '1px solid rgba(255,255,255,0.3)',
+                      borderRadius: 6,
+                      color: '#ffffff',
+                      fontSize: 10.5,
+                      padding: '2px 8px',
+                      outline: 'none',
+                      width: '100%',
+                      fontFamily: "'Inter', sans-serif"
+                    }}
+                  />
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 16, fontWeight: 900, fontFamily: "'Outfit', sans-serif", display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {cSettings.txtHeaderTitle || 'Studio Concierge'}
+                    </span>
+                    <Sparkles size={14} style={{ flexShrink: 0 }} />
+                  </div>
+                  <div style={{ fontSize: 11.5, opacity: 0.9, marginTop: 1, fontFamily: "'Inter', sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {client ? `Halo, ${client.name}!` : (cSettings.txtHeaderSubtitle || 'Konsultasi desain & pesan langsung')}
+                  </div>
+                </>
+              )}
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginLeft: 8 }}>
-              <button 
+              <button
                 onClick={() => {
                   haptic.light();
                   setIsOpen(false);
                 }}
                 className="live-chat-close-btn"
                 aria-label="Tutup"
-                style={{ 
-                  background: 'rgba(255, 255, 255, 0.18)', 
-                  border: 'none', 
-                  color: '#fff', 
-                  cursor: 'pointer', 
-                  width: 32, 
-                  height: 32, 
-                  minWidth: 32,
-                  maxWidth: 32,
-                  minHeight: 32,
-                  maxHeight: 32,
+                style={{
+                  background: 'rgba(255, 255, 255, 0.18)',
+                  border: 'none',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  width: 30,
+                  height: 30,
+                  minWidth: 30,
+                  maxWidth: 30,
+                  minHeight: 30,
+                  maxHeight: 30,
                   aspectRatio: '1 / 1',
-                  borderRadius: '50%', 
-                  display: 'flex', 
-                  alignItems: 'center', 
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
                   justifyContent: 'center',
                   flexShrink: 0,
                   padding: 0,
@@ -544,10 +666,31 @@ export default function LiveChatWidget() {
                 onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.32)'}
                 onMouseLeave={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.18)'}
               >
-                <X size={17} strokeWidth={2.4} style={{ width: 17, height: 17, flexShrink: 0, display: 'block' }} />
+                <X size={16} strokeWidth={2.4} style={{ width: 16, height: 16, flexShrink: 0, display: 'block' }} />
               </button>
             </div>
           </div>
+
+
+
+          {/* Success Banner */}
+          {isSavedNotify && (
+            <div style={{
+              background: '#10b981',
+              color: '#ffffff',
+              padding: '6px 14px',
+              fontSize: 11.5,
+              fontWeight: 800,
+              textAlign: 'center',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6
+            }}>
+              <CheckCheck size={14} />
+              <span>Semua teks Studio Concierge berhasil disimpan!</span>
+            </div>
+          )}
 
           {/* Tab Navigation Switcher */}
           <div style={{
@@ -557,64 +700,91 @@ export default function LiveChatWidget() {
             borderBottom: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)',
             gap: 4
           }}>
-            <button
-              type="button"
-              onClick={() => {
-                haptic.light();
-                setActiveTab('brief');
-              }}
-              style={{
-                flex: 1,
-                padding: '8px 0',
-                borderRadius: 100,
-                border: 'none',
-                background: activeTab === 'brief' ? accent : 'transparent',
-                color: activeTab === 'brief' ? '#ffffff' : (isDark ? '#94a3b8' : '#64748b'),
-                fontFamily: "'Outfit', sans-serif",
-                fontSize: 11.5,
-                fontWeight: 800,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 5,
-                transition: 'all 0.2s'
-              }}
-            >
-              <FileText size={13} /> {cSettings.txtTabBrief || 'Brief'}
-            </button>
+            {isEditMode ? (
+              <div style={{ display: 'flex', gap: 6, width: '100%' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 9.5, fontWeight: 700, color: isDark ? '#94a3b8' : '#64748b', marginBottom: 2 }}>Tab 1</div>
+                  <input
+                    type="text"
+                    value={cSettings.txtTabBrief}
+                    onChange={e => setCSettings({ ...cSettings, txtTabBrief: e.target.value })}
+                    placeholder="Brief Proyek"
+                    style={{ width: '100%', padding: '4px 8px', borderRadius: 8, border: '1px solid #cbd5e1', background: isDark ? '#0f172a' : '#ffffff', color: isDark ? '#ffffff' : '#0f172a', fontSize: 11, fontWeight: 800, outline: 'none', boxSizing: 'border-box' }}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 9.5, fontWeight: 700, color: isDark ? '#94a3b8' : '#64748b', marginBottom: 2 }}>Tab 2</div>
+                  <input
+                    type="text"
+                    value={cSettings.txtTabChat}
+                    onChange={e => setCSettings({ ...cSettings, txtTabChat: e.target.value })}
+                    placeholder="Live Chat"
+                    style={{ width: '100%', padding: '4px 8px', borderRadius: 8, border: '1px solid #cbd5e1', background: isDark ? '#0f172a' : '#ffffff', color: isDark ? '#ffffff' : '#0f172a', fontSize: 11, fontWeight: 800, outline: 'none', boxSizing: 'border-box' }}
+                  />
+                </div>
+              </div>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    haptic.light();
+                    setActiveTab('brief');
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '8px 0',
+                    borderRadius: 100,
+                    border: 'none',
+                    background: activeTab === 'brief' ? accent : 'transparent',
+                    color: activeTab === 'brief' ? '#ffffff' : (isDark ? '#94a3b8' : '#64748b'),
+                    fontFamily: "'Outfit', sans-serif",
+                    fontSize: 11.5,
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 5,
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <FileText size={13} /> {cSettings.txtTabBrief || 'Brief'}
+                </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                haptic.light();
-                setActiveTab('chat');
-              }}
-              style={{
-                flex: 1,
-                padding: '8px 0',
-                borderRadius: 100,
-                border: 'none',
-                background: activeTab === 'chat' ? accent : 'transparent',
-                color: activeTab === 'chat' ? '#ffffff' : (isDark ? '#94a3b8' : '#64748b'),
-                fontFamily: "'Outfit', sans-serif",
-                fontSize: 12,
-                fontWeight: 800,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
-                transition: 'all 0.2s'
-              }}
-            >
-              <MessageCircle size={14} /> {cSettings.txtTabChat || 'Live Chat'}
-              {activeTab !== 'chat' && messages.filter(m => (m.senderType === 'admin' || m.isAdmin) && !m.read && !m.isRead).length > 0 && (
-                <span style={{ fontSize: 9.5, padding: '1px 6px', borderRadius: 100, background: '#ef4444', color: '#ffffff', fontWeight: 900, animation: 'cmsPulse 1.5s infinite' }}>
-                  {messages.filter(m => (m.senderType === 'admin' || m.isAdmin) && !m.read && !m.isRead).length}
-                </span>
-              )}
-            </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    haptic.light();
+                    setActiveTab('chat');
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '8px 0',
+                    borderRadius: 100,
+                    border: 'none',
+                    background: activeTab === 'chat' ? accent : 'transparent',
+                    color: activeTab === 'chat' ? '#ffffff' : (isDark ? '#94a3b8' : '#64748b'),
+                    fontFamily: "'Outfit', sans-serif",
+                    fontSize: 12,
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <MessageCircle size={14} /> {cSettings.txtTabChat || 'Live Chat'}
+                  {activeTab !== 'chat' && messages.filter(m => (m.senderType === 'admin' || m.isAdmin) && !m.read && !m.isRead).length > 0 && (
+                    <span style={{ fontSize: 9.5, padding: '1px 6px', borderRadius: 100, background: '#ef4444', color: '#ffffff', fontWeight: 900, animation: 'cmsPulse 1.5s infinite' }}>
+                      {messages.filter(m => (m.senderType === 'admin' || m.isAdmin) && !m.read && !m.isRead).length}
+                    </span>
+                  )}
+                </button>
+              </>
+            )}
           </div>
 
           {/* TAB 1: PROJECT BRIEF & CONSULTATION FORM */}
@@ -629,124 +799,257 @@ export default function LiveChatWidget() {
               color: isDark ? '#f1f5f9' : '#0f172a'
             }}>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 800, color: isDark ? '#94a3b8' : '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 6, fontFamily: "'Outfit', sans-serif" }}>
-                  {cSettings.txtStep1Title || '1. Kebutuhan Desain / Proyek'}
-                </label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {serviceCategories.map(srv => {
-                    const isSel = selectedService === srv.id;
-                    const IconComp = ICON_MAP[srv.icon] || Palette;
-                    return (
-                      <div
-                        key={srv.id}
-                        onClick={() => {
-                          haptic.light();
-                          setSelectedService(srv.id);
-                        }}
-                        style={{
-                          padding: '9px 12px',
-                          borderRadius: 14,
-                          border: `1.5px solid ${isSel ? accent : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)')}`,
-                          background: isSel ? `${accent}15` : (isDark ? 'rgba(255,255,255,0.02)' : '#f8fafc'),
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 10,
-                          transition: 'all 0.15s ease'
-                        }}
-                      >
-                        <div style={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: 10,
-                          background: isSel ? accent : (isDark ? 'rgba(255,255,255,0.06)' : '#e2e8f0'),
-                          color: isSel ? '#fff' : (isDark ? '#cbd5e1' : '#475569'),
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0
-                        }}>
-                          <IconComp size={16} />
+                {isEditMode ? (
+                  <div style={{ marginBottom: 6 }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase', marginBottom: 2 }}>Edit Judul Bagian 1:</div>
+                    <input
+                      type="text"
+                      value={cSettings.txtStep1Title}
+                      onChange={e => setCSettings({ ...cSettings, txtStep1Title: e.target.value })}
+                      placeholder="1. KEBUTUHAN DESAIN / PROYEK"
+                      style={{ width: '100%', padding: '5px 9px', borderRadius: 8, border: '1px dashed #f59e0b', background: isDark ? 'rgba(245,158,11,0.08)' : '#fefce8', color: isDark ? '#ffffff' : '#0f172a', fontSize: 11.5, fontWeight: 850, outline: 'none', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                ) : (
+                  <label style={{ fontSize: 11, fontWeight: 800, color: isDark ? '#94a3b8' : '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 6, fontFamily: "'Outfit', sans-serif" }}>
+                    {cSettings.txtStep1Title || '1. Kebutuhan Desain / Proyek'}
+                  </label>
+                )}
+
+                {isEditMode ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {(cSettings.serviceCategories || DEFAULT_CONCIERGE_SETTINGS.serviceCategories || []).map((srv, idx) => (
+                      <div key={srv.id || idx} style={{ padding: '8px 10px', borderRadius: 12, border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : '#e2e8f0'}`, background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <input
+                            type="text"
+                            value={srv.name}
+                            onChange={e => {
+                              const cats = [...(cSettings.serviceCategories || DEFAULT_CONCIERGE_SETTINGS.serviceCategories || [])];
+                              cats[idx] = { ...cats[idx], name: e.target.value };
+                              setCSettings({ ...cSettings, serviceCategories: cats });
+                            }}
+                            placeholder="Nama Kategori Layanan"
+                            style={{ flex: 1, padding: '4px 8px', borderRadius: 6, border: `1px solid ${isDark ? 'rgba(255,255,255,0.15)' : '#cbd5e1'}`, background: isDark ? '#0f172a' : '#ffffff', color: isDark ? '#ffffff' : '#0f172a', fontSize: 12, fontWeight: 800, outline: 'none' }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCategory(srv.id)}
+                            style={{ background: 'rgba(239,68,68,0.1)', border: 'none', color: '#ef4444', borderRadius: 6, padding: '4px 7px', cursor: 'pointer' }}
+                            title="Hapus Kategori"
+                          >
+                            <Trash2 size={13} />
+                          </button>
                         </div>
-                        <div style={{ minWidth: 0, flex: 1 }}>
-                          <div style={{ fontSize: 12.5, fontWeight: 800, color: isSel ? accent : (isDark ? '#fff' : '#0f172a'), fontFamily: "'Outfit', sans-serif" }}>
-                            {srv.name}
-                          </div>
-                          {srv.desc && (
-                            <div style={{ fontSize: 10.5, color: isDark ? '#94a3b8' : '#64748b', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {srv.desc}
-                            </div>
-                          )}
-                        </div>
+                        <input
+                          type="text"
+                          value={srv.desc || ''}
+                          onChange={e => {
+                            const cats = [...(cSettings.serviceCategories || DEFAULT_CONCIERGE_SETTINGS.serviceCategories || [])];
+                            cats[idx] = { ...cats[idx], desc: e.target.value };
+                            setCSettings({ ...cSettings, serviceCategories: cats });
+                          }}
+                          placeholder="Deskripsi singkat layanan..."
+                          style={{ width: '100%', padding: '4px 8px', borderRadius: 6, border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : '#cbd5e1'}`, background: isDark ? '#0f172a' : '#ffffff', color: isDark ? '#cbd5e1' : '#64748b', fontSize: 10.5, outline: 'none', boxSizing: 'border-box' }}
+                        />
                       </div>
-                    );
-                  })}
-                </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={handleAddCategory}
+                      style={{ padding: '7px 12px', borderRadius: 10, border: '1.5px dashed #3b82f6', background: 'rgba(59,130,246,0.08)', color: '#3b82f6', fontSize: 11.5, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                    >
+                      <Plus size={13} /> Tambah Layanan Baru
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {serviceCategories.map(srv => {
+                      const isSel = selectedService === srv.id;
+                      const IconComp = ICON_MAP[srv.icon] || Palette;
+                      return (
+                        <div
+                          key={srv.id}
+                          onClick={() => {
+                            haptic.light();
+                            setSelectedService(srv.id);
+                          }}
+                          style={{
+                            padding: '9px 12px',
+                            borderRadius: 14,
+                            border: `1.5px solid ${isSel ? accent : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)')}`,
+                            background: isSel ? `${accent}15` : (isDark ? 'rgba(255,255,255,0.02)' : '#f8fafc'),
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 10,
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <div style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 10,
+                            background: isSel ? accent : (isDark ? 'rgba(255,255,255,0.06)' : '#e2e8f0'),
+                            color: isSel ? '#fff' : (isDark ? '#cbd5e1' : '#475569'),
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0
+                          }}>
+                            <IconComp size={16} />
+                          </div>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ fontSize: 12.5, fontWeight: 800, color: isSel ? accent : (isDark ? '#fff' : '#0f172a'), fontFamily: "'Outfit', sans-serif" }}>
+                              {srv.name}
+                            </div>
+                            {srv.desc && (
+                              <div style={{ fontSize: 10.5, color: isDark ? '#94a3b8' : '#64748b', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {srv.desc}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               <div>
-                <label style={{ fontSize: 11, fontWeight: 800, color: isDark ? '#94a3b8' : '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 6, fontFamily: "'Outfit', sans-serif" }}>
-                  {cSettings.txtStep2Title || '2. Target Waktu Pengerjaan'}
-                </label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                  {timelineOptions.map(t => {
-                    const isSel = selectedTimeline === t.id;
-                    return (
-                      <button
-                        key={t.id}
-                        type="button"
-                        onClick={() => {
-                          haptic.light();
-                          setSelectedTimeline(t.id);
-                        }}
-                        style={{
-                          padding: '8px 12px',
-                          borderRadius: 12,
-                          border: `1.5px solid ${isSel ? accent : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)')}`,
-                          background: isSel ? accent : (isDark ? 'rgba(255,255,255,0.02)' : '#f8fafc'),
-                          color: isSel ? '#ffffff' : (isDark ? '#cbd5e1' : '#334155'),
-                          fontFamily: "'Outfit', sans-serif",
-                          fontSize: 11.5,
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          transition: 'all 0.15s ease'
-                        }}
-                      >
-                        <span>{t.name}</span>
-                        {isSel && <CheckCircle2 size={14} />}
-                      </button>
-                    );
-                  })}
-                </div>
+                {isEditMode ? (
+                  <div style={{ marginBottom: 6 }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase', marginBottom: 2 }}>Edit Judul Bagian 2:</div>
+                    <input
+                      type="text"
+                      value={cSettings.txtStep2Title}
+                      onChange={e => setCSettings({ ...cSettings, txtStep2Title: e.target.value })}
+                      placeholder="2. TARGET WAKTU PENGERJAAN"
+                      style={{ width: '100%', padding: '5px 9px', borderRadius: 8, border: '1px dashed #f59e0b', background: isDark ? 'rgba(245,158,11,0.08)' : '#fefce8', color: isDark ? '#ffffff' : '#0f172a', fontSize: 11.5, fontWeight: 850, outline: 'none', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                ) : (
+                  <label style={{ fontSize: 11, fontWeight: 800, color: isDark ? '#94a3b8' : '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 6, fontFamily: "'Outfit', sans-serif" }}>
+                    {cSettings.txtStep2Title || '2. Target Waktu Pengerjaan'}
+                  </label>
+                )}
+
+                {isEditMode ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {(cSettings.timelineOptions || DEFAULT_CONCIERGE_SETTINGS.timelineOptions || []).map((t, idx) => (
+                      <div key={t.id || idx} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <input
+                          type="text"
+                          value={t.name}
+                          onChange={e => {
+                            const timelines = [...(cSettings.timelineOptions || DEFAULT_CONCIERGE_SETTINGS.timelineOptions || [])];
+                            timelines[idx] = { ...timelines[idx], name: e.target.value };
+                            setCSettings({ ...cSettings, timelineOptions: timelines });
+                          }}
+                          placeholder="Nama Opsi Waktu"
+                          style={{ flex: 1, padding: '5px 10px', borderRadius: 8, border: `1px solid ${isDark ? 'rgba(255,255,255,0.15)' : '#cbd5e1'}`, background: isDark ? '#0f172a' : '#ffffff', color: isDark ? '#ffffff' : '#0f172a', fontSize: 11.5, fontWeight: 750, outline: 'none' }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTimeline(t.id)}
+                          style={{ background: 'rgba(239,68,68,0.1)', border: 'none', color: '#ef4444', borderRadius: 6, padding: '5px 8px', cursor: 'pointer' }}
+                          title="Hapus Opsi"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={handleAddTimeline}
+                      style={{ padding: '6px 12px', borderRadius: 8, border: '1.5px dashed #3b82f6', background: 'rgba(59,130,246,0.08)', color: '#3b82f6', fontSize: 11.5, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                    >
+                      <Plus size={13} /> Tambah Opsi Waktu
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    {timelineOptions.map(t => {
+                      const isSel = selectedTimeline === t.id;
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => {
+                            haptic.light();
+                            setSelectedTimeline(t.id);
+                          }}
+                          style={{
+                            padding: '8px 12px',
+                            borderRadius: 12,
+                            border: `1.5px solid ${isSel ? accent : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)')}`,
+                            background: isSel ? accent : (isDark ? 'rgba(255,255,255,0.02)' : '#f8fafc'),
+                            color: isSel ? '#ffffff' : (isDark ? '#cbd5e1' : '#334155'),
+                            fontFamily: "'Outfit', sans-serif",
+                            fontSize: 11.5,
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <span>{t.name}</span>
+                          {isSel && <CheckCircle2 size={14} />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               <div>
-                <label style={{ fontSize: 11, fontWeight: 800, color: isDark ? '#94a3b8' : '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 6, fontFamily: "'Outfit', sans-serif" }}>
-                  {cSettings.txtStep3Title || '3. Ceritakan Ide atau Konsep Proyek'}
-                </label>
-                <textarea
-                  value={projectDescription}
-                  onChange={e => setProjectDescription(e.target.value)}
-                  placeholder={cSettings.txtStep3Placeholder || 'Contoh: Saya ingin membuat identitas visual brand coffee shop...'}
-                  style={{
-                    width: '100%',
-                    height: 60,
-                    padding: '9px 12px',
-                    borderRadius: 14,
-                    border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
-                    background: isDark ? 'rgba(0,0,0,0.25)' : '#f8fafc',
-                    color: isDark ? '#fff' : '#0f172a',
-                    fontSize: 12,
-                    fontFamily: "'Inter', sans-serif",
-                    resize: 'none',
-                    outline: 'none',
-                    boxSizing: 'border-box'
-                  }}
-                />
+                {isEditMode ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase' }}>Edit Judul & Placeholder Bagian 3:</div>
+                    <input
+                      type="text"
+                      value={cSettings.txtStep3Title}
+                      onChange={e => setCSettings({ ...cSettings, txtStep3Title: e.target.value })}
+                      placeholder="3. Ceritakan Ide atau Konsep Proyek"
+                      style={{ width: '100%', padding: '5px 9px', borderRadius: 8, border: '1px dashed #f59e0b', background: isDark ? 'rgba(245,158,11,0.08)' : '#fefce8', color: isDark ? '#ffffff' : '#0f172a', fontSize: 11.5, fontWeight: 850, outline: 'none', boxSizing: 'border-box' }}
+                    />
+                    <input
+                      type="text"
+                      value={cSettings.txtStep3Placeholder}
+                      onChange={e => setCSettings({ ...cSettings, txtStep3Placeholder: e.target.value })}
+                      placeholder="Placeholder form catatan ide proyek..."
+                      style={{ width: '100%', padding: '4px 8px', borderRadius: 8, border: `1px solid ${isDark ? 'rgba(255,255,255,0.15)' : '#cbd5e1'}`, background: isDark ? '#0f172a' : '#ffffff', color: isDark ? '#cbd5e1' : '#64748b', fontSize: 11, outline: 'none', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <label style={{ fontSize: 11, fontWeight: 800, color: isDark ? '#94a3b8' : '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 6, fontFamily: "'Outfit', sans-serif" }}>
+                      {cSettings.txtStep3Title || '3. Ceritakan Ide atau Konsep Proyek'}
+                    </label>
+                    <textarea
+                      value={projectDescription}
+                      onChange={e => setProjectDescription(e.target.value)}
+                      placeholder={cSettings.txtStep3Placeholder || 'Contoh: Saya ingin membuat identitas visual brand coffee shop...'}
+                      style={{
+                        width: '100%',
+                        height: 60,
+                        padding: '9px 12px',
+                        borderRadius: 14,
+                        border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
+                        background: isDark ? 'rgba(0,0,0,0.25)' : '#f8fafc',
+                        color: isDark ? '#fff' : '#0f172a',
+                        fontSize: 12,
+                        fontFamily: "'Inter', sans-serif",
+                        resize: 'none',
+                        outline: 'none',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </>
+                )}
               </div>
 
               {/* Action Buttons: WhatsApp & Direct Live Chat */}
@@ -760,56 +1063,84 @@ export default function LiveChatWidget() {
                 flexDirection: 'column',
                 gap: 8
               }}>
-                <button
-                  type="button"
-                  onClick={handleSendBriefWhatsApp}
-                  style={{
-                    width: '100%',
-                    height: 40,
-                    borderRadius: 100,
-                    border: 'none',
-                    background: 'linear-gradient(135deg, #10b981, #059669)',
-                    color: '#ffffff',
-                    fontFamily: "'Outfit', sans-serif",
-                    fontSize: 12.5,
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 6,
-                    boxShadow: '0 4px 14px rgba(16,185,129,0.3)',
-                    transition: 'transform 0.15s ease'
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.02)'}
-                  onMouseLeave={e => e.currentTarget.style.transform = 'none'}
-                >
-                  <Phone size={14} /> {cSettings.txtBtnWhatsapp || 'Kirim Brief via WhatsApp'}
-                </button>
+                {isEditMode ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase' }}>Edit Teks Tombol Aksi:</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Phone size={14} color="#10b981" />
+                      <input
+                        type="text"
+                        value={cSettings.txtBtnWhatsapp}
+                        onChange={e => setCSettings({ ...cSettings, txtBtnWhatsapp: e.target.value })}
+                        placeholder="Kirim via WhatsApp"
+                        style={{ flex: 1, padding: '5px 8px', borderRadius: 8, border: '1px solid #10b981', background: isDark ? '#0f172a' : '#ffffff', color: isDark ? '#ffffff' : '#0f172a', fontSize: 11.5, fontWeight: 750, outline: 'none' }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <MessageCircle size={14} color={accent} />
+                      <input
+                        type="text"
+                        value={cSettings.txtBtnLiveChat}
+                        onChange={e => setCSettings({ ...cSettings, txtBtnLiveChat: e.target.value })}
+                        placeholder="Kirim ke Live Chat Studio"
+                        style={{ flex: 1, padding: '5px 8px', borderRadius: 8, border: `1px solid ${accent}`, background: isDark ? '#0f172a' : '#ffffff', color: isDark ? '#ffffff' : '#0f172a', fontSize: 11.5, fontWeight: 750, outline: 'none' }}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleSendBriefWhatsApp}
+                      style={{
+                        width: '100%',
+                        height: 40,
+                        borderRadius: 100,
+                        border: 'none',
+                        background: 'linear-gradient(135deg, #10b981, #059669)',
+                        color: '#ffffff',
+                        fontFamily: "'Outfit', sans-serif",
+                        fontSize: 12.5,
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        boxShadow: '0 4px 14px rgba(16,185,129,0.3)',
+                        transition: 'transform 0.15s ease'
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.02)'}
+                      onMouseLeave={e => e.currentTarget.style.transform = 'none'}
+                    >
+                      <Phone size={14} /> {cSettings.txtBtnWhatsapp || 'Kirim Brief via WhatsApp'}
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={handleSendBriefToChat}
-                  style={{
-                    width: '100%',
-                    height: 38,
-                    borderRadius: 100,
-                    border: `1.5px solid ${accent}`,
-                    background: isDark ? `${accent}20` : `${accent}10`,
-                    color: accent,
-                    fontFamily: "'Outfit', sans-serif",
-                    fontSize: 12,
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 6,
-                    transition: 'all 0.15s ease'
-                  }}
-                >
-                  <Send size={13} /> {cSettings.txtBtnLiveChat || 'Kirim ke Live Chat Studio'}
-                </button>
+                    <button
+                      type="button"
+                      onClick={handleSendBriefToChat}
+                      style={{
+                        width: '100%',
+                        height: 38,
+                        borderRadius: 100,
+                        border: `1.5px solid ${accent}`,
+                        background: isDark ? `${accent}20` : `${accent}10`,
+                        color: accent,
+                        fontFamily: "'Outfit', sans-serif",
+                        fontSize: 12,
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <Send size={13} /> {cSettings.txtBtnLiveChat || 'Kirim ke Live Chat Studio'}
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -817,49 +1148,49 @@ export default function LiveChatWidget() {
           {/* TAB 2: LIVE CHAT */}
           {activeTab === 'chat' && (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              <div style={{ 
-                flex: 1, 
-                padding: 16, 
-                overflowY: 'auto', 
-                background: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(248, 250, 252, 0.8)', 
-                display: 'flex', 
-                flexDirection: 'column', 
-                gap: 10 
+              <div style={{
+                flex: 1,
+                padding: 16,
+                overflowY: 'auto',
+                background: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(248, 250, 252, 0.8)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10
               }}>
                 {messages.length === 0 && (
                   <div style={{ textAlign: 'center', color: isDark ? '#94a3b8' : '#64748b', marginTop: 40, fontSize: 13, padding: '0 20px' }}>
                     {cSettings.txtChatEmpty || '👋 Halo! Ada pertanyaan seputar portofolio atau ide proyek? Silakan kirim pesan langsung di sini.'}
                   </div>
                 )}
-                
+
                 {messages.map((msg) => {
                   const isAdminReply = msg.senderType === 'admin' || msg.senderRole === 'admin' || msg.senderId === 'admin' || msg.isAdmin === true;
                   const isMe = !isAdminReply;
                   return (
                     <div key={msg.id} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
-                      <div style={{ 
-                        maxWidth: '85%', 
+                      <div style={{
+                        maxWidth: '85%',
                         padding: '10px 14px',
                         background: isMe ? accent : (isDark ? 'rgba(255, 255, 255, 0.08)' : '#ffffff'),
                         color: isMe ? '#ffffff' : (isDark ? '#f1f5f9' : '#0f172a'),
                         borderRadius: isMe ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
                         border: isMe ? 'none' : (isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)'),
-                        fontSize: 13.5, 
-                        lineHeight: 1.5, 
-                        whiteSpace: 'pre-wrap', 
+                        fontSize: 13.5,
+                        lineHeight: 1.5,
+                        whiteSpace: 'pre-wrap',
                         wordBreak: 'break-word',
                         boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
                       }}>
                         {msg.text}
-                        <div style={{ 
-                          fontSize: 10, 
-                          opacity: 0.7, 
-                          marginTop: 4, 
-                          textAlign: 'right', 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          justifyContent: 'flex-end', 
-                          gap: 4 
+                        <div style={{
+                          fontSize: 10,
+                          opacity: 0.7,
+                          marginTop: 4,
+                          textAlign: 'right',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'flex-end',
+                          gap: 4
                         }}>
                           {msg.timestamp?.seconds ? new Date(msg.timestamp.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                           {isMe && <CheckCheck size={12} />}
@@ -910,25 +1241,25 @@ export default function LiveChatWidget() {
               </div>
 
               {/* Chat Input Form */}
-              <div style={{ 
-                padding: '10px 12px 12px', 
-                background: isDark ? 'rgba(20, 20, 30, 0.9)' : '#ffffff', 
-                borderTop: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.06)' 
+              <div style={{
+                padding: '10px 12px 12px',
+                background: isDark ? 'rgba(20, 20, 30, 0.9)' : '#ffffff',
+                borderTop: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.06)'
               }}>
                 <form onSubmit={handleSendChat} style={{ display: 'flex', gap: 8 }}>
-                  <input 
+                  <input
                     value={inputText}
                     onChange={e => setInputText(e.target.value)}
                     placeholder={cSettings.txtChatPlaceholder || 'Ketik pesan untuk tim studio...'}
                     style={{
-                      flex: 1, 
-                      height: 44, 
+                      flex: 1,
+                      height: 44,
                       padding: '0 16px',
-                      background: isDark ? 'rgba(255, 255, 255, 0.06)' : '#f1f5f9', 
+                      background: isDark ? 'rgba(255, 255, 255, 0.06)' : '#f1f5f9',
                       border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid transparent',
-                      borderRadius: 100, 
-                      fontSize: 13.5, 
-                      outline: 'none', 
+                      borderRadius: 100,
+                      fontSize: 13.5,
+                      outline: 'none',
                       color: isDark ? '#ffffff' : '#0f172a',
                       transition: 'border 0.2s',
                       boxSizing: 'border-box'
@@ -936,21 +1267,21 @@ export default function LiveChatWidget() {
                     onFocus={e => e.target.style.borderColor = accent}
                     onBlur={e => e.target.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'transparent'}
                   />
-                  <button 
+                  <button
                     type="submit"
                     disabled={!inputText.trim()}
                     aria-label="Kirim Pesan"
                     style={{
-                      width: 44, 
-                      height: 44, 
+                      width: 44,
+                      height: 44,
                       borderRadius: '50%',
                       background: inputText.trim() ? accent : (isDark ? 'rgba(255,255,255,0.1)' : '#e2e8f0'),
-                      color: '#ffffff', 
-                      border: 'none', 
-                      display: 'flex', 
-                      alignItems: 'center', 
+                      color: '#ffffff',
+                      border: 'none',
+                      display: 'flex',
+                      alignItems: 'center',
                       justifyContent: 'center',
-                      cursor: inputText.trim() ? 'pointer' : 'not-allowed', 
+                      cursor: inputText.trim() ? 'pointer' : 'not-allowed',
                       transition: 'background 0.2s, transform 0.15s',
                       flexShrink: 0
                     }}
@@ -992,12 +1323,15 @@ export default function LiveChatWidget() {
           flex-shrink: 0 !important;
           display: block !important;
         }
-        @media (max-width: 640px) {
+        @media (max-width: 768px) {
           .live-chat-floating-btn {
             width: 48px !important;
+            height: 48px !important;
             padding: 0 !important;
             justify-content: center !important;
             border-radius: 50% !important;
+            bottom: max(80px, calc(env(safe-area-inset-bottom, 0px) + 80px)) !important;
+            right: max(14px, calc(env(safe-area-inset-right, 0px) + 14px)) !important;
           }
           .live-chat-floating-btn span {
             display: none !important;

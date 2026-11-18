@@ -327,6 +327,27 @@ const DEFAULT_WALLPAPER_CONFIG: WallpaperConfig = {
   overlayOpacity: 0.35
 };
 
+const HeroClockText = React.memo(() => {
+  const [clock, setClock] = useState<string>(() => {
+    const now = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())} WIB`;
+  });
+
+  useEffect(() => {
+    const update = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      const now = new Date();
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      setClock(`${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())} WIB`);
+    };
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return <>{clock}</>;
+});
+
 export const HeroIdentityWidget: React.FC<HeroIdentityWidgetProps> = ({
   globalSettings,
   syncMode,
@@ -450,7 +471,7 @@ export const HeroIdentityWidget: React.FC<HeroIdentityWidgetProps> = ({
       if (typeof document !== 'undefined' && document.hidden) return;
       setCurrentTime(new Date());
     };
-    const timer = setInterval(updateTime, 1000);
+    const timer = setInterval(updateTime, 60000);
     return () => clearInterval(timer);
   }, []);
 
@@ -976,7 +997,7 @@ export const HeroIdentityWidget: React.FC<HeroIdentityWidgetProps> = ({
             color: isDarkSkyActive ? '#ffffff' : '#0f172a',
             textShadow: isDarkSkyActive ? '0 4px 24px rgba(0,0,0,0.45)' : 'none'
           }}>
-            {formattedClock}
+            <HeroClockText />
           </div>
 
           {/* Dynamic Sapaan & Status Singkat */}
@@ -1668,8 +1689,9 @@ export const HeroIdentityWidget: React.FC<HeroIdentityWidgetProps> = ({
             position: 'fixed',
             inset: 0,
             zIndex: 9999,
-            background: 'rgba(0, 0, 0, 0.75)',
-            backdropFilter: 'blur(8px)',
+            background: 'rgba(0, 0, 0, 0.8)',
+            backdropFilter: 'none',
+            WebkitBackdropFilter: 'none',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',

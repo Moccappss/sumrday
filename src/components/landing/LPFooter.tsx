@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { 
   Mail, MapPin, Send, Link2, MessageCircle, Globe, Camera, Phone, 
   FileText, Share2, MessageSquare, Video, Image, ExternalLink, AtSign,
@@ -21,10 +22,25 @@ interface ContactMethod {
 }
 
 interface FooterData {
+  enabled?: boolean;
   description: string;
   copyright: string;
   email: string;
   location: string;
+  brandText?: string;
+  collabBadge?: string;
+  collabTitle?: string;
+  collabSubtitle?: string;
+  collabCtaLabel?: string;
+  socialTitle?: string;
+  formChannelLabel?: string;
+  formNamePlaceholder?: string;
+  formContactPlaceholder?: string;
+  formTypePlaceholder?: string;
+  formMessagePlaceholder?: string;
+  formSubmitLabel?: string;
+  backToTopLabel?: string;
+  bottomLinks?: { label: string; url: string }[];
   socialLinks: { id: string; platform: string; url: string; icon: string; }[];
   contactProjectTypes?: string[];
   contactMethods?: ContactMethod[];
@@ -35,6 +51,9 @@ interface LPFooterProps {
   isDark: boolean;
   accentColor: string;
   localization?: any;
+  isEditable?: boolean;
+  onUpdateFooter?: (field: string, value: any) => void;
+  onUpdateLocalization?: (field: string, value: string) => void;
 }
 
 const buildSendUrl = (method: ContactMethod, form: { name: string; email: string; type: string; message: string }) => {
@@ -59,14 +78,36 @@ const buildSendUrl = (method: ContactMethod, form: { name: string; email: string
   }
 };
 
-const LPFooter: React.FC<LPFooterProps> = ({ data, isDark, accentColor, localization }) => {
+const LPFooter: React.FC<LPFooterProps> = ({
+  data,
+  isDark,
+  accentColor,
+  localization,
+  isEditable = false,
+  onUpdateFooter,
+  onUpdateLocalization,
+}) => {
   const { profile: businessProfile } = useBusinessProfile();
   const footerData: FooterData = ((data as any)?.footer ? { ...(data as any).footer, ...(data as any) } : (data || {})) as any;
   const loc = localization || (data as any)?.localization || {};
 
+  const editProps = (onSave: (val: string) => void) =>
+    isEditable
+      ? {
+          className: 'lp-footer-editable',
+          contentEditable: true,
+          suppressContentEditableWarning: true,
+          onBlur: (e: React.FocusEvent<HTMLElement>) => {
+            onSave(e.currentTarget.textContent ?? '');
+          },
+          style: { outline: 'none', cursor: 'text', borderRadius: 6 } as React.CSSProperties,
+          title: 'Klik untuk langsung mengedit teks ini',
+        }
+      : {};
+
   const effectiveEmail = footerData.email || businessProfile?.email || 'hi.sumrday@gmail.com';
   const effectiveLocation = footerData.location || businessProfile?.address || 'Jakarta Selatan, Indonesia';
-  const effectiveDescription = footerData.description || businessProfile?.description || 'A little sunshine for your screen ☀️ Menghadirkan interaksi digital secara hangat, santai, dan penuh energi positif.';
+  const effectiveDescription = footerData.description || businessProfile?.description || 'A little sunshine for your screen — Menghadirkan interaksi digital secara hangat, santai, dan penuh energi positif.';
 
   const profileSocials = Object.entries(businessProfile?.socials || {})
     .filter(([_, val]) => Boolean(val && val.trim()))
@@ -81,19 +122,19 @@ const LPFooter: React.FC<LPFooterProps> = ({ data, isDark, accentColor, localiza
     ? profileSocials
     : (footerData.socialLinks || []);
 
-  const textColor    = isDark ? '#f8fafc' : '#0f172a';
-  const subTextColor = isDark ? '#94a3b8' : '#64748b';
-  const borderColor  = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
-  const inputBg      = isDark ? 'rgba(15, 23, 42, 0.6)' : '#ffffff';
-  const inputBorder  = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)';
-  const sectionBg    = isDark ? '#08080f' : '#ffffff';
+  const textColor    = '#ffffff';
+  const subTextColor = '#94a3b8';
+  const borderColor  = isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(15, 23, 42, 0.08)';
+  const inputBg      = isDark ? '#151824' : '#1b1d28';
+  const inputBorder  = isDark ? 'rgba(255, 255, 255, 0.14)' : '#2d3142';
+  const sectionBg    = isDark ? '#06070a' : '#0f1117';
 
   const year = new Date().getFullYear();
 
   const defaultMethods: ContactMethod[] = [
-    { id: 'whatsapp', label: 'WhatsApp', icon: '💬', value: businessProfile?.whatsapp ? (businessProfile.whatsapp.startsWith('+') ? businessProfile.whatsapp : `+${businessProfile.whatsapp.replace(/[^0-9]/g, '')}`) : '+6281234567890', enabled: true },
-    { id: 'email', label: 'Email', icon: '✉️', value: effectiveEmail, enabled: true },
-    { id: 'telegram', label: 'Telegram', icon: '✈️', value: businessProfile?.socials?.telegram ? `@${businessProfile.socials.telegram.replace('@', '')}` : '@sumrdayadmin', enabled: true },
+    { id: 'whatsapp', label: 'WhatsApp', icon: 'whatsapp', value: businessProfile?.whatsapp ? (businessProfile.whatsapp.startsWith('+') ? businessProfile.whatsapp : `+${businessProfile.whatsapp.replace(/[^0-9]/g, '')}`) : '+6281234567890', enabled: true },
+    { id: 'email', label: 'Email', icon: 'email', value: effectiveEmail, enabled: true },
+    { id: 'telegram', label: 'Telegram', icon: 'telegram', value: businessProfile?.socials?.telegram ? `@${businessProfile.socials.telegram.replace('@', '')}` : '@sumrdayadmin', enabled: true },
   ];
   const activeMethods = (footerData.contactMethods && footerData.contactMethods.length > 0) 
     ? footerData.contactMethods.filter(m => m.enabled && m.value) 
@@ -121,7 +162,7 @@ const LPFooter: React.FC<LPFooterProps> = ({ data, isDark, accentColor, localiza
   const inputStyle: React.CSSProperties = {
     width: '100%',
     padding: '14px 18px',
-    borderRadius: 14,
+    borderRadius: 12,
     border: `1px solid ${inputBorder}`,
     background: inputBg,
     color: textColor,
@@ -135,27 +176,30 @@ const LPFooter: React.FC<LPFooterProps> = ({ data, isDark, accentColor, localiza
   return (
     <footer
       id="contact"
+      className="lp-footer-root"
       style={{
-        padding: '110px 24px calc(72px + env(safe-area-inset-bottom, 24px))',
+        padding: 'clamp(56px, 7vw, 84px) clamp(16px, 3.5vw, 24px) calc(72px + env(safe-area-inset-bottom, 24px))',
         background: sectionBg,
         position: 'relative',
         overflow: 'hidden',
+        boxSizing: 'border-box',
+        borderRadius: '24px 24px 0 0',
+        borderTop: `1px solid ${borderColor}`,
+        marginTop: 40,
       }}
     >
-      <div style={{ maxWidth: 1240, margin: '0 auto' }}>
+      <div style={{ maxWidth: 1240, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
 
-        {/* ── Top Collaboration Banner ── */}
+        {/* ── Top Collaboration Banner (Golfngv Flat Minimalist Style) ── */}
         <div
           data-reveal="true"
+          className="lp-footer-collab-banner"
           style={{
-            padding: '48px 40px',
-            borderRadius: 32,
-            marginBottom: 72,
-            background: isDark
-              ? 'linear-gradient(135deg, rgba(99, 102, 241, 0.18) 0%, rgba(168, 85, 247, 0.12) 50%, rgba(236, 72, 153, 0.08) 100%)'
-              : 'linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(168, 85, 247, 0.06) 50%, rgba(236, 72, 153, 0.04) 100%)',
-            border: `1px solid ${isDark ? 'rgba(99, 102, 241, 0.3)' : 'rgba(99, 102, 241, 0.15)'}`,
-            boxShadow: isDark ? '0 20px 50px rgba(0,0,0,0.4)' : '0 20px 50px rgba(99,102,241,0.06)',
+            padding: '44px 40px',
+            borderRadius: 24,
+            marginBottom: 64,
+            background: '#181a24',
+            border: `1px solid ${borderColor}`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -170,10 +214,10 @@ const LPFooter: React.FC<LPFooterProps> = ({ data, isDark, accentColor, localiza
               display: 'inline-flex',
               alignItems: 'center',
               gap: 8,
-              padding: '5px 12px',
+              padding: '5px 14px',
               borderRadius: 100,
-              background: isDark ? 'rgba(99, 102, 241, 0.25)' : 'rgba(99, 102, 241, 0.12)',
-              color: '#818cf8',
+              background: '#222534',
+              color: accentColor,
               fontFamily: "'Outfit', sans-serif",
               fontSize: 11.5,
               fontWeight: 800,
@@ -181,55 +225,87 @@ const LPFooter: React.FC<LPFooterProps> = ({ data, isDark, accentColor, localiza
               textTransform: 'uppercase',
               marginBottom: 14,
             }}>
-              <Sparkles size={13} />
-              <span>SIAP MEMULAI KOLABORASI</span>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: accentColor, display: 'inline-block' }} />
+              <span {...editProps((v) => onUpdateFooter?.('collabBadge', v))}>
+                {footerData.collabBadge || 'KOLABORASI PROYEK'}
+              </span>
             </div>
-            <h2 style={{
-              fontFamily: "'Outfit', sans-serif",
-              fontSize: 'clamp(28px, 3.4vw, 42px)',
-              fontWeight: 900,
-              color: textColor,
-              margin: '0 0 10px',
-              letterSpacing: '-0.025em',
-              lineHeight: 1.18,
-            }}>
-              Punya Ide Proyek Hebat? Mari Wujudkan Bersama.
+            <h2
+              {...editProps((v) => onUpdateFooter?.('collabTitle', v))}
+              style={{
+                fontFamily: "'Outfit', sans-serif",
+                fontSize: 'clamp(28px, 3.4vw, 42px)',
+                fontWeight: 800,
+                color: textColor,
+                margin: '0 0 10px',
+                letterSpacing: '-0.025em',
+                lineHeight: 1.18,
+                ...(isEditable ? { outline: 'none', cursor: 'text' } : {}),
+              }}
+            >
+              {footerData.collabTitle || 'Siap Mewujudkan Proyek Digital Anda?'}
             </h2>
-            <p style={{
-              fontFamily: "'Inter', sans-serif",
-              fontSize: 15,
-              color: subTextColor,
-              margin: 0,
-              lineHeight: 1.65,
-            }}>
-              Diskusikan kebutuhan desain, pengembangan website, atau strategi visual brand Anda langsung dengan tim kami.
+            <p
+              {...editProps((v) => onUpdateFooter?.('collabSubtitle', v))}
+              style={{
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 15,
+                color: subTextColor,
+                margin: 0,
+                lineHeight: 1.65,
+                ...(isEditable ? { outline: 'none', cursor: 'text' } : {}),
+              }}
+            >
+              {footerData.collabSubtitle || 'Diskusikan kebutuhan desain, pengembangan website, atau strategi visual brand Anda langsung dengan tim kami.'}
             </p>
           </div>
 
-          <a
-            href="#contact-form"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '14px 28px',
-              borderRadius: 100,
-              background: accentColor,
-              color: '#ffffff',
-              fontFamily: "'Outfit', sans-serif",
-              fontSize: 14,
-              fontWeight: 700,
-              textDecoration: 'none',
-              boxShadow: `0 8px 24px ${accentColor}40`,
-              whiteSpace: 'nowrap',
-              transition: 'transform 0.25s ease',
-            }}
-            onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
-            onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
-          >
-            <span>Kirim Pesan Sekarang</span>
-            <ArrowUpRight size={16} />
-          </a>
+          {isEditable ? (
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '14px 28px',
+                borderRadius: 100,
+                background: '#ffffff',
+                color: '#111827',
+                fontFamily: "'Outfit', sans-serif",
+                fontSize: 14,
+                fontWeight: 800,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <span {...editProps((v) => onUpdateFooter?.('collabCtaLabel', v))}>
+                {footerData.collabCtaLabel || 'Kirim Pesan Sekarang'}
+              </span>
+              <ArrowUpRight size={16} />
+            </div>
+          ) : (
+            <a
+              href="#contact-form"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '14px 28px',
+                borderRadius: 100,
+                background: '#ffffff',
+                color: '#111827',
+                fontFamily: "'Outfit', sans-serif",
+                fontSize: 14,
+                fontWeight: 800,
+                textDecoration: 'none',
+                whiteSpace: 'nowrap',
+                transition: 'transform 0.15s ease',
+              }}
+              onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+              onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+            >
+              <span>{footerData.collabCtaLabel || 'Kirim Pesan Sekarang'}</span>
+              <ArrowUpRight size={16} />
+            </a>
+          )}
         </div>
 
         {/* Section Header */}
@@ -241,65 +317,119 @@ const LPFooter: React.FC<LPFooterProps> = ({ data, isDark, accentColor, localiza
             display: 'flex', alignItems: 'center', gap: 6,
           }}>
             <MessageSquare size={14} />
-            <span>{localization?.customProjectSectionTitle || 'HUBUNGI KAMI'}</span>
+            <span {...editProps((v) => onUpdateLocalization?.('customProjectSectionTitle', v))}>
+              {loc?.customProjectSectionTitle || 'HUBUNGI KAMI'}
+            </span>
           </div>
-          <h2 style={{
-            fontFamily: "'Outfit', sans-serif",
-            fontSize: 'clamp(30px, 3.6vw, 44px)',
-            fontWeight: 850, color: textColor, margin: 0, letterSpacing: '-0.025em',
-          }}>
-            {localization?.customProjectMainTitle || 'Kirimkan Pesan atau Pertanyaan'}
+          <h2
+            {...editProps((v) => onUpdateLocalization?.('customProjectMainTitle', v))}
+            style={{
+              fontFamily: "'Outfit', sans-serif",
+              fontSize: 'clamp(30px, 3.6vw, 44px)',
+              fontWeight: 850, color: textColor, margin: 0, letterSpacing: '-0.025em',
+              ...(isEditable ? { outline: 'none', cursor: 'text' } : {}),
+            }}
+          >
+            {loc?.customProjectMainTitle || 'Kirimkan Pesan atau Pertanyaan'}
           </h2>
         </div>
 
         {/* Two-Column Info + Form */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-          gap: 56,
-          marginBottom: 72,
-          paddingBottom: 72,
-          borderBottom: `1px solid ${borderColor}`,
-        }}>
+        <div
+          className="lp-footer-main-grid"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))',
+            gap: 56,
+            marginBottom: 72,
+            paddingBottom: 72,
+            borderBottom: `1px solid ${borderColor}`,
+          }}
+        >
 
           {/* Left Column: Info & Social Links */}
           <div data-reveal="true" className="reveal-delay-1" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-            <p style={{
-              fontFamily: "'Inter', sans-serif",
-              fontSize: 15, color: subTextColor, lineHeight: 1.75,
-              margin: 0, maxWidth: 440,
-            }}>
+            <p
+              {...editProps((v) => onUpdateFooter?.('description', v))}
+              style={{
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 15, color: subTextColor, lineHeight: 1.75,
+                margin: 0, maxWidth: 440,
+                ...(isEditable ? { outline: 'none', cursor: 'text' } : {}),
+              }}
+            >
               {effectiveDescription}
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {effectiveEmail && (
+              {(effectiveEmail || isEditable) && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: textColor }}>
                   <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(99, 102, 241, 0.12)', color: '#6366f1', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     <Mail size={18} />
                   </div>
-                  <a href={`mailto:${effectiveEmail}`} style={{ color: textColor, textDecoration: 'none', fontFamily: "'Outfit', sans-serif", fontSize: 15, fontWeight: 700 }}>
-                    {effectiveEmail}
-                  </a>
+                  {isEditable ? (
+                    <span
+                      {...editProps((v) => onUpdateFooter?.('email', v))}
+                      style={{ color: textColor, fontFamily: "'Outfit', sans-serif", fontSize: 15, fontWeight: 700, outline: 'none', cursor: 'text' }}
+                    >
+                      {effectiveEmail}
+                    </span>
+                  ) : (
+                    <a href={`mailto:${effectiveEmail}`} style={{ color: textColor, textDecoration: 'none', fontFamily: "'Outfit', sans-serif", fontSize: 15, fontWeight: 700 }}>
+                      {effectiveEmail}
+                    </a>
+                  )}
                 </div>
               )}
-              {effectiveLocation && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: textColor }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(16, 185, 129, 0.12)', color: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <MapPin size={18} />
+              {(effectiveLocation || isEditable) && (
+                isEditable ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: 'inherit' }}>
+                    <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(16, 185, 129, 0.12)', color: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <MapPin size={18} />
+                    </div>
+                    <span
+                      {...editProps((v) => onUpdateFooter?.('location', v))}
+                      style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: subTextColor, outline: 'none', cursor: 'text' }}
+                    >
+                      {effectiveLocation}
+                    </span>
                   </div>
-                  <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: subTextColor }}>
-                    {effectiveLocation}
-                  </span>
-                </div>
+                ) : (
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(effectiveLocation)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ display: 'flex', alignItems: 'center', gap: 12, color: 'inherit', textDecoration: 'none' }}
+                    title="Lihat lokasi di Google Maps"
+                  >
+                    <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(16, 185, 129, 0.12)', color: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <MapPin size={18} />
+                    </div>
+                    <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: subTextColor }}>
+                      {effectiveLocation}
+                    </span>
+                  </a>
+                )
               )}
             </div>
 
             {/* Social Links */}
             {effectiveSocialLinks.length > 0 && (
               <div>
-                <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 12, fontWeight: 700, color: subTextColor, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 12 }}>
-                  Ikuti Kami
+                <div
+                  {...editProps((v) => onUpdateFooter?.('socialTitle', v))}
+                  style={{
+                    fontFamily: "'Outfit', sans-serif",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: subTextColor,
+                    letterSpacing: '0.06em',
+                    textTransform: 'uppercase',
+                    marginBottom: 12,
+                    ...(isEditable ? { outline: 'none', cursor: 'text' } : {}),
+                  }}
+                >
+                  {footerData.socialTitle || 'Ikuti Kami'}
                 </div>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                   {effectiveSocialLinks.map((social) => {
@@ -348,24 +478,36 @@ const LPFooter: React.FC<LPFooterProps> = ({ data, isDark, accentColor, localiza
           {/* Right Column: Form */}
           <form
             data-reveal="true"
-            className="reveal-delay-2"
+            className="reveal-delay-2 lp-footer-form-card"
             onSubmit={handleSubmit}
             style={{
               display: 'flex',
               flexDirection: 'column',
               gap: 16,
-              background: isDark ? 'rgba(15, 23, 42, 0.65)' : '#ffffff',
+              background: '#15171e',
               padding: '32px 28px',
               borderRadius: 24,
-              border: `1px solid ${borderColor}`,
-              boxShadow: isDark ? '0 12px 32px rgba(0,0,0,0.3)' : '0 10px 28px rgba(0,0,0,0.04)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              boxShadow: 'none',
             }}
           >
             {/* Contact Channel Selector */}
             {activeMethods.length > 1 && (
               <div>
-                <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 11.5, fontWeight: 700, color: subTextColor, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10 }}>
-                  Kirim Melalui Saluran:
+                <div
+                  {...editProps((v) => onUpdateFooter?.('formChannelLabel', v))}
+                  style={{
+                    fontFamily: "'Outfit', sans-serif",
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                    color: subTextColor,
+                    letterSpacing: '0.06em',
+                    textTransform: 'uppercase',
+                    marginBottom: 10,
+                    ...(isEditable ? { outline: 'none', cursor: 'text' } : {}),
+                  }}
+                >
+                  {footerData.formChannelLabel || 'Kirim Melalui Saluran:'}
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   {activeMethods.map((m) => {
@@ -385,9 +527,9 @@ const LPFooter: React.FC<LPFooterProps> = ({ data, isDark, accentColor, localiza
                           gap: 8,
                           padding: '8px 16px',
                           borderRadius: 100,
-                          border: `1.5px solid ${isActive ? channelColor : borderColor}`,
-                          background: isActive ? `${channelColor}18` : inputBg,
-                          color: isActive ? (isDark ? '#ffffff' : channelColor) : subTextColor,
+                          border: `1.5px solid ${isActive ? channelColor : 'rgba(255, 255, 255, 0.12)'}`,
+                          background: isActive ? `${channelColor}24` : '#1b1d28',
+                          color: isActive ? '#ffffff' : '#94a3b8',
                           fontFamily: "'Outfit', sans-serif",
                           fontSize: 13,
                           fontWeight: 700,
@@ -395,7 +537,7 @@ const LPFooter: React.FC<LPFooterProps> = ({ data, isDark, accentColor, localiza
                           transition: 'all 0.2s ease',
                         }}
                       >
-                        <span style={{ fontSize: 14 }}>{m.icon}</span>
+                        {m.id === 'whatsapp' ? <MessageSquare size={14} /> : m.id === 'telegram' ? <Send size={14} /> : <Mail size={14} />}
                         <span>{m.label}</span>
                       </button>
                     );
@@ -405,121 +547,269 @@ const LPFooter: React.FC<LPFooterProps> = ({ data, isDark, accentColor, localiza
             )}
 
             {/* Name + Contact Info */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <div className="lp-footer-form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
               <input
                 type="text"
-                placeholder="Nama Lengkap"
-                required
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                style={inputStyle}
+                placeholder={footerData.formNamePlaceholder || 'Nama Lengkap'}
+                required={!isEditable}
+                value={isEditable ? (footerData.formNamePlaceholder ?? 'Nama Lengkap') : formData.name}
+                onChange={(e) => isEditable ? onUpdateFooter?.('formNamePlaceholder', e.target.value) : setFormData({ ...formData, name: e.target.value })}
+                title={isEditable ? 'Klik untuk mengedit teks placeholder Nama' : undefined}
+                style={{ ...inputStyle, background: '#1b1d28', color: isEditable ? '#cbd5e1' : '#ffffff', border: '1px solid #2d3142' }}
                 onFocus={(e) => { e.target.style.borderColor = accentColor; }}
-                onBlur={(e) => { e.target.style.borderColor = inputBorder; }}
+                onBlur={(e) => { e.target.style.borderColor = '#2d3142'; }}
               />
               <input
                 type="text"
-                placeholder={selectedMethod.id === 'whatsapp' ? 'Nomor WhatsApp' : 'Email / Kontak'}
-                value={formData.contact}
-                onChange={(e) => setFormData({ ...formData, contact: e.target.value })}
-                style={inputStyle}
+                placeholder={footerData.formContactPlaceholder || (selectedMethod.id === 'whatsapp' ? 'Nomor WhatsApp' : 'Email / Kontak')}
+                value={isEditable ? (footerData.formContactPlaceholder ?? (selectedMethod.id === 'whatsapp' ? 'Nomor WhatsApp' : 'Email / Kontak')) : formData.contact}
+                onChange={(e) => isEditable ? onUpdateFooter?.('formContactPlaceholder', e.target.value) : setFormData({ ...formData, contact: e.target.value })}
+                title={isEditable ? 'Klik untuk mengedit teks placeholder Kontak' : undefined}
+                style={{ ...inputStyle, background: '#1b1d28', color: isEditable ? '#cbd5e1' : '#ffffff', border: '1px solid #2d3142' }}
                 onFocus={(e) => { e.target.style.borderColor = accentColor; }}
-                onBlur={(e) => { e.target.style.borderColor = inputBorder; }}
+                onBlur={(e) => { e.target.style.borderColor = '#2d3142'; }}
               />
             </div>
 
             {/* Project Type */}
-            <CustomSelect
-              value={formData.type}
-              onChange={(val) => setFormData({ ...formData, type: val })}
-              placeholder="Pilih Jenis Proyek"
-              isDark={isDark}
-              accentColor={accentColor}
-              options={(data?.contactProjectTypes || ['UI/UX Design', 'Branding Identity', 'Web Development', 'Digital Marketing', 'Lainnya']).map((t: string) => ({ value: t, label: t }))}
-            />
+            {isEditable ? (
+              <div
+                style={{
+                  ...inputStyle,
+                  background: '#1b1d28',
+                  border: '1px solid #2d3142',
+                  color: '#cbd5e1',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <span {...editProps((v) => onUpdateFooter?.('formTypePlaceholder', v))}>
+                  {footerData.formTypePlaceholder || 'Pilih Jenis Proyek'}
+                </span>
+                <ChevronRight size={15} style={{ transform: 'rotate(90deg)', opacity: 0.6 }} />
+              </div>
+            ) : (
+              <CustomSelect
+                value={formData.type}
+                onChange={(val) => setFormData({ ...formData, type: val })}
+                placeholder={footerData.formTypePlaceholder || 'Pilih Jenis Proyek'}
+                isDark={true}
+                accentColor={accentColor}
+                options={(data?.contactProjectTypes || ['UI/UX Design', 'Branding Identity', 'Web Development', 'Digital Marketing', 'Lainnya']).map((t: string) => ({ value: t, label: t }))}
+              />
+            )}
 
             {/* Message Area */}
             <textarea
-              placeholder="Ceritakan detail proyek atau ide Anda..."
-              required
+              placeholder={footerData.formMessagePlaceholder || 'Ceritakan detail proyek atau ide Anda...'}
+              required={!isEditable}
               rows={4}
-              value={formData.message}
-              onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-              style={{ ...inputStyle, resize: 'none' }}
+              value={isEditable ? (footerData.formMessagePlaceholder ?? 'Ceritakan detail proyek atau ide Anda...') : formData.message}
+              onChange={(e) => isEditable ? onUpdateFooter?.('formMessagePlaceholder', e.target.value) : setFormData({ ...formData, message: e.target.value })}
+              title={isEditable ? 'Klik untuk mengedit teks placeholder Pesan' : undefined}
+              style={{ ...inputStyle, background: '#1b1d28', color: isEditable ? '#cbd5e1' : '#ffffff', border: '1px solid #2d3142', resize: 'none' }}
               onFocus={(e) => { e.target.style.borderColor = accentColor; }}
-              onBlur={(e) => { e.target.style.borderColor = inputBorder; }}
+              onBlur={(e) => { e.target.style.borderColor = '#2d3142'; }}
             />
 
             {/* Submit Button */}
-            <button
-              type="submit"
-              style={{
-                padding: '14px 28px',
-                borderRadius: 100,
-                border: 'none',
-                background: accentColor,
-                color: '#ffffff',
-                fontFamily: "'Outfit', sans-serif",
-                fontSize: 14,
-                fontWeight: 800,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                boxShadow: `0 8px 24px ${accentColor}40`,
-                transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = `0 12px 30px ${accentColor}55`;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = `0 8px 24px ${accentColor}40`;
-              }}
-            >
-              {selectedMethod.id === 'whatsapp' ? (
-                <><MessageCircle size={16} /> Kirim via WhatsApp</>
-              ) : selectedMethod.id === 'telegram' ? (
-                <><Send size={16} /> Kirim via Telegram</>
-              ) : (
-                <><Send size={16} /> Kirim Email</>
-              )}
-            </button>
+            {isEditable ? (
+              <div
+                style={{
+                  padding: '14px 28px',
+                  borderRadius: 100,
+                  border: 'none',
+                  background: accentColor,
+                  color: '#ffffff',
+                  fontFamily: "'Outfit', sans-serif",
+                  fontSize: 14,
+                  fontWeight: 800,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                }}
+              >
+                <Send size={16} />
+                <span {...editProps((v) => onUpdateFooter?.('formSubmitLabel', v))}>
+                  {footerData.formSubmitLabel || (selectedMethod.id === 'whatsapp' ? 'Kirim WhatsApp' : selectedMethod.id === 'telegram' ? 'Kirim Telegram' : 'Kirim Email')}
+                </span>
+              </div>
+            ) : (
+              <button
+                type="submit"
+                style={{
+                  padding: '14px 28px',
+                  borderRadius: 100,
+                  border: 'none',
+                  background: accentColor,
+                  color: '#ffffff',
+                  fontFamily: "'Outfit', sans-serif",
+                  fontSize: 14,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  boxShadow: 'none',
+                  transition: 'transform 0.15s ease, opacity 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.opacity = '0.92';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.opacity = '1';
+                }}
+              >
+                {footerData.formSubmitLabel ? (
+                  <><Send size={16} /> {footerData.formSubmitLabel}</>
+                ) : selectedMethod.id === 'whatsapp' ? (
+                  <><MessageCircle size={16} /> Kirim WhatsApp</>
+                ) : selectedMethod.id === 'telegram' ? (
+                  <><Send size={16} /> Kirim Telegram</>
+                ) : (
+                  <><Send size={16} /> Kirim Email</>
+                )}
+              </button>
+            )}
           </form>
         </div>
 
         {/* Bottom Bar */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: 16,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: 18, fontWeight: 900, color: accentColor, letterSpacing: '-0.5px' }}>
-              {localization?.logoText || 'Arif.'}
+        <div
+          className="lp-footer-bottom-bar"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 16,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+            <span
+              {...editProps((v) => onUpdateFooter?.('brandText', v))}
+              style={{ fontFamily: "'Outfit', sans-serif", fontSize: 18, fontWeight: 900, color: accentColor, letterSpacing: '-0.5px', ...(isEditable ? { outline: 'none', cursor: 'text' } : {}) }}
+            >
+              {footerData.brandText || loc?.logoText || 'sumr.day'}
             </span>
             <span style={{ color: subTextColor, opacity: 0.3 }}>|</span>
-            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: subTextColor }}>
-              {data.copyright || `© ${year} Arif Design Studio. Seluruh Hak Cipta Dilindungi.`}
+            <span
+              {...editProps((v) => onUpdateFooter?.('copyright', v))}
+              style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: subTextColor, ...(isEditable ? { outline: 'none', cursor: 'text' } : {}) }}
+            >
+              {footerData.copyright || `© ${year} sumr.day. A little sunshine for your screen.`}
             </span>
           </div>
 
-          <div style={{ display: 'flex', gap: 20, fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: subTextColor }}>
-            <a href="/portfolio" style={{ color: 'inherit', textDecoration: 'none' }}>Portofolio</a>
-            <a href="/blog" style={{ color: 'inherit', textDecoration: 'none' }}>Blog</a>
-            <a href="#hero" style={{ color: 'inherit', textDecoration: 'none', fontWeight: 600 }}>↑ Kembali ke Atas</a>
+          <div style={{ display: 'flex', gap: 20, fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: subTextColor, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+            {(footerData.bottomLinks && footerData.bottomLinks.length > 0
+              ? footerData.bottomLinks
+              : [
+                  { label: 'Karya', url: '/portfolio' },
+                  { label: 'Katalog', url: '/katalog' },
+                  { label: 'Jurnal', url: '/blog' },
+                ]
+            ).map((bl, blIdx, blArr) =>
+              isEditable ? (
+                <span
+                  key={blIdx}
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const val = e.currentTarget.textContent ?? bl.label;
+                    const next = blArr.map((item, k) => (k === blIdx ? { ...item, label: val } : item));
+                    onUpdateFooter?.('bottomLinks', next);
+                  }}
+                  style={{ color: 'inherit', outline: 'none', cursor: 'text' }}
+                  title="Klik untuk mengedit teks tautan"
+                >
+                  {bl.label}
+                </span>
+              ) : (
+                <Link key={blIdx} to={bl.url} style={{ color: 'inherit', textDecoration: 'none' }}>
+                  {bl.label}
+                </Link>
+              )
+            )}
+            {isEditable ? (
+              <span
+                {...editProps((v) => onUpdateFooter?.('backToTopLabel', v))}
+                style={{ color: 'inherit', font: 'inherit', fontWeight: 600, outline: 'none', cursor: 'text' }}
+              >
+                {footerData.backToTopLabel || 'Ke Atas ↑'}
+              </span>
+            ) : (
+              <button 
+                type="button" 
+                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} 
+                style={{ background: 'none', border: 'none', padding: 0, color: 'inherit', font: 'inherit', fontWeight: 600, cursor: 'pointer' }}
+              >
+                {footerData.backToTopLabel || 'Ke Atas ↑'}
+              </button>
+            )}
           </div>
         </div>
 
       </div>
 
       <style>{`
+        .lp-footer-form-card input,
+        .lp-footer-form-card textarea {
+          background: #1b1d28 !important;
+          color: #ffffff !important;
+          border: 1px solid #2d3142 !important;
+          box-shadow: none !important;
+        }
+        .lp-footer-form-card input::placeholder,
+        .lp-footer-form-card textarea::placeholder {
+          color: #94a3b8 !important;
+          opacity: 1 !important;
+        }
+        .lp-footer-editable:hover {
+          outline: 1px dashed rgba(255, 255, 255, 0.35) !important;
+          outline-offset: 2px;
+        }
+        .lp-footer-editable:focus {
+          outline: 1.5px solid ${accentColor} !important;
+          outline-offset: 3px;
+          background: rgba(255, 255, 255, 0.05);
+        }
         @media (max-width: 768px) {
           #contact {
-            padding: 70px 18px calc(48px + env(safe-area-inset-bottom, 16px)) !important;
+            padding: 64px 16px calc(48px + env(safe-area-inset-bottom, 16px)) !important;
+          }
+          .lp-footer-collab-banner {
+            padding: 28px 22px !important;
+            border-radius: 24px !important;
+            margin-bottom: 48px !important;
+            text-align: center !important;
+            justify-content: center !important;
+          }
+          .lp-footer-main-grid {
+            gap: 32px !important;
+            margin-bottom: 44px !important;
+            padding-bottom: 44px !important;
+          }
+          .lp-footer-form-card {
+            padding: 22px 18px !important;
+            border-radius: 20px !important;
+          }
+        }
+        @media (max-width: 640px) {
+          .lp-footer-form-row {
+            grid-template-columns: 1fr !important;
+            gap: 12px !important;
+          }
+          .lp-footer-bottom-bar {
+            flex-direction: column !important;
+            justify-content: center !important;
+            text-align: center !important;
+            gap: 12px !important;
           }
         }
       `}</style>

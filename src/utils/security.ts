@@ -135,10 +135,42 @@ export const checkRateLimit = (
   };
 };
 
+/**
+ * Safely parse JSON while stripping prototype-pollution keys (__proto__, constructor, prototype)
+ */
+export const safeJsonParse = <T>(raw: string | null | undefined, fallback: T): T => {
+  if (!raw || typeof raw !== 'string') return fallback;
+  try {
+    const parsed = JSON.parse(raw, (key, value) => {
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+        return undefined;
+      }
+      return value;
+    });
+    return (parsed === null || parsed === undefined) ? fallback : (parsed as T);
+  } catch {
+    return fallback;
+  }
+};
+
+/**
+ * Mask sensitive strings (API keys, phone numbers, emails) for safe UI/log display
+ */
+export const maskSensitiveString = (value: string | null | undefined, visibleChars: number = 4): string => {
+  if (!value || typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  if (trimmed.length <= visibleChars * 2) {
+    return '*'.repeat(Math.max(4, trimmed.length));
+  }
+  return `${trimmed.slice(0, visibleChars)}${'*'.repeat(Math.min(8, trimmed.length - visibleChars * 2))}${trimmed.slice(-visibleChars)}`;
+};
+
 export default {
   safeHtml,
   safeSvg,
   safeUrl,
   escapeText,
-  checkRateLimit
+  checkRateLimit,
+  safeJsonParse,
+  maskSensitiveString
 };

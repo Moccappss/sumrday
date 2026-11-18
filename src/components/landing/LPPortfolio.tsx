@@ -1,9 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowUpRight, Copy, Share2, Eye, ExternalLink, Sparkles, Filter, Layers } from 'lucide-react';
+import { ArrowUpRight, Copy, Share2, Eye, ExternalLink, Sparkles, Filter, Layers, Image as ImageIcon, Building2, Box, BookOpen } from 'lucide-react';
 import LPProjectModal from './LPProjectModal';
+import ProjectReactions from './ProjectReactions';
 import { useContextMenu } from '../admin/ContextMenuProvider';
 import { haptic } from '../../utils/haptics';
+import { getOptimizedCloudinaryUrl, getCloudinaryPdfPageUrl } from '../../utils/cloudinary';
 
 interface ProjectData {
   id: string;
@@ -20,6 +22,9 @@ interface ProjectData {
   year?: string | number;
   mediaType?: string;
   youtubeUrl?: string;
+  model3dUrl?: string;
+  pdfUrl?: string;
+  pdfTotalPages?: number;
 }
 
 interface LPPortfolioProps {
@@ -43,10 +48,13 @@ const LPPortfolio: React.FC<LPPortfolioProps> = ({ projects = [], landingFeature
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const textColor = isDark ? '#f8fafc' : '#0f172a';
-  const subTextColor = isDark ? '#94a3b8' : '#64748b';
-  const cardBg = isDark ? 'rgba(30, 41, 59, 0.45)' : 'rgba(255, 255, 255, 0.85)';
-  const cardBorder = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)';
+  const textColor = isDark ? '#ffffff' : '#0f1115';
+  const subTextColor = isDark ? '#94a3b8' : '#5b6170';
+  const cardBg = isDark ? '#151824' : '#ffffff';
+  const surface2 = isDark ? '#1f2436' : '#f1f5f9';
+  const cardBorder = isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(15, 23, 42, 0.08)';
+  const inkBtnBg = isDark ? '#ffffff' : '#0f1115';
+  const inkBtnText = isDark ? '#0f1115' : '#ffffff';
 
   const isValidCategory = (cat: string): boolean => {
     if (!cat || typeof cat !== 'string') return false;
@@ -56,29 +64,152 @@ const LPPortfolio: React.FC<LPPortfolioProps> = ({ projects = [], landingFeature
     return true;
   };
 
+  const DEFAULT_PORTFOLIO_PROJECTS: ProjectData[] = useMemo(() => [
+    {
+      id: 'proj-def-flipbook-1',
+      title: 'sumr.day Studio Lookbook & Brand Guide 2026',
+      category: 'Editorial & Brand Book',
+      description: 'Buku panduan identitas visual dan arsip eksplorasi desain studio sumr.day. Disajikan dalam format flipbook digital interaktif layaknya membaca majalah fisik.',
+      coverImage: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=800&q=80',
+      year: '2026',
+      client: 'sumr.day Studio',
+      featuredLabel: 'Flipbook Interaktif',
+      mediaType: 'flipbook',
+      pdfUrl: '',
+      pdfTotalPages: 8,
+      tags: ['Brand Guidelines', 'Editorial', 'Flipbook', 'Lookbook']
+    },
+    {
+      id: 'proj-def-3d-1',
+      title: 'Modern Architectural Armchair 3D',
+      category: '3D & Spasial',
+      description: 'Konsep visualisasi furnitur geometris modern (hasil export SketchUp/Blender) dengan tekstur fotorealistis dan inspeksi orbit 360°.',
+      coverImage: 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=800&q=80',
+      year: '2026',
+      client: 'Atelier Studio',
+      featuredLabel: 'Interaktif 3D',
+      mediaType: '3d',
+      model3dUrl: '/models/armchair.glb',
+      tags: ['3D Modeling', 'SketchUp', 'Arsitektur', 'Render 3D']
+    },
+    {
+      id: 'proj-def-3d-2',
+      title: 'Cosmic Spatial Character & Asset',
+      category: 'Visual 3D',
+      description: 'Eksplorasi aset 3D sinematik bertekstur PBR tinggi untuk pengalaman portofolio interaktif dan augmented reality (AR).',
+      coverImage: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&q=80',
+      year: '2026',
+      client: 'Galactic Labs',
+      featuredLabel: 'Eksplorasi 360°',
+      mediaType: '3d',
+      model3dUrl: '/models/helmet.glb',
+      tags: ['3D Asset', 'PBR Material', 'Blender', 'AR Ready']
+    },
+    {
+      id: 'proj-def-1',
+      title: 'Kopi Nusantara Digital Flagship & Story Space',
+      category: 'Interactive Web',
+      description: 'Eksplorasi web interaktif berbasis Warm Tech untuk brand F&B ternama dengan katalog dinamis dan order WhatsApp.',
+      coverImage: 'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=800&q=80',
+      year: '2026',
+      client: 'Kopi Nusantara',
+      featuredLabel: 'Karya Pilihan',
+      tags: ['Interactive Web', 'Branding', 'PWA']
+    },
+    {
+      id: 'proj-def-2',
+      title: 'Lumina Studio Brand Identity & Spatial UI',
+      category: 'UI/UX Design',
+      description: 'Design system terkalibrasi tinggi, library komponen Figma, dan panduan tipografi skena modern.',
+      coverImage: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&q=80',
+      year: '2025',
+      client: 'Lumina Space',
+      featuredLabel: 'Karya Unggulan',
+      tags: ['Design System', 'UI/UX']
+    },
+    {
+      id: 'proj-def-3',
+      title: 'Skena Collective E-Commerce & Flash Drop',
+      category: 'Web Platform',
+      description: 'Platform etalase rilis kilat (flash drop) dengan countdown otomatis dan keranjang instan tanpa login.',
+      coverImage: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=800&q=80',
+      year: '2025',
+      client: 'Skena Collective',
+      featuredLabel: 'Paling Diminati',
+      tags: ['E-Commerce', 'Creative Tech']
+    },
+    {
+      id: 'proj-def-4',
+      title: 'Nusantara Logistics Enterprise Portal',
+      category: 'Interactive Web',
+      description: 'Antarmuka pelacakan pengiriman kargo terpadu dengan micro-interactions dan visualisasi data realtime.',
+      coverImage: 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=800&q=80',
+      year: '2025',
+      client: 'Nusantara Logistics',
+      featuredLabel: 'Karya Pilihan',
+      tags: ['Dashboard', 'Web App']
+    }
+  ], []);
+
+  const activeProjects = useMemo(() => {
+    if (Array.isArray(projects) && projects.length > 0) return projects;
+    return DEFAULT_PORTFOLIO_PROJECTS;
+  }, [projects, DEFAULT_PORTFOLIO_PROJECTS]);
+
   // Extract all unique categories dynamically from the projects dataset
   const categories = useMemo(() => {
     const set = new Set<string>();
-    projects.forEach((p) => {
+    activeProjects.forEach((p) => {
       if (p.category && isValidCategory(p.category)) {
         set.add(p.category.trim());
       }
     });
     return Array.from(set);
-  }, [projects]);
+  }, [activeProjects]);
 
   // Filter projects by category or featured label
   const displayedProjects = useMemo(() => {
-    let list = projects;
+    let list = activeProjects;
     if (landingFeaturedLabel && selectedCategory === 'all') {
-      const featured = projects.filter((p) => p.featuredLabel === landingFeaturedLabel);
+      const featured = activeProjects.filter((p) => p.featuredLabel === landingFeaturedLabel);
       if (featured.length > 0) list = featured;
     }
     if (selectedCategory !== 'all') {
-      list = list.filter((p) => p.category?.toLowerCase() === selectedCategory.toLowerCase());
+      const selNorm = selectedCategory.trim().toLowerCase();
+      list = list.filter((p) => {
+        const catNorm = (p.category || '').trim().toLowerCase();
+        if (catNorm === selNorm) return true;
+        if (p.tags) {
+          const tagList = Array.isArray(p.tags) ? p.tags : (typeof p.tags === 'string' ? p.tags.split(',') : []);
+          return tagList.some((t: string) => typeof t === 'string' && t.trim().toLowerCase() === selNorm);
+        }
+        return false;
+      });
     }
     return list.slice(0, 8);
-  }, [projects, landingFeaturedLabel, selectedCategory]);
+  }, [activeProjects, landingFeaturedLabel, selectedCategory]);
+
+  const getAllProjectMedia = (p: ProjectData): string[] => {
+    const list: string[] = [];
+    if (p.coverImage && typeof p.coverImage === 'string') list.push(p.coverImage);
+    if (Array.isArray(p.images)) {
+      p.images.forEach((img: any) => {
+        if (typeof img === 'string' && img && !list.includes(img)) list.push(img);
+      });
+    }
+    if (Array.isArray(p.attachments)) {
+      p.attachments.forEach((att: any) => {
+        if (att && att.url && typeof att.url === 'string' && (!att.type || att.type.startsWith('image/')) && !list.includes(att.url)) {
+          list.push(att.url);
+        }
+      });
+    }
+    if (list.length === 0 && p.mediaType === 'youtube' && p.youtubeUrl) {
+      const m = p.youtubeUrl.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/|youtube\.com\/shorts\/)([^"&?\/\s]{11})/i);
+      if (m && m[1]) list.push(`https://img.youtube.com/vi/${m[1]}/hqdefault.jpg`);
+    }
+    return list;
+  };
 
   const getProjectCover = (p: ProjectData): string | null => {
     if (p.coverImage) return p.coverImage;
@@ -91,11 +222,15 @@ const LPPortfolio: React.FC<LPPortfolioProps> = ({ projects = [], landingFeature
       const m = p.youtubeUrl.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/|youtube\.com\/shorts\/)([^"&?\/\s]{11})/i);
       if (m && m[1]) return `https://img.youtube.com/vi/${m[1]}/hqdefault.jpg`;
     }
+    if ((p.mediaType === 'flipbook' || p.pdfUrl) && p.pdfUrl) {
+      const pdfPage = getCloudinaryPdfPageUrl(p.pdfUrl, 1, 800);
+      if (pdfPage) return pdfPage;
+    }
     return null;
   };
 
   const getProjectContextMenu = (project: ProjectData) => {
-    const projectUrl = `${window.location.origin}/portfolio`;
+    const projectUrl = `${window.location.origin}/portofolio`;
     return {
       title: project.title || project.name || 'Detail Karya',
       subtitle: `${project.category || 'Kategori'} • ${project.year || 'Portofolio'}`,
@@ -125,7 +260,7 @@ const LPPortfolio: React.FC<LPPortfolioProps> = ({ projects = [], landingFeature
         {
           label: 'Buka Halaman Portofolio',
           icon: <ExternalLink size={15} color="#3b82f6" />,
-          action: () => navigate('/portfolio')
+          action: () => navigate('/portofolio')
         }
       ]
     };
@@ -134,13 +269,15 @@ const LPPortfolio: React.FC<LPPortfolioProps> = ({ projects = [], landingFeature
   return (
     <section
       id="portfolio"
+      className="lp-portfolio-section"
       style={{
-        padding: '110px 24px',
-        background: isDark ? '#08080f' : '#ffffff',
+        padding: 'clamp(56px, 7vw, 84px) clamp(16px, 3.5vw, 24px)',
+        background: isDark ? '#06070a' : '#eef2f6',
         position: 'relative',
+        boxSizing: 'border-box'
       }}
     >
-      <div style={{ maxWidth: 1240, margin: '0 auto' }}>
+      <div style={{ maxWidth: 1240, width: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
         
         {/* Section Header */}
         <div 
@@ -149,70 +286,71 @@ const LPPortfolio: React.FC<LPPortfolioProps> = ({ projects = [], landingFeature
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'flex-end',
-            marginBottom: 36,
+            marginBottom: 32,
             flexWrap: 'wrap',
             gap: 20,
           }}
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 14 }}>
             <div style={{ 
               fontFamily: "'Inter', sans-serif", 
               fontSize: 12, 
               fontWeight: 700, 
-              letterSpacing: '0.14em', 
-              color: accentColor, 
-              textTransform: 'uppercase',
-              display: 'flex',
+              color: textColor, 
+              background: cardBg,
+              padding: '6px 14px',
+              borderRadius: 999,
+              display: 'inline-flex',
               alignItems: 'center',
               gap: 8,
             }}>
-              <Layers size={14} />
-              <span>{localization?.portfolioSectionTitle || 'KARYA PILIHAN'}</span>
+              <span style={{ width: 6, height: 6, borderRadius: 999, background: accentColor, flexShrink: 0 }} />
+              <Layers size={13} color={accentColor} />
+              <span>{localization?.portfolioSectionTitle || 'KARYA SERU'}</span>
             </div>
             <h2 style={{ 
               margin: 0, 
               fontFamily: "'Outfit', sans-serif", 
-              fontSize: 'clamp(32px, 3.8vw, 48px)', 
-              fontWeight: 850, 
+              fontSize: 'clamp(1.9rem, 4vw, 3rem)', 
+              fontWeight: 800, 
               color: textColor, 
-              letterSpacing: '-0.025em', 
-              lineHeight: 1.15,
+              letterSpacing: '-0.035em', 
+              lineHeight: 1.08,
             }}>
-              {localization?.portfolioMainTitle || 'Studi Kasus & Proyek Unggulan'}
+              {localization?.portfolioMainTitle || 'Karya Pilihan'}
             </h2>
           </div>
 
           <button
-            onClick={() => navigate('/portfolio')}
+            onClick={() => navigate('/portofolio')}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 8,
-              background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
-              border: `1.5px solid ${cardBorder}`,
-              color: textColor,
-              padding: '12px 22px',
-              borderRadius: 100,
+              gap: 12,
+              background: inkBtnBg,
+              border: 'none',
+              color: inkBtnText,
+              padding: '6px 6px 6px 20px',
+              height: 44,
+              borderRadius: 999,
               fontFamily: "'Outfit', sans-serif",
               fontSize: 14,
               fontWeight: 700,
               cursor: 'pointer',
-              transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+              transition: 'transform .2s ease',
               whiteSpace: 'nowrap',
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
-              e.currentTarget.style.borderColor = accentColor;
-              e.currentTarget.style.transform = 'translateY(-2px)';
+              e.currentTarget.style.transform = 'scale(1.03)';
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)';
-              e.currentTarget.style.borderColor = cardBorder;
-              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.transform = 'scale(1)';
             }}
           >
-            <span>Lihat Semua ({projects.length})</span>
-            <ArrowUpRight size={16} />
+            <span>Lihat Semua</span>
+            <span style={{ width: 32, height: 32, borderRadius: 999, background: accentColor, color: '#ffffff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <ArrowUpRight size={16} />
+            </span>
           </button>
         </div>
 
@@ -235,17 +373,18 @@ const LPPortfolio: React.FC<LPPortfolioProps> = ({ projects = [], landingFeature
                 setSelectedCategory('all');
               }}
               style={{
-                padding: '8px 18px',
-                borderRadius: 100,
-                border: selectedCategory === 'all' ? `1.5px solid ${accentColor}` : `1px solid ${cardBorder}`,
+                padding: '9px 18px',
+                borderRadius: 999,
+                border: 'none',
                 background: selectedCategory === 'all' ? accentColor : cardBg,
-                color: selectedCategory === 'all' ? '#ffffff' : subTextColor,
+                color: selectedCategory === 'all' ? '#ffffff' : textColor,
                 fontFamily: "'Outfit', sans-serif",
                 fontSize: 13,
                 fontWeight: 700,
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
-                transition: 'all 0.2s ease',
+                flexShrink: 0,
+                transition: 'transform .2s ease, background-color .2s ease',
               }}
             >
               Semua ({projects.length})
@@ -261,17 +400,18 @@ const LPPortfolio: React.FC<LPPortfolioProps> = ({ projects = [], landingFeature
                     setSelectedCategory(cat);
                   }}
                   style={{
-                    padding: '8px 18px',
-                    borderRadius: 100,
-                    border: active ? `1.5px solid ${accentColor}` : `1px solid ${cardBorder}`,
+                    padding: '9px 18px',
+                    borderRadius: 999,
+                    border: 'none',
                     background: active ? accentColor : cardBg,
-                    color: active ? '#ffffff' : subTextColor,
+                    color: active ? '#ffffff' : textColor,
                     fontFamily: "'Outfit', sans-serif",
                     fontSize: 13,
                     fontWeight: 700,
                     cursor: 'pointer',
                     whiteSpace: 'nowrap',
-                    transition: 'all 0.2s ease',
+                    flexShrink: 0,
+                    transition: 'transform .2s ease, background-color .2s ease',
                   }}
                 >
                   {cat} ({count})
@@ -285,7 +425,7 @@ const LPPortfolio: React.FC<LPPortfolioProps> = ({ projects = [], landingFeature
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(360px, 1fr))',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(min(100%, 320px), 1fr))',
             gap: 24,
           }}
         >
@@ -297,7 +437,7 @@ const LPPortfolio: React.FC<LPPortfolioProps> = ({ projects = [], landingFeature
                 padding: '70px 20px',
                 background: cardBg,
                 borderRadius: 24,
-                border: `1px solid ${cardBorder}`,
+                border: 'none',
                 color: subTextColor,
                 fontFamily: "'Inter', sans-serif",
                 fontSize: 14,
@@ -311,8 +451,7 @@ const LPPortfolio: React.FC<LPPortfolioProps> = ({ projects = [], landingFeature
               return (
                 <div
                   key={project.id || idx}
-                  data-reveal="true"
-                  className={`reveal-delay-${(idx % 6) + 1}`}
+                  className={`lp-portfolio-card reveal-delay-${(idx % 6) + 1}`}
                   {...bindContextMenu(() => getProjectContextMenu(project))}
                   onClick={() => {
                     haptic.light();
@@ -320,33 +459,22 @@ const LPPortfolio: React.FC<LPPortfolioProps> = ({ projects = [], landingFeature
                   }}
                   style={{
                     background: cardBg,
-                    backdropFilter: 'blur(16px)',
-                    WebkitBackdropFilter: 'blur(16px)',
                     border: `1px solid ${cardBorder}`,
-                    borderRadius: 24,
+                    borderRadius: 22,
+                    padding: 12,
                     overflow: 'hidden',
                     cursor: 'pointer',
                     display: 'flex',
                     flexDirection: 'column',
-                    transition: 'transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.35s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.35s ease',
-                    boxShadow: isDark ? '0 12px 32px rgba(0,0,0,0.3)' : '0 10px 28px rgba(0,0,0,0.04)',
+                    transition: 'border-color 0.45s cubic-bezier(0.16, 1, 0.3, 1)',
+                    boxShadow: 'none',
                     position: 'relative',
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = `${accentColor}50`;
-                    e.currentTarget.style.transform = 'translateY(-6px)';
-                    e.currentTarget.style.boxShadow = isDark 
-                      ? `0 20px 48px -10px ${accentColor}30, 0 0 0 1px ${accentColor}30` 
-                      : `0 20px 48px -10px ${accentColor}20, 0 0 0 1px ${accentColor}20`;
-                    const img = e.currentTarget.querySelector('img') as HTMLImageElement;
-                    if (img) img.style.transform = 'scale(1.05)';
+                    e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(15, 23, 42, 0.22)';
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.borderColor = cardBorder;
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = isDark ? '0 12px 32px rgba(0,0,0,0.3)' : '0 10px 28px rgba(0,0,0,0.04)';
-                    const img = e.currentTarget.querySelector('img') as HTMLImageElement;
-                    if (img) img.style.transform = 'scale(1)';
                   }}
                 >
                   {/* Thumbnail */}
@@ -354,16 +482,18 @@ const LPPortfolio: React.FC<LPPortfolioProps> = ({ projects = [], landingFeature
                     style={{
                       width: '100%',
                       aspectRatio: '16/10',
-                      background: isDark ? '#0f172a' : '#f1f5f9',
+                      background: surface2,
+                      borderRadius: 16,
                       overflow: 'hidden',
                       position: 'relative',
                     }}
                   >
                     {cover ? (
                       <img
-                        src={cover}
+                        src={getOptimizedCloudinaryUrl(cover, { width: 800, quality: 'auto:good' })}
                         alt={project.name || project.title}
                         loading="lazy"
+                        decoding="async"
                         style={{
                           width: '100%',
                           height: '100%',
@@ -389,103 +519,269 @@ const LPPortfolio: React.FC<LPPortfolioProps> = ({ projects = [], landingFeature
                       </div>
                     )}
 
-                    {/* Featured Badge */}
-                    {project.featuredLabel && (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          top: 14,
-                          left: 14,
-                          padding: '4px 10px',
-                          borderRadius: 100,
-                          background: 'rgba(0, 0, 0, 0.65)',
-                          backdropFilter: 'blur(10px)',
-                          WebkitBackdropFilter: 'blur(10px)',
-                          color: '#ffffff',
-                          fontFamily: "'Outfit', sans-serif",
-                          fontSize: 11,
-                          fontWeight: 700,
-                          border: '1px solid rgba(255,255,255,0.15)',
-                        }}
-                      >
-                        {project.featuredLabel}
-                      </div>
-                    )}
+                    {/* Badges Container */}
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: 14,
+                        left: 14,
+                        right: 14,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        pointerEvents: 'none',
+                      }}
+                    >
+                      {/* Featured Badge */}
+                      {project.featuredLabel ? (
+                        <div
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: 100,
+                            background: '#111827',
+                            color: '#ffffff',
+                            fontFamily: "'Outfit', sans-serif",
+                            fontSize: 11,
+                            fontWeight: 750,
+                            border: '1px solid rgba(255,255,255,0.2)',
+                          }}
+                        >
+                          {project.featuredLabel}
+                        </div>
+                      ) : <div />}
+
+                      {/* Media Count Badge */}
+                      {(() => {
+                        const mediaList = getAllProjectMedia(project);
+                        const hasVideo = project.mediaType === 'youtube' || Boolean(project.youtubeUrl);
+                        const is3D = project.mediaType === '3d' || Boolean(project.model3dUrl);
+                        const isFlipbook = project.mediaType === 'flipbook' || Boolean(project.pdfUrl);
+                        if (mediaList.length <= 1 && !hasVideo && !is3D && !isFlipbook) return null;
+
+                        return (
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            {isFlipbook && (
+                              <span style={{
+                                padding: '4px 9px',
+                                borderRadius: 100,
+                                background: '#0284c7',
+                                color: '#ffffff',
+                                fontSize: 10,
+                                fontFamily: "'Outfit', sans-serif",
+                                fontWeight: 800,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                              }}>
+                                <BookOpen size={11} /> Flipbook
+                              </span>
+                            )}
+                            {is3D && (
+                              <span style={{
+                                padding: '4px 9px',
+                                borderRadius: 100,
+                                background: '#d97706',
+                                color: '#ffffff',
+                                fontSize: 10,
+                                fontFamily: "'Outfit', sans-serif",
+                                fontWeight: 800,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                              }}>
+                                <Box size={11} /> 3D
+                              </span>
+                            )}
+                            {hasVideo && (
+                              <span style={{
+                                padding: '4px 8px',
+                                borderRadius: 100,
+                                background: '#dc2626',
+                                color: '#ffffff',
+                                fontSize: 10,
+                                fontFamily: "'Outfit', sans-serif",
+                                fontWeight: 700,
+                              }}>
+                                Video
+                              </span>
+                            )}
+                            {mediaList.length > 1 && (
+                              <div
+                                style={{
+                                  padding: '4px 9px',
+                                  borderRadius: 100,
+                                  background: '#111827',
+                                  color: '#ffffff',
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  border: '1px solid rgba(255,255,255,0.2)',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                }}
+                              >
+                                <ImageIcon size={12} />
+                                <span>{mediaList.length}</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
                   </div>
 
                   {/* Content Info */}
                   <div
                     style={{
-                      padding: '20px 22px',
+                      padding: '20px 22px 14px 22px',
                       display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'flex-start',
-                      gap: 12,
+                      flexDirection: 'column',
+                      gap: 14,
+                      flex: 1,
                     }}
                   >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        style={{
-                          fontFamily: "'Inter', sans-serif",
-                          fontSize: 12,
-                          fontWeight: 600,
-                          color: accentColor,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.04em',
-                          marginBottom: 4,
-                        }}
-                      >
-                        {project.category || 'Karya Desain'}
-                      </div>
-                      <h3
-                        style={{
-                          fontFamily: "'Outfit', sans-serif",
-                          fontSize: 19,
-                          fontWeight: 800,
-                          color: textColor,
-                          margin: 0,
-                          letterSpacing: '-0.02em',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {project.name || project.title || 'Tanpa Judul'}
-                      </h3>
-                      {project.description && (
-                        <p
-                          style={{
-                            fontFamily: "'Inter', sans-serif",
-                            fontSize: 13,
-                            color: subTextColor,
-                            margin: '6px 0 0',
-                            lineHeight: 1.5,
-                            display: '-webkit-box',
-                            WebkitLineClamp: 2,
-                            WebkitBoxOrient: 'vertical',
-                            overflow: 'hidden',
-                          }}
-                        >
-                          {project.description}
-                        </p>
-                      )}
-                    </div>
-
                     <div
                       style={{
-                        width: 38,
-                        height: 38,
-                        borderRadius: '50%',
-                        background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                        color: textColor,
                         display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                        marginTop: 4,
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-start',
+                        gap: 12,
                       }}
                     >
-                      <ArrowUpRight size={18} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            marginBottom: 4,
+                            flexWrap: 'wrap',
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontFamily: "'Inter', sans-serif",
+                              fontSize: 11.5,
+                              fontWeight: 700,
+                              color: accentColor,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.04em',
+                            }}
+                          >
+                            {project.category || 'Karya Desain'}
+                          </span>
+                          {project.client && (
+                            <span style={{ fontSize: 11.5, color: subTextColor, fontWeight: 500 }}>
+                              • {project.client}
+                            </span>
+                          )}
+                          {project.year && (
+                            <span style={{ fontSize: 11.5, color: subTextColor, fontWeight: 500 }}>
+                              ({project.year})
+                            </span>
+                          )}
+                        </div>
+                        <h3
+                          style={{
+                            fontFamily: "'Outfit', sans-serif",
+                            fontSize: 19,
+                            fontWeight: 800,
+                            color: textColor,
+                            margin: 0,
+                            letterSpacing: '-0.02em',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {project.name || project.title || 'Tanpa Judul'}
+                        </h3>
+                        {project.description && (
+                          <p
+                            style={{
+                              fontFamily: "'Inter', sans-serif",
+                              fontSize: 13,
+                              color: subTextColor,
+                              margin: '6px 0 0',
+                              lineHeight: 1.5,
+                              display: '-webkit-box',
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: 'vertical',
+                              overflow: 'hidden',
+                            }}
+                          >
+                            {project.description}
+                          </p>
+                        )}
+                        {Array.isArray(project.tags) && project.tags.length > 0 && (
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                            {project.tags.slice(0, 3).map((t: string, tIdx: number) => (
+                              <span
+                                key={tIdx}
+                                style={{
+                                  fontSize: 10.5,
+                                  fontWeight: 650,
+                                  fontFamily: "'Outfit', sans-serif",
+                                  padding: '2px 8px',
+                                  borderRadius: 999,
+                                  background: surface2,
+                                  color: subTextColor,
+                                }}
+                              >
+                                {t}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div
+                        style={{
+                          width: 38,
+                          height: 38,
+                          borderRadius: '50%',
+                          background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                          color: textColor,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                          marginTop: 4,
+                        }}
+                      >
+                        <ArrowUpRight size={18} />
+                      </div>
+                    </div>
+
+                    {/* Interactive Reactions Bar */}
+                    <div
+                      style={{
+                        paddingTop: 10,
+                        borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)'}`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}
+                    >
+                      <ProjectReactions
+                        projectId={project.id || `proj-${idx}`}
+                        isDark={isDark}
+                        accentColor={accentColor}
+                        compact={true}
+                      />
+                      <span
+                        style={{
+                          fontFamily: "'Outfit', sans-serif",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: subTextColor,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 3,
+                        }}
+                      >
+                        Buka Karya <ArrowUpRight size={13} />
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -506,6 +802,14 @@ const LPPortfolio: React.FC<LPPortfolioProps> = ({ projects = [], landingFeature
           accentColor={accentColor}
         />
       )}
+
+      <style>{`
+        @media (max-width: 640px) {
+          .lp-portfolio-section {
+            padding: 64px 16px !important;
+          }
+        }
+      `}</style>
     </section>
   );
 };

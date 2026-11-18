@@ -5,16 +5,18 @@ import {
 } from 'lucide-react';
 import LandingPage from '../../pages/LandingPage';
 import PortfolioPage from '../../pages/PortfolioPage';
-import Shop from '../../pages/Shop';
+import Katalog from '../../pages/Katalog';
 import Blog from '../../pages/Blog';
 import AboutPage from '../../pages/AboutPage';
 import LinksPage from '../../pages/LinksPage';
+import ClientView from '../../apps/invitation-maker/components/ClientView';
+import { getAllInvitations } from '../../apps/invitation-maker/invitationData';
 import { useNativeBackHandler } from '../../utils/nativeNavigation';
 
 export interface ClientWebsitePreviewModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialPage?: 'home' | 'portfolio' | 'katalog' | 'blog' | 'about' | 'links';
+  initialPage?: 'home' | 'portfolio' | 'katalog' | 'blog' | 'about' | 'links' | 'invitation';
 }
 
 class PreviewErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error: any }> {
@@ -75,7 +77,7 @@ export const ClientWebsitePreviewModal: React.FC<ClientWebsitePreviewModalProps>
   initialPage = 'home'
 }) => {
   const [deviceMode, setDeviceMode] = useState<'mobile' | 'tablet' | 'desktop'>('mobile');
-  const [activeClientPage, setActiveClientPage] = useState<'home' | 'portfolio' | 'katalog' | 'blog' | 'about' | 'links'>(initialPage);
+  const [activeClientPage, setActiveClientPage] = useState<'home' | 'portfolio' | 'katalog' | 'blog' | 'about' | 'links' | 'invitation'>(initialPage);
   const [copied, setCopied] = useState(false);
   const [previewKey, setPreviewKey] = useState(0);
 
@@ -89,13 +91,16 @@ export const ClientWebsitePreviewModal: React.FC<ClientWebsitePreviewModalProps>
 
   if (!isOpen) return null;
 
+  const defaultInvSlug = (getAllInvitations()[0]?.slug) || 'arif-nadia';
+
   const publicUrlMap: Record<string, string> = {
     home: window.location.origin + '/',
     portfolio: window.location.origin + '/portfolio',
     katalog: window.location.origin + '/katalog',
     blog: window.location.origin + '/blog',
     about: window.location.origin + '/about',
-    links: window.location.origin + '/links'
+    links: window.location.origin + '/links',
+    invitation: window.location.origin + `/undangan/${defaultInvSlug}`
   };
 
   const currentPublicUrl = publicUrlMap[activeClientPage] || window.location.origin;
@@ -113,13 +118,19 @@ export const ClientWebsitePreviewModal: React.FC<ClientWebsitePreviewModalProps>
       case 'portfolio':
         return <PortfolioPage />;
       case 'katalog':
-        return <Shop />;
+        return <Katalog />;
       case 'blog':
         return <Blog />;
       case 'about':
         return <AboutPage />;
       case 'links':
         return <LinksPage />;
+      case 'invitation':
+        return (
+          <div style={{ width: '100%', height: '100%', overflowY: 'auto' }}>
+            <ClientView />
+          </div>
+        );
       case 'home':
       default:
         return <LandingPage />;
@@ -172,8 +183,9 @@ export const ClientWebsitePreviewModal: React.FC<ClientWebsitePreviewModalProps>
         position: 'fixed',
         inset: 0,
         zIndex: 999999,
-        background: 'rgba(5, 5, 12, 0.88)',
-        backdropFilter: 'blur(16px)',
+        background: 'rgba(5, 5, 12, 0.92)',
+        backdropFilter: 'none',
+        WebkitBackdropFilter: 'none',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -194,9 +206,9 @@ export const ClientWebsitePreviewModal: React.FC<ClientWebsitePreviewModalProps>
           gap: 12,
           padding: '10px 18px',
           borderRadius: 18,
-          background: 'rgba(26, 27, 38, 0.85)',
+          background: 'rgba(26, 27, 38, 0.96)',
           border: '1px solid rgba(255, 255, 255, 0.1)',
-          backdropFilter: 'blur(20px)',
+          backdropFilter: 'none',
           boxShadow: '0 10px 30px rgba(0, 0, 0, 0.4)',
           zIndex: 20
         }}
@@ -222,7 +234,8 @@ export const ClientWebsitePreviewModal: React.FC<ClientWebsitePreviewModalProps>
             { id: 'katalog', label: 'Katalog' },
             { id: 'blog', label: 'Blog' },
             { id: 'about', label: 'Tentang' },
-            { id: 'links', label: 'Biolink' }
+            { id: 'links', label: 'Biolink' },
+            { id: 'invitation', label: 'Undangan' }
           ].map((p) => (
             <button
               key={p.id}

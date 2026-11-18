@@ -676,3 +676,153 @@ JANGAN GUNAKAN EMOJI SAMA SEKALI. Pastikan JSON valid.`;
   }
 };
 
+/**
+ * ══════════════════════════════════════════════════════════════════════
+ * SMART RECEIPT OCR & VERIFICATION ASSISTANT (GEMINI VISION)
+ * Membaca foto struk bank/e-wallet untuk membantu mencocokkan nominal
+ * ══════════════════════════════════════════════════════════════════════
+ */
+export interface ReceiptAnalysisResult {
+  success: boolean;
+  detectedAmount?: number;
+  detectedBank?: string;
+  detectedSender?: string;
+  detectedDate?: string;
+  refNumber?: string;
+  isAmountMatched?: boolean;
+  message: string;
+}
+
+export const analyzePaymentReceipt = async (
+  imageUrl: string,
+  expectedAmount: number
+): Promise<ReceiptAnalysisResult> => {
+  const key = getGeminiKey();
+  if (!key) {
+    return {
+      success: false,
+      message: 'API Key Gemini belum diatur di menu Setting.'
+    };
+  }
+
+  if (!imageUrl || !imageUrl.startsWith('http')) {
+    return {
+      success: false,
+      message: 'URL bukti transfer tidak valid atau belum diunggah.'
+    };
+  }
+
+  try {
+    // 1. Fetch image and convert to base64
+    const imgRes = await fetch(imageUrl);
+    if (!imgRes.ok) {
+      return { success: false, message: 'Gagal mengunduh gambar bukti transfer.' };
+    }
+    const blob = await imgRes.blob();
+    const mimeType = blob.type || 'image/jpeg';
+
+    const base64Data = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const resStr = (reader.result as string) || '';
+        const base64 = resStr.includes(',') ? resStr.split(',')[1] : resStr;
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+
+    if (!base64Data) {
+      return { success: false, message: 'Gagal mengekstrak data gambar struk.' };
+    }
+
+    // 2. Call Gemini Vision API
+    const model = cachedWorkingModel || PRIORITY_MODELS[0] || 'gemini-2.0-flash';
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+
+    const promptText = `Periksa foto bukti transfer perbankan / e-wallet Indonesia berikut (BCA, Mandiri, BRI, BNI, Jago, SeaBank, Dana, GoPay, OVO, ShopeePay, QRIS).
+Tugasmu:
+1. Baca nominal uang yang ditransfer (dalam angka integer rupiah tanpa titik/koma/simbol).
+2. Baca bank / e-wallet asal atau tujuan.
+3. Baca nama pengirim atau penerima jika tertulis.
+4. Baca tanggal atau jam transfer.
+5. Baca nomor referensi / ID transaksi.
+
+Output WAJIB HANYA JSON tanpa teks lain:
+{
+  "amount": 1500000,
+  "bank": "BCA",
+  "sender": "BUDI SANTOSO",
+  "date": "02 Nov 2026, 14:32",
+  "ref": "02938471"
+}
+Jika salah satu kolom tidak terbaca, isi dengan string kosong "" atau 0 untuk amount.`;
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              { text: promptText },
+              {
+                inlineData: {
+                  mimeType,
+                  data: base64Data
+                }
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          temperature: 0.1,
+          maxOutputTokens: 300
+        }
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return {
+        success: false,
+        message: err.error?.message || `Gagal menghubungi Gemini AI (${res.status})`
+      };
+    }
+
+    const data = await res.json();
+    const textOutput = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const cleanJson = textOutput.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
+    const parsed = JSON.parse(cleanJson);
+
+    const detectedAmount = Number(parsed.amount) || 0;
+    const detectedBank = parsed.bank || 'Bank Transfer';
+    const detectedSender = parsed.sender || '-';
+    const detectedDate = parsed.date || '-';
+    const refNumber = parsed.ref || '-';
+
+    // Toleransi kode unik 1 - 999 jika ada
+    const diff = Math.abs(detectedAmount - expectedAmount);
+    const isAmountMatched = detectedAmount > 0 && (detectedAmount === expectedAmount || (diff < 1000 && expectedAmount > 10000));
+
+    return {
+      success: true,
+      detectedAmount,
+      detectedBank,
+      detectedSender,
+      detectedDate,
+      refNumber,
+      isAmountMatched,
+      message: isAmountMatched
+        ? `Nominal struk cocok (Rp ${new Intl.NumberFormat('id-ID').format(detectedAmount)})`
+        : `Nominal struk (Rp ${new Intl.NumberFormat('id-ID').format(detectedAmount)}) berbeda dari tagihan (Rp ${new Intl.NumberFormat('id-ID').format(expectedAmount)})`
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: err.message || 'Gagal memproses analisis gambar struk.'
+    };
+  }
+};
+
+

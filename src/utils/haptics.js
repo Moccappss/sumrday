@@ -43,6 +43,7 @@ export const haptic = Object.assign(triggerHaptic, {
   medium() { triggerHaptic('medium'); },
   success() { triggerHaptic('success'); },
   warning() { triggerHaptic('warning'); },
+  error() { triggerHaptic('error'); },
   selection() { triggerHaptic('selection'); }
 });
 

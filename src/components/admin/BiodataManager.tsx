@@ -8,6 +8,7 @@ import {
 import { storage } from '../../utils/storage';
 import { uploadToCloudinary } from '../../utils/cloudinary';
 import MediaGalleryModal from './MediaGalleryModal';
+import { syncUnifiedStudioData } from '../../utils/unifiedDataSync';
 
 const DEFAULT_BIODATA = {
   fullName: 'sumr.day',
@@ -159,10 +160,28 @@ const BiodataManager = ({ notify }) => {
         await storage.setItem('porto_settings', { ...s, biodata: dataRef.current }, true);
       }
 
+      // Sync across all databases and modules
+      const syncRes = await syncUnifiedStudioData({
+        brandName: dataRef.current.fullName || dataRef.current.company,
+        whatsapp: dataRef.current.phone,
+        email: dataRef.current.email,
+        address: dataRef.current.location,
+        websiteUrl: dataRef.current.website,
+        tagline: dataRef.current.bio,
+        description: dataRef.current.fullBio,
+        socials: dataRef.current.socialLinks
+      }, 'Identitas & Biodata');
+
       setHasChanges(false);
       window.dispatchEvent(new Event('porto_saved'));
       window.dispatchEvent(new CustomEvent('porto_biodata_updated', { detail: dataRef.current }));
-      if (notify) notify('✅ Data Identitas & Biodata berhasil disimpan ke Firebase Cloud', 'success');
+      if (notify) {
+        if (syncRes && syncRes.notificationText) {
+          notify(syncRes.notificationText, 'success');
+        } else {
+          notify('✅ Data Identitas berhasil disimpan & tersinkron ke semua modul', 'success');
+        }
+      }
     } catch (err) {
       console.error('[BiodataManager] Save error:', err);
       if (notify) notify('❌ Gagal menyimpan biodata: ' + (err.message || ''), 'error');

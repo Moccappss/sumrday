@@ -5,13 +5,17 @@ import {
   createUserWithEmailAndPassword, 
   signInWithPopup, 
   signInWithRedirect, 
+  signInWithCredential,
   getRedirectResult, 
   GoogleAuthProvider, 
   GithubAuthProvider 
 } from 'firebase/auth';
+import { Capacitor } from '@capacitor/core';
+import { SocialLogin } from '@capgo/capacitor-social-login';
 import { auth, db } from '../../firebase';
 import { doc, getDoc, setDoc, getDocs, collection, query, where, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { storage } from '../../utils/storage';
+import { recordLoginAudit } from '../../utils/trafficTracker';
 
 const LoginGateway = ({ onLoginSuccess }: { onLoginSuccess?: () => void }) => {
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -36,17 +40,33 @@ const LoginGateway = ({ onLoginSuccess }: { onLoginSuccess?: () => void }) => {
       .then(async (result) => {
         if (result && result.user) {
           const user = result.user;
+          const isOwner = user.email === 'mochamadsaifularif33@gmail.com';
           const userDoc = await getDoc(doc(db, 'users', user.uid));
           if (!userDoc.exists()) {
             await setDoc(doc(db, 'users', user.uid), {
               name: user.displayName || user.email?.split('@')[0] || 'User',
               email: user.email,
-              role: user.email === 'mochamadsaifularif33@gmail.com' ? 'Super Admin' : 'Editor',
-              status: 'Active',
+              role: isOwner ? 'Super Admin' : 'Pending',
+              status: isOwner ? 'Active' : 'Pending',
               createdAt: serverTimestamp(),
               lastLogin: serverTimestamp(),
               avatar: user.photoURL || null
             });
+
+            if (!isOwner) {
+              setDoc(doc(db, 'porto_notifications', `notif_user_${user.uid}`), {
+                id: `notif_user_${user.uid}`,
+                type: 'system',
+                title: 'Pendaftaran Admin Baru',
+                message: `${user.displayName || user.email} baru saja mendaftar dan menunggu persetujuan Super Admin.`,
+                data: { uid: user.uid, email: user.email, role: 'Pending', targetPage: 'users' },
+                authorId: user.uid,
+                authorName: user.displayName || 'Pengguna Baru',
+                read: false,
+                timestamp: Date.now(),
+                createdAt: new Date().toISOString()
+              }).catch(() => {});
+            }
           }
           if (onLoginSuccess) onLoginSuccess();
         }
@@ -67,10 +87,13 @@ const LoginGateway = ({ onLoginSuccess }: { onLoginSuccess?: () => void }) => {
       msg = 'Login dibatalkan (jendela login ditutup).';
     } else if (err.code === 'auth/account-exists-with-different-credential') {
       msg = 'Email sudah digunakan dengan metode login lain.';
-    } else if (err.code === 'auth/network-request-failed') {
+    } else if (err?.code === 'auth/network-request-failed') {
       msg = 'Koneksi jaringan terputus. Silakan periksa koneksi internet Anda.';
-    } else if (err.message) {
-      msg = `${msg} (${err.code || err.message})`;
+    } else {
+      const detail = err?.code || err?.errorMessage || err?.message || (typeof err === 'string' ? err : '');
+      if (detail) {
+        msg = `${msg} (${detail})`;
+      }
     }
     setError(msg);
   };
@@ -89,36 +112,78 @@ const LoginGateway = ({ onLoginSuccess }: { onLoginSuccess?: () => void }) => {
     try {
       if (mode === 'login') {
         await signInWithEmailAndPassword(auth, email, password);
+        recordLoginAudit({
+          email,
+          name: email.split('@')[0],
+          role: email === 'mochamadsaifularif33@gmail.com' ? 'Super Admin' : 'Admin',
+          status: 'success',
+          method: 'Email'
+        });
         if (onLoginSuccess) onLoginSuccess();
       } else {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const user = userCredential.user;
+        const isOwner = email === 'mochamadsaifularif33@gmail.com';
         
         const q = query(collection(db, 'users'), where('email', '==', email));
         const querySnapshot = await getDocs(q);
         
-        let existingRole = 'Pending';
+        let existingRole = isOwner ? 'Super Admin' : 'Pending';
         if (!querySnapshot.empty) {
-          existingRole = querySnapshot.docs[0].data().role || 'Pending';
+          existingRole = querySnapshot.docs[0].data().role || (isOwner ? 'Super Admin' : 'Pending');
           if (querySnapshot.docs[0].id !== user.uid) {
             await deleteDoc(doc(db, 'users', querySnapshot.docs[0].id));
           }
         }
 
+        const initialRole = isOwner ? 'Super Admin' : (existingRole !== 'Pending' ? existingRole : 'Pending');
+        const initialStatus = isOwner ? 'Active' : (initialRole === 'Pending' ? 'Pending' : 'Active');
+
         await setDoc(doc(db, 'users', user.uid), {
           name,
           email,
-          role: existingRole,
-          status: 'Active',
+          role: initialRole,
+          status: initialStatus,
           createdAt: serverTimestamp(),
           lastLogin: serverTimestamp(),
           avatar: null
         });
+
+        if (!isOwner && initialRole === 'Pending') {
+          setDoc(doc(db, 'porto_notifications', `notif_user_${user.uid}`), {
+            id: `notif_user_${user.uid}`,
+            type: 'system',
+            title: 'Pendaftaran Admin Baru',
+            message: `${name} (${email}) baru saja mendaftar dan menunggu persetujuan Super Admin.`,
+            data: { uid: user.uid, email, role: 'Pending', targetPage: 'users' },
+            authorId: user.uid,
+            authorName: name,
+            read: false,
+            timestamp: Date.now(),
+            createdAt: new Date().toISOString()
+          }).catch(() => {});
+        }
         
+        recordLoginAudit({
+          email,
+          name,
+          role: isOwner ? 'Super Admin' : 'Admin',
+          status: 'success',
+          method: 'Email'
+        });
+
         if (onLoginSuccess) onLoginSuccess();
       }
     } catch (err: any) {
       console.error('Auth error:', err);
+      recordLoginAudit({
+        email,
+        name: email.split('@')[0] || 'Unknown',
+        role: 'Admin',
+        status: 'failed',
+        reason: err.code || err.message || 'Gagal autentikasi',
+        method: 'Email'
+      });
       let msg = 'Terjadi kesalahan. Silakan coba lagi.';
       if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') msg = 'Email atau password salah.';
       if (err.code === 'auth/email-already-in-use') msg = 'Email sudah terdaftar.';
@@ -134,33 +199,96 @@ const LoginGateway = ({ onLoginSuccess }: { onLoginSuccess?: () => void }) => {
     setIsLoading(true);
     setError('');
     try {
-      let provider: any;
-      if (providerName === 'Google') {
-        provider = new GoogleAuthProvider();
-        provider.setCustomParameters({ prompt: 'select_account' });
-      } else if (providerName === 'GitHub') {
-        provider = new GithubAuthProvider();
+      let result: any;
+
+      if (providerName === 'Google' && Capacitor.isNativePlatform()) {
+        const webClientId = import.meta.env.VITE_GOOGLE_WEB_CLIENT_ID;
+        if (!webClientId) {
+          setError('VITE_GOOGLE_WEB_CLIENT_ID belum diisi di .env / deploy-targets.json untuk login Google native di APK.');
+          return;
+        }
+        await SocialLogin.initialize({
+          google: {
+            webClientId,
+            mode: 'online',
+            skipAuthOnlyAuthorizationAfterSignIn: true
+          }
+        });
+        const nativeRes = await SocialLogin.login({
+          provider: 'google',
+          options: {
+            style: 'standard',
+            filterByAuthorizedAccounts: false
+          } as any
+        });
+        const idToken = (nativeRes?.result as any)?.idToken;
+        if (!idToken) {
+          throw new Error('Google ID Token tidak ditemukan.');
+        }
+        const credential = GoogleAuthProvider.credential(idToken);
+        result = await signInWithCredential(auth, credential);
+      } else {
+        let provider: any;
+        if (providerName === 'Google') {
+          provider = new GoogleAuthProvider();
+          provider.setCustomParameters({ prompt: 'select_account' });
+        } else if (providerName === 'GitHub') {
+          provider = new GithubAuthProvider();
+        }
+
+        result = await signInWithPopup(auth, provider);
       }
 
-      const result = await signInWithPopup(auth, provider);
       const user = result.user;
+      const isOwner = user.email === 'mochamadsaifularif33@gmail.com';
       
       const userDoc = await getDoc(doc(db, 'users', user.uid));
       if (!userDoc.exists()) {
         await setDoc(doc(db, 'users', user.uid), {
           name: user.displayName || user.email?.split('@')[0] || 'User',
           email: user.email,
-          role: user.email === 'mochamadsaifularif33@gmail.com' ? 'Super Admin' : 'Editor',
-          status: 'Active',
+          role: isOwner ? 'Super Admin' : 'Pending',
+          status: isOwner ? 'Active' : 'Pending',
           createdAt: serverTimestamp(),
           lastLogin: serverTimestamp(),
           avatar: user.photoURL || null
         });
+
+        if (!isOwner) {
+          setDoc(doc(db, 'porto_notifications', `notif_user_${user.uid}`), {
+            id: `notif_user_${user.uid}`,
+            type: 'system',
+            title: 'Pendaftaran Admin Baru',
+            message: `${user.displayName || user.email} baru saja mendaftar via ${providerName} dan menunggu persetujuan Super Admin.`,
+            data: { uid: user.uid, email: user.email, role: 'Pending', targetPage: 'users' },
+            authorId: user.uid,
+            authorName: user.displayName || 'Pengguna Baru',
+            read: false,
+            timestamp: Date.now(),
+            createdAt: new Date().toISOString()
+          }).catch(() => {});
+        }
       }
+
+      recordLoginAudit({
+        email: user.email || 'anon@google.com',
+        name: user.displayName || user.email?.split('@')[0] || 'User',
+        role: isOwner ? 'Super Admin' : 'Admin',
+        status: 'success',
+        method: providerName === 'Google' ? 'Google' : 'GitHub'
+      });
 
       if (onLoginSuccess) onLoginSuccess();
     } catch (err: any) {
       console.error('Social Auth error:', err);
+      recordLoginAudit({
+        email: 'social.login@attempt.com',
+        name: `${providerName} Attempter`,
+        role: 'Admin',
+        status: 'failed',
+        reason: err.code || err.message,
+        method: providerName === 'Google' ? 'Google' : 'GitHub'
+      });
       if (err.code === 'auth/popup-blocked') {
         try {
           let provider = providerName === 'Google' ? new GoogleAuthProvider() : new GithubAuthProvider();
@@ -229,14 +357,25 @@ const LoginGateway = ({ onLoginSuccess }: { onLoginSuccess?: () => void }) => {
             {mode === 'register' && (
               <div className="input-group">
                 <label>Nama Lengkap</label>
-                <div className="input-with-icon">
-                  <User size={18} className="input-icon" />
+                <div className="input-with-icon" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <User 
+                    size={18} 
+                    className="input-icon" 
+                    style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', zIndex: 2, color: 'var(--cms-text-muted, #94a3b8)' }} 
+                  />
                   <input
                     type="text"
                     placeholder="Masukkan nama lengkap"
                     value={name}
                     onChange={e => setName(e.target.value)}
                     disabled={isLoading}
+                    style={{
+                      width: '100%',
+                      height: 48,
+                      padding: '0 14px 0 44px',
+                      borderRadius: 14,
+                      boxSizing: 'border-box'
+                    }}
                   />
                 </div>
               </div>
@@ -244,14 +383,25 @@ const LoginGateway = ({ onLoginSuccess }: { onLoginSuccess?: () => void }) => {
 
             <div className="input-group">
               <label>Alamat Email</label>
-              <div className="input-with-icon">
-                <Mail size={18} className="input-icon" />
+              <div className="input-with-icon" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <Mail 
+                  size={18} 
+                  className="input-icon" 
+                  style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', zIndex: 2, color: 'var(--cms-text-muted, #94a3b8)' }} 
+                />
                 <input
                   type="email"
                   placeholder="name@company.com"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   disabled={isLoading}
+                  style={{
+                    width: '100%',
+                    height: 48,
+                    padding: '0 14px 0 44px',
+                    borderRadius: 14,
+                    boxSizing: 'border-box'
+                  }}
                 />
               </div>
             </div>
@@ -268,14 +418,25 @@ const LoginGateway = ({ onLoginSuccess }: { onLoginSuccess?: () => void }) => {
                   </span>
                 )}
               </div>
-              <div className="input-with-icon" style={{ position: 'relative' }}>
-                <Lock size={18} className="input-icon" />
+              <div className="input-with-icon" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <Lock 
+                  size={18} 
+                  className="input-icon" 
+                  style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', zIndex: 2, color: 'var(--cms-text-muted, #94a3b8)' }} 
+                />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   placeholder="••••••••"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   disabled={isLoading}
+                  style={{
+                    width: '100%',
+                    height: 48,
+                    padding: '0 44px 0 44px',
+                    borderRadius: 14,
+                    boxSizing: 'border-box'
+                  }}
                 />
                 <button
                   type="button"
@@ -283,12 +444,13 @@ const LoginGateway = ({ onLoginSuccess }: { onLoginSuccess?: () => void }) => {
                   style={{
                     position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)',
                     background: 'none', border: 'none', cursor: 'pointer',
-                    color: 'var(--cms-text-muted)', opacity: 0.6, padding: 4,
-                    display: 'flex', alignItems: 'center', transition: 'opacity 0.2s'
+                    color: 'var(--cms-text-muted, #94a3b8)', opacity: 0.7, padding: 4,
+                    display: 'flex', alignItems: 'center', transition: 'opacity 0.2s',
+                    zIndex: 2
                   }}
                   aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
                 >
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
             </div>

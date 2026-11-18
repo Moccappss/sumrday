@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { storage } from '../utils/storage';
+import { uploadToCloudinary } from '../utils/cloudinary';
 import { Star, MessageSquare, Send, CheckCircle2, Upload, Image, Sparkles, X, Heart } from 'lucide-react';
 import SEOHelmet from '../components/SEOHelmet';
 
@@ -13,6 +14,7 @@ export const PublicFeedbackPage: React.FC = () => {
   const [feedbackType, setFeedbackType] = useState<'review' | 'feedback'>('review');
   const [message, setMessage] = useState('');
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
 
@@ -36,16 +38,22 @@ export const PublicFeedbackPage: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 2 * 1024 * 1024) {
-      alert('Ukuran berkas maksimal 2MB');
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Ukuran berkas foto maksimal 5MB');
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      setPhotoUrl(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    setSelectedFile(file);
+    try {
+      const previewUrl = URL.createObjectURL(file);
+      setPhotoUrl(previewUrl);
+    } catch {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setPhotoUrl(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -60,6 +68,20 @@ export const PublicFeedbackPage: React.FC = () => {
       const now = new Date().toISOString();
 
       if (feedbackType === 'review') {
+        let finalAvatarUrl: string | undefined = undefined;
+
+        if (selectedFile) {
+          try {
+            finalAvatarUrl = await uploadToCloudinary(selectedFile);
+          } catch (uploadErr) {
+            console.warn('[PublicFeedback] Cloudinary upload error:', uploadErr);
+          }
+        }
+
+        if (!finalAvatarUrl) {
+          finalAvatarUrl = `https://api.dicebear.com/7.x/notionists/svg?seed=${encodeURIComponent(clientName.trim())}`;
+        }
+
         // Save as review
         const currentReviews = await storage.getItem('porto_client_reviews', []);
         const newReview = {
@@ -69,7 +91,7 @@ export const PublicFeedbackPage: React.FC = () => {
           role: role.trim() || undefined,
           rating,
           reviewText: message.trim(),
-          avatarUrl: photoUrl || undefined,
+          avatarUrl: finalAvatarUrl,
           isFeatured: true,
           createdAt: now
         };
@@ -281,7 +303,7 @@ export const PublicFeedbackPage: React.FC = () => {
             </div>
 
             {/* Brand / Role / Contact */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
               <div>
                 <label style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', marginBottom: 5, display: 'block' }}>Perusahaan / Brand</label>
                 <input

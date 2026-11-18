@@ -4,6 +4,7 @@ import { storage } from '../utils/storage';
 import type { FormSchema, FormResponse } from '../components/admin/form-maker/formTypes';
 import FormPublicView from '../components/admin/form-maker/FormPublicView';
 import { autoSaveFormExcelToDrive } from '../utils/formExcelExport';
+import { addNotification } from '../utils/notifications';
 
 export const PublicFormPage: React.FC = () => {
   const { formId } = useParams<{ formId: string }>();
@@ -15,11 +16,15 @@ export const PublicFormPage: React.FC = () => {
     const loadForm = async () => {
       try {
         const forms = await storage.getItem('porto_forms', []);
-        if (Array.isArray(forms)) {
-          const found = forms.find((f: any) => f.id === formId);
-          if (found) {
-            setForm(found);
+        let found = Array.isArray(forms) ? forms.find((f: any) => f.id === formId) : null;
+        if (!found && formId) {
+          const freshForms = await storage.getItem('porto_forms', [], true);
+          if (Array.isArray(freshForms)) {
+            found = freshForms.find((f: any) => f.id === formId) || null;
           }
+        }
+        if (found) {
+          setForm(found);
         }
       } catch (err) {
         console.error('[PublicFormPage] Failed to load form:', err);
@@ -37,6 +42,62 @@ export const PublicFormPage: React.FC = () => {
       const updatedResponses = [resp, ...currentResponses];
       const updatedMap = { ...(savedResponses || {}), [resp.formId]: updatedResponses };
       await storage.setItem('porto_form_responses', updatedMap);
+
+      // Extract respondent lead information from questions & answers
+      let respondentName = '';
+      let respondentPhone = '';
+      let respondentEmail = '';
+
+      if (form && Array.isArray(form.questions)) {
+        for (const q of form.questions) {
+          const val = resp.answers[q.id];
+          if (!val) continue;
+          const strVal = String(val).trim();
+          const qTitle = (q.title || '').toLowerCase();
+
+          if (q.type === 'phone' || qTitle.includes('wa') || qTitle.includes('telepon') || qTitle.includes('hp') || qTitle.includes('phone')) {
+            if (!respondentPhone) respondentPhone = strVal;
+          } else if (q.type === 'email' || qTitle.includes('email')) {
+            if (!respondentEmail) respondentEmail = strVal;
+          } else if ((q.type === 'short_text' && (qTitle.includes('nama') || qTitle.includes('name'))) || (!respondentName && q.type === 'short_text')) {
+            if (!respondentName) respondentName = strVal;
+          }
+        }
+      }
+
+      // Sync lead to porto_leads if name, phone, or email is present
+      if (respondentName || respondentPhone || respondentEmail) {
+        try {
+          const existingLeads = await storage.getItem<any[]>('porto_leads', []);
+          const safeLeads = Array.isArray(existingLeads) ? existingLeads : [];
+          const newLead = {
+            id: `lead_form_${Date.now()}`,
+            name: respondentName || 'Responden Formulir',
+            phone: respondentPhone || '',
+            email: respondentEmail || '',
+            resourceTitle: `Formulir: ${form?.title || 'Formulir Publik'}`,
+            source: 'form-maker',
+            downloadedAt: resp.submittedAt || new Date().toISOString(),
+            notes: `Tanggapan masuk dari form "${form?.title || ''}"`
+          };
+          await storage.setItem('porto_leads', [newLead, ...safeLeads], true);
+          window.dispatchEvent(new CustomEvent('porto_leads_updated'));
+        } catch (eLead) {
+          console.warn('[PublicFormPage] Lead sync warning:', eLead);
+        }
+      }
+
+      // Add Admin Notification
+      try {
+        await addNotification(
+          'lead',
+          'Respons Formulir Baru',
+          `${respondentName || 'Responden'} baru saja mengisi formulir "${form?.title || 'Formulir'}".`,
+          { formId: form?.id, responseId: resp.id }
+        );
+      } catch (_) {}
+
+      window.dispatchEvent(new CustomEvent('porto_form_responses_updated', { detail: { formId: resp.formId } }));
 
       // Auto save to Drive if enabled
       if (form && form.autoSaveDrive) {

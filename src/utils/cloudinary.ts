@@ -219,6 +219,32 @@ const makeSafeMediaResult = (res: CloudinaryMediaResult): CloudinaryMediaResult 
   return safe;
 };
 
+export const addMediaToGallery = async (
+  mediaObj: Partial<CloudinaryMediaResult> & { url: string; id?: string; name?: string; createdAt?: number },
+  maxItems: number = 200
+): Promise<any[]> => {
+  try {
+    const currentGallery = (await storage.getItem('porto_media_gallery', [])) || [];
+    const newMedia = {
+      id: mediaObj.id || `media_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+      ...mediaObj,
+      createdAt: mediaObj.createdAt || Date.now()
+    };
+    const deduped = Array.isArray(currentGallery)
+      ? currentGallery.filter((m: any) => m && m.url !== newMedia.url)
+      : [];
+    const updatedList = [newMedia, ...deduped].slice(0, maxItems);
+    await storage.setItem('porto_media_gallery', updatedList);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('porto_media_uploaded', { detail: newMedia }));
+    }
+    return updatedList;
+  } catch (e) {
+    console.warn('Failed to save to media gallery history:', e);
+    return [];
+  }
+};
+
 export const uploadToCloudinary = async (
   file: File | Blob | string | null,
   resourceType: 'image' | 'video' | 'raw' | 'auto' = 'auto',
@@ -245,18 +271,7 @@ export const uploadToCloudinary = async (
   const fileExt = fileName.includes('.') ? fileName.split('.').pop() || 'webp' : 'webp';
 
   const saveToGallery = async (mediaObj: CloudinaryMediaResult) => {
-    try {
-      const currentGallery = (await storage.getItem('porto_media_gallery', [])) || [];
-      const newMedia = {
-        id: `media_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-        ...mediaObj,
-        createdAt: Date.now()
-      };
-      await storage.setItem('porto_media_gallery', [newMedia, ...currentGallery]);
-      window.dispatchEvent(new CustomEvent('porto_media_uploaded', { detail: newMedia }));
-    } catch (e) {
-      console.warn('Failed to save to media gallery history:', e);
-    }
+    await addMediaToGallery(mediaObj);
   };
 
   // ── TIER 1: CLOUDINARY UPLOAD ──
@@ -377,4 +392,65 @@ export const uploadAudioToCloudinary = async (file: File | null): Promise<Cloudi
   } catch (error: any) {
     throw new Error('Gagal upload audio: ' + (error.message || error));
   }
+};
+
+
+/**
+ * Converts a specific page of a Cloudinary-hosted PDF into an optimized WebP/JPEG image
+ * Enables instant zero-download interactive PDF flipbooks
+ * Example: .../image/upload/pg_1,w_1200,f_auto,q_auto/.../book.pdf.jpg
+ */
+export const getCloudinaryPdfPageUrl = (
+  pdfUrl: string,
+  pageNumber: number = 1,
+  options: { width?: number; quality?: string } = {}
+): string => {
+  if (!pdfUrl || typeof pdfUrl !== 'string') return '';
+  
+  if (pdfUrl.includes('cloudinary.com') && !pdfUrl.includes('/raw/upload/')) {
+    const widthParam = options.width ? `,w_${options.width}` : '';
+    const qParam = options.quality ? `,q_${options.quality}` : ',q_auto:good';
+    const transform = `pg_${pageNumber}${widthParam},f_jpg${qParam}`;
+
+    if (pdfUrl.includes('/upload/')) {
+      const urlAsJpg = pdfUrl.replace(/\.pdf(\?.*)?$/i, '.jpg$1');
+      return urlAsJpg.replace('/upload/', `/upload/${transform}/`);
+    }
+  }
+
+  return '';
+};
+
+/**
+ * Universal Responsive Image URL Generator
+ * Automatically injects Cloudinary dynamic sizing & f_auto,q_auto
+ * and optimizes Google Drive thumbnails to ensure fast loading on mobile.
+ */
+export const getResponsiveImg = (
+  url?: string | null,
+  width: number = 800,
+  quality: 'auto' | 'auto:good' | 'auto:eco' = 'auto:good'
+): string => {
+  if (!url || typeof url !== 'string') return '';
+  if (url.startsWith('data:') || url.startsWith('blob:')) return url;
+
+  // Cloudinary URL optimization
+  if (url.includes('cloudinary.com')) {
+    return getOptimizedCloudinaryUrl(url, {
+      width,
+      crop: 'limit',
+      quality,
+      format: 'auto'
+    });
+  }
+
+  // Google Drive thumbnail optimization
+  if (url.includes('drive.google.com') && url.includes('id=')) {
+    const fileId = url.split('id=')[1]?.split('&')[0];
+    if (fileId) {
+      return `https://drive.google.com/thumbnail?id=${fileId}&sz=w${width}`;
+    }
+  }
+
+  return url;
 };

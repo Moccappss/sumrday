@@ -1,0 +1,176 @@
+/* Invitation Maker Styles */
+.invitation-app-root {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Animations */
+@keyframes inviteFloat {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-8px) rotate(1deg); }
+}
+
+@keyframes inviteSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes inviteCardEnter {
+  from {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes invitePulse {
+  0%, 100% { transform: scale(1); opacity: 0.9; }
+  50% { transform: scale(1.05); opacity: 1; }
+}
+
+@keyframes inviteFadeIn {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes inviteFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes inviteSlide {
+  from { opacity: 0; transform: translateY(32px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes inviteZoom {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes inviteSpill {
+  0% { opacity: 0; transform: translateY(-24px) scale(0.96); filter: blur(4px); }
+  60% { transform: translateY(4px) scale(1.01); filter: blur(0); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes inviteFlip {
+  from { opacity: 0; transform: perspective(600px) rotateX(-20deg); }
+  to { opacity: 1; transform: perspective(600px) rotateX(0deg); }
+}
+
+@keyframes inviteSlideNext {
+  0% {
+    opacity: 0;
+    transform: translateX(45px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes inviteSlidePrev {
+  0% {
+    opacity: 0;
+    transform: translateX(-45px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes inviteScrollCard {
+  0% {
+    opacity: 0;
+    transform: translateY(24px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes inviteCinematic {
+  0% {
+    opacity: 0;
+    transform: scale(0.95) translateY(14px);
+    filter: blur(6px);
+  }
+  65% {
+    opacity: 0.98;
+    transform: scale(1.004) translateY(-1px);
+    filter: blur(0px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0px);
+  }
+}
+
+.invite-btn-cinema {
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.invite-btn-cinema:hover:not(:disabled) {
+  transform: translateY(-2px) scale(1.06);
+}
+
+.invite-btn-cinema:active:not(:disabled) {
+  transform: translateY(1px) scale(0.94);
+}
+
+.invite-float-badge {
+  animation: inviteFloat 4s ease-in-out infinite;
+}
+
+.invite-cover-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 28px;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.25);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.invite-theme-btn {
+  transition: all 0.25s ease;
+  cursor: pointer;
+}
+
+.invite-theme-btn:hover {
+  transform: translateY(-2px);
+}
+
+/* Glass inputs */
+.invite-input {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+  background: var(--cms-input-bg);
+  color: var(--cms-text);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+
+.invite-input:focus {
+  border-color: var(--cms-accent, #ec4899);
+}
+
+.invite-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--cms-text-muted);
+  margin-bottom: 6px;
+}

@@ -8,6 +8,7 @@ import { hexToRgba, extractYouTubeId, getOptimizedUrl } from '../renderer/utils'
 import MediaGalleryModal from './MediaGalleryModal';
 import ActionPopupControl from './ActionPopupControl';
 import InfoTooltip from './InfoTooltip';
+import DOMPurify from 'dompurify';
 
 
 const ANIMATIONS = [
@@ -339,7 +340,7 @@ const StickerEditPanel = ({ sticker, onUpdate, onRemove, onDuplicate }) => {
           ) : (
             sticker.imageData ? (
               (sticker.isSvg || (typeof sticker.imageData === 'string' && sticker.imageData.trim().startsWith('<svg')))
-                ? <div style={{ width:'70%', height:'70%' }} dangerouslySetInnerHTML={{ __html: sticker.imageData }}/>
+                ? <div style={{ width:'70%', height:'70%' }} dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(sticker.imageData) }}/>
                 : <img 
                     src={getOptimizedUrl(sticker.imageData, 400)} 
                     alt="" 

@@ -34,11 +34,11 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
 
   if (!isOpen) return null;
 
-  const bg = isDark ? '#0e121a' : '#ffffff';
-  const cardBg = isDark ? '#161c28' : '#f8fafc';
+  const bg = isDark ? '#151824' : '#ffffff';
+  const cardBg = isDark ? '#1f2436' : '#f8fafc';
   const text = isDark ? '#f8fafc' : '#0f172a';
   const subText = isDark ? '#94a3b8' : '#64748b';
-  const border = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)';
+  const border = isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(15, 23, 42, 0.08)';
 
   return (
     <div
@@ -46,8 +46,9 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
         position: 'fixed',
         inset: 0,
         zIndex: 999999,
-        background: 'rgba(0, 0, 0, 0.65)',
-        backdropFilter: 'blur(8px)',
+        background: isDark ? 'rgba(0, 0, 0, 0.78)' : 'rgba(15, 23, 42, 0.45)',
+        backdropFilter: 'none',
+        WebkitBackdropFilter: 'none',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -63,7 +64,7 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
           background: bg,
           borderRadius: 24,
           border: `1px solid ${border}`,
-          boxShadow: '0 25px 60px rgba(0,0,0,0.3)',
+          boxShadow: isDark ? '0 25px 60px rgba(0, 0, 0, 0.8)' : '0 25px 60px rgba(15, 23, 42, 0.14)',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden'

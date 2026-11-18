@@ -1,18 +1,22 @@
 {
-  "name": "sumr.day | Creative Digital Studio",
+  "name": "sumr.day — Creative Studio & Play Space",
   "short_name": "sumr.day",
-  "description": "sumr.day | Creative Digital Studio — Warm Tech & Skena-Aesthetic. A little sunshine for your screen.",
-  "id": "sumrday-studio-app",
-  "start_url": "/admin",
+  "description": "Studio kreatif digital, katalog layanan, showcase portofolio, dan mini games interaktif sumr.day.",
+  "id": "sumrday-client-app",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "display_override": ["standalone", "window-controls-overlay", "minimal-ui"],
-  "background_color": "#050507",
-  "theme_color": "#f59e0b",
-  "orientation": "natural",
+  "display_override": ["standalone", "minimal-ui"],
+  "background_color": "#09090e",
+  "theme_color": "#D95629",
+  "orientation": "any",
   "lang": "id",
-  "categories": ["business", "productivity", "utilities", "design"],
+  "categories": ["lifestyle", "shopping", "entertainment", "productivity"],
   "prefer_related_applications": false,
+  "launch_handler": {
+    "client_mode": "focus-existing"
+  },
+  "handle_links": "preferred",
   "icons": [
     {
       "src": "/pwa-192x192.png",
@@ -33,30 +37,36 @@
       "purpose": "maskable"
     },
     {
-      "src": "/favicon.svg",
-      "sizes": "192x192 512x512",
-      "type": "image/svg+xml",
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
       "purpose": "any"
     }
   ],
   "shortcuts": [
     {
-      "name": "Dashboard Admin",
-      "short_name": "Dashboard",
-      "description": "Buka Dashboard Utama sumr.day OS",
-      "url": "/admin"
+      "name": "Katalog Layanan",
+      "short_name": "Katalog",
+      "description": "Eksplorasi paket desain dan produk digital",
+      "url": "/katalog"
     },
     {
-      "name": "Manajemen Proyek",
-      "short_name": "Proyek",
-      "description": "Buka modul manajemen proyek dan tugas",
-      "url": "/admin/projects"
+      "name": "Portofolio Karya",
+      "short_name": "Portofolio",
+      "description": "Lihat galeri hasil karya dan studi kasus",
+      "url": "/portofolio"
     },
     {
-      "name": "Live Chat & Inbox",
-      "short_name": "Chat",
-      "description": "Buka pesan masuk dan percakapan klien",
-      "url": "/admin/chat"
+      "name": "Play Space (Apps & Game)",
+      "short_name": "Play Space",
+      "description": "Mainkan mini game & interactive apps",
+      "url": "/apps"
+    },
+    {
+      "name": "Portal Akun Klien",
+      "short_name": "Akun Klien",
+      "description": "Cek progres pesanan & invoice",
+      "url": "/akun"
     }
   ],
   "screenshots": []

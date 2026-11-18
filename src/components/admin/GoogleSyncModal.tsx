@@ -255,6 +255,19 @@ const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
     }
   };
 
+  const handleBuildDashboard = async () => {
+    setIsSyncing(true);
+    setSyncType('dashboard' as any);
+    try {
+      await googleSync.buildDashboard(notify);
+    } catch (err: any) {
+      notify('Gagal membangun dashboard: ' + err.message, 'error');
+    } finally {
+      setIsSyncing(false);
+      setSyncType(null);
+    }
+  };
+
   const handleForceCloudSave = async () => {
     setIsSyncing(true);
     setSyncType('cloud');
@@ -325,9 +338,9 @@ const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
         style={{
           position: 'fixed',
           inset: 0,
-          background: 'rgba(0, 0, 0, 0.25)',
-          backdropFilter: 'blur(2px)',
-          WebkitBackdropFilter: 'blur(2px)',
+          background: 'rgba(0, 0, 0, 0.8)',
+          backdropFilter: 'none',
+          WebkitBackdropFilter: 'none',
           zIndex: 9998,
           cursor: 'pointer'
         }}
@@ -784,6 +797,64 @@ const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
 
             <ArrowRight size={11} color="var(--cms-text-muted)" />
           </button>
+
+          {/* Button 5: Google Sheets Dashboard Studio (Tab #1) */}
+          <button
+            onClick={handleBuildDashboard}
+            disabled={isSyncing || !isConfigured}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 10px',
+              borderRadius: 10,
+              border: '1px solid var(--cms-border, rgba(0,0,0,0.1))',
+              background: 'var(--cms-bg, #f9fafb)',
+              cursor: (isSyncing || !isConfigured) ? 'not-allowed' : 'pointer',
+              textAlign: 'left',
+              transition: 'all 0.15s ease',
+              opacity: (isSyncing && syncType !== ('dashboard' as any)) ? 0.4 : 1
+            }}
+            onMouseEnter={e => {
+              if (!isSyncing && isConfigured) {
+                e.currentTarget.style.borderColor = '#d95629';
+                e.currentTarget.style.background = 'rgba(217, 86, 41, 0.08)';
+              }
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.borderColor = 'var(--cms-border, rgba(0,0,0,0.1))';
+              e.currentTarget.style.background = 'var(--cms-bg, #f9fafb)';
+            }}
+          >
+            <div style={{
+              width: 24,
+              height: 24,
+              borderRadius: 6,
+              background: 'rgba(217, 86, 41, 0.12)',
+              color: '#d95629',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}>
+              {isSyncing && syncType === ('dashboard' as any) ? (
+                <Loader2 size={12} className="cms-spin" />
+              ) : (
+                <Activity size={12} />
+              )}
+            </div>
+
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--cms-text)' }}>
+                Bangun Dashboard Studio
+              </div>
+              <div style={{ fontSize: 9.5, color: 'var(--cms-text-muted)' }}>
+                Format Tab #1 ringkasan eksekutif & kas
+              </div>
+            </div>
+
+            <ArrowRight size={11} color="var(--cms-text-muted)" />
+          </button>
         </div>
 
         {/* Dropdown / Accordion: System Health & Traffic Monitor */}
@@ -914,7 +985,10 @@ const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <button
-              onClick={() => { onClose(); window.location.href = '/admin/storage'; }}
+              onClick={() => {
+                onClose();
+                window.dispatchEvent(new CustomEvent('porto_switch_page', { detail: 'storage' }));
+              }}
               style={{
                 background: 'transparent',
                 border: 'none',

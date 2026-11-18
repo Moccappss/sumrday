@@ -3,33 +3,75 @@
   "short_name": "sumr.day OS",
   "description": "Portal Manajemen & Kontrol Studio sumr.day OS — Master Control & Creative CMS",
   "id": "sumrday-os-admin",
-  "start_url": "/admin",
-  "scope": "/admin",
+  "start_url": "/admin/",
+  "scope": "/admin/",
   "display": "standalone",
   "display_override": ["standalone", "window-controls-overlay", "minimal-ui"],
   "background_color": "#050507",
-  "theme_color": "#f59e0b",
+  "theme_color": "#D95629",
   "orientation": "natural",
   "lang": "id",
   "categories": ["business", "productivity", "utilities"],
+  "prefer_related_applications": false,
+  "launch_handler": {
+    "client_mode": "focus-existing"
+  },
+  "handle_links": "preferred",
   "icons": [
     {
-      "src": "/pwa-192x192.png",
+      "src": "/pwa-admin-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/pwa-512x512.png",
+      "src": "/pwa-admin-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/favicon.svg",
-      "sizes": "192x192 512x512",
-      "type": "image/svg+xml",
+      "src": "/pwa-admin-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
       "purpose": "any"
     }
-  ]
+  ],
+  "shortcuts": [
+    {
+      "name": "Dashboard Admin",
+      "short_name": "Dashboard",
+      "description": "Buka Dashboard Utama sumr.day OS",
+      "url": "/admin/",
+      "icons": [{ "src": "/pwa-admin-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Projects & Kanban",
+      "short_name": "Proyek",
+      "description": "Pantau alur kerja proyek dan deadline",
+      "url": "/admin/projects",
+      "icons": [{ "src": "/pwa-admin-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Pesanan & Transaksi",
+      "short_name": "Transaksi",
+      "description": "Kelola transaksi dan faktur invoice",
+      "url": "/admin/transactions",
+      "icons": [{ "src": "/pwa-admin-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Website Editor & CMS",
+      "short_name": "Web Editor",
+      "description": "Edit konten dan tampilan website studio",
+      "url": "/admin/visual-editor",
+      "icons": [{ "src": "/pwa-admin-192x192.png", "sizes": "192x192" }]
+    }
+  ],
+  "screenshots": []
 }

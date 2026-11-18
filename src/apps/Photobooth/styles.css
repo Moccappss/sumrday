@@ -1,0 +1,25 @@
+/* Template Specific Styles */
+.app-client-container {
+  /* AI: Tambahkan style spesifik untuk mode client di sini */
+}
+
+.app-admin-container {
+  /* AI: Tambahkan style spesifik untuk mode admin di sini */
+}
+
+/* Contoh penambahan style internal aplikasi agar terisolasi */
+.app-custom-button {
+  background: var(--cms-accent);
+  color: white;
+  border-radius: 99px;
+  padding: 10px 20px;
+  border: none;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.app-custom-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 15px rgba(0, 0, 0, 0.2);
+}

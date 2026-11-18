@@ -1,12 +1,22 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Info } from 'lucide-react';
+import { ChevronDown, Info, Trash2, Plus } from 'lucide-react';
 
 const DROPDOWN_HEIGHT = 300; // max dropdown height in px
 const DROPDOWN_MARGIN = 8;   // gap between trigger and dropdown
 
-const GlassSelect = ({ value, onChange, options, placeholder = 'Pilih...', style = {} }) => {
+const GlassSelect = ({ 
+  value, 
+  onChange, 
+  options, 
+  placeholder = 'Pilih...', 
+  style = {},
+  onDeleteOption,
+  onAddOption,
+  addPlaceholder = 'Tambah baru...'
+}) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [newOptionInput, setNewOptionInput] = useState('');
   const [coords, setCoords] = useState({ top: 0, left: 0, width: 0, openUp: false });
   const containerRef = useRef(null);
   const dropdownRef = useRef(null);
@@ -160,17 +170,110 @@ const GlassSelect = ({ value, onChange, options, placeholder = 'Pilih...', style
               if (!isActive) e.currentTarget.style.background = 'transparent';
             }}
           >
-            <span>{opt.label}</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt.label}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
               {opt.desc && (
                 <div title={opt.desc} style={{ display: 'flex', alignItems: 'center', opacity: 0.6 }}>
                   <Info size={14} />
                 </div>
               )}
+              {onDeleteOption && opt.canDelete !== false && key !== 'Umum' && key !== '__NEW__' && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteOption(key, opt);
+                  }}
+                  title="Hapus Kategori"
+                  style={{
+                    width: 24,
+                    height: 24,
+                    borderRadius: 6,
+                    border: 'none',
+                    background: isActive ? 'rgba(255,255,255,0.25)' : 'rgba(239, 68, 68, 0.12)',
+                    color: isActive ? '#ffffff' : '#ef4444',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.15s',
+                    marginLeft: 4
+                  }}
+                >
+                  <Trash2 size={12} />
+                </button>
+              )}
             </div>
           </div>
         );
       })}
+
+      {onAddOption && (
+        <div 
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '8px 6px 4px',
+            marginTop: 4,
+            borderTop: '1px solid var(--glass-border)'
+          }}
+        >
+          <input 
+            type="text"
+            placeholder={addPlaceholder}
+            value={newOptionInput}
+            onChange={e => setNewOptionInput(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && newOptionInput.trim()) {
+                e.preventDefault();
+                e.stopPropagation();
+                onAddOption(newOptionInput.trim());
+                setNewOptionInput('');
+              }
+            }}
+            style={{
+              flex: 1,
+              height: 32,
+              borderRadius: 100,
+              border: '1px solid var(--glass-border)',
+              background: 'var(--cms-input-bg, rgba(255,255,255,0.06))',
+              color: 'var(--cms-text)',
+              padding: '0 12px',
+              fontSize: 12,
+              outline: 'none'
+            }}
+          />
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (newOptionInput.trim()) {
+                onAddOption(newOptionInput.trim());
+                setNewOptionInput('');
+              }
+            }}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: '50%',
+              border: 'none',
+              background: 'var(--cms-accent, #7c3aed)',
+              color: '#ffffff',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}
+            title="Tambah"
+          >
+            <Plus size={14} />
+          </button>
+        </div>
+      )}
     </div>
   );
 

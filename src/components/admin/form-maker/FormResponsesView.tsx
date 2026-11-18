@@ -2,11 +2,12 @@ import React, { useState } from 'react';
 import { 
   FileSpreadsheet, Cloud, CloudCheck, RefreshCw, Trash2, ExternalLink, 
   ChevronLeft, ChevronRight, CheckCircle2, XCircle, Search, 
-  BarChart3, ListOrdered, User, Table2
+  BarChart3, ListOrdered, User, Table2, Rocket, FolderKanban, Loader2
 } from 'lucide-react';
 import type { FormSchema, FormResponse } from './formTypes';
 import { downloadFormExcel, autoSaveFormExcelToDrive } from '../../../utils/formExcelExport';
 import { RoundedPillDropdown } from './RoundedPillDropdown';
+import { convertFormResponseToProjectAndQuote } from '../../../utils/leadToProject';
 
 interface FormResponsesViewProps {
   form: FormSchema;
@@ -32,14 +33,29 @@ export const FormResponsesView: React.FC<FormResponsesViewProps> = ({
   const [individualIdx, setIndividualIdx] = useState<number>(0);
   const [searchKeyword, setSearchKeyword] = useState<string>('');
   const [isSyncingDrive, setIsSyncingDrive] = useState<boolean>(false);
+  const [isConvertingLead, setIsConvertingLead] = useState<boolean>(false);
+
+  // Handle Convert Lead to Project Pipeline
+  const handleConvertToProject = async (targetResp: FormResponse) => {
+    setIsConvertingLead(true);
+    try {
+      const res = await convertFormResponseToProjectAndQuote(form, targetResp, notify);
+      if (res && res.success) {
+        // Broadcast event so other modules know new project/quote was created
+        window.dispatchEvent(new CustomEvent('porto_project_created', { detail: { projectId: res.projectId } }));
+      }
+    } finally {
+      setIsConvertingLead(false);
+    }
+  };
 
   // Handle Download Excel
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (responses.length === 0) {
       if (notify) notify('Belum ada data tanggapan untuk diekspor', 'info');
       return;
     }
-    const ok = downloadFormExcel(form, responses);
+    const ok = await downloadFormExcel(form, responses);
     if (ok && notify) {
       notify(`Data berhasil diekspor sebagai Excel: "${form.title || 'Formulir'} (Tanggapan).xlsx"`, 'success');
     }
@@ -648,14 +664,44 @@ export const FormResponsesView: React.FC<FormResponsesViewProps> = ({
               }}>
                 <div style={{
                   paddingBottom: 16,
-                  borderBottom: '2px solid var(--cms-border, rgba(255,255,255,0.1))'
+                  borderBottom: '2px solid var(--cms-border, rgba(255,255,255,0.1))',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 12
                 }}>
-                  <h3 style={{ margin: 0, fontSize: 20, fontWeight: 900, color: 'var(--cms-text)' }}>
-                    {form.title}
-                  </h3>
-                  <div style={{ fontSize: 12, color: 'var(--cms-text-muted)', marginTop: 4 }}>
-                    ID Responden: <code>{safeIndividual.id}</code>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: 20, fontWeight: 900, color: 'var(--cms-text)' }}>
+                      {form.title}
+                    </h3>
+                    <div style={{ fontSize: 12, color: 'var(--cms-text-muted)', marginTop: 4 }}>
+                      ID Responden: <code>{safeIndividual.id}</code>
+                    </div>
                   </div>
+                  <button
+                    type="button"
+                    disabled={isConvertingLead}
+                    onClick={() => handleConvertToProject(safeIndividual)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '9px 18px',
+                      borderRadius: 12,
+                      border: 'none',
+                      background: 'linear-gradient(135deg, #10b981, #059669)',
+                      color: '#ffffff',
+                      fontSize: 12.5,
+                      fontWeight: 850,
+                      cursor: isConvertingLead ? 'not-allowed' : 'pointer',
+                      boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
+                      transition: 'transform 0.15s ease'
+                    }}
+                  >
+                    {isConvertingLead ? <Loader2 size={15} className="animate-spin" /> : <Rocket size={15} />}
+                    <span>Konversi Jadi Proyek & Penawaran</span>
+                  </button>
                 </div>
 
                 {form.questions.map((q, idx) => {
@@ -681,10 +727,32 @@ export const FormResponsesView: React.FC<FormResponsesViewProps> = ({
                         fontWeight: 600,
                         color: ans !== undefined && ans !== null && ans !== '' ? (form.themeColor || 'var(--cms-accent, #6366f1)') : 'var(--cms-text-muted)'
                       }}>
-                        {ans !== undefined && ans !== null && ans !== ''
-                          ? Array.isArray(ans) ? ans.join(', ') : String(ans)
-                          : <em style={{ opacity: 0.6 }}>(Tidak diisi)</em>
-                        }
+                        {ans !== undefined && ans !== null && ans !== '' ? (
+                          typeof ans === 'object' && ans?.url ? (
+                            <a
+                              href={ans.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                color: form.themeColor || 'var(--cms-accent, #6366f1)',
+                                textDecoration: 'underline'
+                              }}
+                            >
+                              <ExternalLink size={14} />
+                              <span>{ans.name || 'Lihat Berkas Lampiran'}</span>
+                              {ans.size ? <span style={{ opacity: 0.7, fontSize: 12 }}>({(ans.size / 1024).toFixed(0)} KB)</span> : null}
+                            </a>
+                          ) : Array.isArray(ans) ? (
+                            ans.join(', ')
+                          ) : (
+                            String(ans)
+                          )
+                        ) : (
+                          <em style={{ opacity: 0.6 }}>(Tidak diisi)</em>
+                        )}
                       </div>
                     </div>
                   );
@@ -743,6 +811,7 @@ export const FormResponsesView: React.FC<FormResponsesViewProps> = ({
                       borderBottom: '1.5px solid var(--cms-border, rgba(255,255,255,0.1))'
                     }}>
                       <th style={{ padding: '12px 16px', fontWeight: 800, color: 'var(--cms-text)', whiteSpace: 'nowrap' }}>#</th>
+                      <th style={{ padding: '12px 16px', fontWeight: 800, color: 'var(--cms-text)', whiteSpace: 'nowrap' }}>Aksi</th>
                       <th style={{ padding: '12px 16px', fontWeight: 800, color: 'var(--cms-text)', whiteSpace: 'nowrap' }}>Waktu</th>
                       {form.questions.map((q) => (
                         <th key={q.id} style={{ padding: '12px 16px', fontWeight: 800, color: 'var(--cms-text)', minWidth: 160 }}>
@@ -771,6 +840,29 @@ export const FormResponsesView: React.FC<FormResponsesViewProps> = ({
                           <td style={{ padding: '10px 16px', fontWeight: 700, color: 'var(--cms-text-muted)' }}>
                             {rIdx + 1}
                           </td>
+                          <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
+                            <button
+                              type="button"
+                              onClick={() => handleConvertToProject(resp)}
+                              style={{
+                                padding: '5px 10px',
+                                borderRadius: 8,
+                                border: 'none',
+                                background: 'rgba(16, 185, 129, 0.12)',
+                                color: '#10b981',
+                                fontSize: 11,
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4
+                              }}
+                              title="Jadikan Proyek & Penawaran"
+                            >
+                              <Rocket size={12} />
+                              <span>Proyek</span>
+                            </button>
+                          </td>
                           <td style={{ padding: '10px 16px', color: 'var(--cms-text-muted)', whiteSpace: 'nowrap' }}>
                             {resp.submittedAt ? new Date(resp.submittedAt).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' }) : '-'}
                           </td>
@@ -778,7 +870,29 @@ export const FormResponsesView: React.FC<FormResponsesViewProps> = ({
                             const val = resp.answers?.[q.id];
                             return (
                               <td key={q.id} style={{ padding: '10px 16px', color: 'var(--cms-text)', maxWidth: 260, wordBreak: 'break-word' }}>
-                                {val !== undefined && val !== null ? (Array.isArray(val) ? val.join(', ') : String(val)) : '-'}
+                                {val !== undefined && val !== null ? (
+                                  typeof val === 'object' && val?.url ? (
+                                    <a
+                                      href={val.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 4,
+                                        color: 'var(--cms-accent, #6366f1)',
+                                        textDecoration: 'underline'
+                                      }}
+                                    >
+                                      <ExternalLink size={12} />
+                                      <span>{val.name || 'Lihat Berkas'}</span>
+                                    </a>
+                                  ) : Array.isArray(val) ? (
+                                    val.join(', ')
+                                  ) : (
+                                    String(val)
+                                  )
+                                ) : '-'}
                               </td>
                             );
                           })}

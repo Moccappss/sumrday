@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  X, User, Mail, Phone, Lock, Save, KeyRound, LogOut, CheckCircle2, 
-  Shield, Eye, EyeOff, ShoppingBag, Package, Sparkles, Clock, CheckCircle, 
+import {
+  X, User, Mail, Phone, Lock, Save, KeyRound, LogOut, CheckCircle2,
+  Shield, Eye, EyeOff, ShoppingBag, Package, Sparkles, Clock, CheckCircle,
   RefreshCw, ExternalLink, MessageCircle, AlertCircle
 } from 'lucide-react';
 import { useClientAuth } from '../../context/ClientAuthContext';
 import { useWebsiteTheme } from '../../hooks/useWebsiteTheme';
 import { ClientOrder, getClientOrders } from '../../services/clientAuth';
 import { haptic } from '../../utils/haptics';
+import { useNavigate } from 'react-router-dom';
 
 const formatRp = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n || 0);
@@ -19,6 +20,14 @@ const AVATAR_PRESETS = [
 export const ClientProfileModal: React.FC = () => {
   const { client, isProfileModalOpen, closeProfileModal, updateProfile, changePassword, logout, isLoading } = useClientAuth();
   const { isDark } = useWebsiteTheme();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (isProfileModalOpen) {
+      closeProfileModal();
+      navigate('/akun?tab=profile');
+    }
+  }, [isProfileModalOpen, closeProfileModal, navigate]);
 
   const [tab, setTab] = useState<'profile' | 'orders' | 'password'>('profile');
   const [name, setName] = useState('');
@@ -41,7 +50,7 @@ export const ClientProfileModal: React.FC = () => {
       setName(client.name || '');
       setPhone(client.phone || '');
       setAvatar(client.avatar || '');
-      
+
       // Load orders
       if (isProfileModalOpen) {
         setOrdersLoading(true);
@@ -107,11 +116,11 @@ export const ClientProfileModal: React.FC = () => {
     }
   };
 
-  const bgModal = isDark ? '#0c0d14' : '#ffffff';
-  const cardBg = isDark ? 'rgba(30, 41, 59, 0.7)' : '#ffffff';
+  const bgModal = isDark ? '#151824' : '#ffffff';
+  const cardBg = isDark ? '#1e2436' : '#ffffff';
   const textPrimary = isDark ? '#f8fafc' : '#0f172a';
   const textMuted = isDark ? '#94a3b8' : '#64748b';
-  const borderCol = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+  const borderCol = isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(15, 23, 42, 0.08)';
   const inputBg = isDark ? 'rgba(255,255,255,0.05)' : '#f8fafc';
   const accentColor = 'var(--cms-accent, #7c3aed)';
 
@@ -125,9 +134,9 @@ export const ClientProfileModal: React.FC = () => {
         position: 'fixed',
         inset: 0,
         zIndex: 9999999,
-        background: 'rgba(0, 0, 0, 0.75)',
-        backdropFilter: 'blur(10px)',
-        WebkitBackdropFilter: 'blur(10px)',
+        background: isDark ? 'rgba(0, 0, 0, 0.78)' : 'rgba(15, 23, 42, 0.45)',
+        backdropFilter: 'none',
+        WebkitBackdropFilter: 'none',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -142,12 +151,12 @@ export const ClientProfileModal: React.FC = () => {
           maxWidth: 580,
           maxHeight: '90vh',
           background: bgModal,
-          borderRadius: 28,
-          border: `1.5px solid ${borderCol}`,
+          borderRadius: 24,
+          border: `1px solid ${borderCol}`,
           padding: '28px 24px',
           boxShadow: isDark
-            ? '0 30px 70px rgba(0,0,0,0.7), 0 0 0 1px rgba(124,58,237,0.25)'
-            : '0 25px 60px rgba(0,0,0,0.14)',
+            ? '0 30px 70px rgba(0, 0, 0, 0.8)'
+            : '0 25px 60px rgba(15, 23, 42, 0.14)',
           position: 'relative',
           display: 'flex',
           flexDirection: 'column',

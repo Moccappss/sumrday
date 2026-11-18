@@ -15,6 +15,7 @@ import { db } from '../../firebase';
 import { useContextMenu } from './ContextMenuProvider';
 import { collection, getDocs } from 'firebase/firestore';
 import { googleSync } from '../../utils/googleSync';
+import { auditAndBalanceStorage } from '../../utils/intelligentStorageEngine';
 import { addNotification } from '../../utils/notifications';
 import { useDialog } from './DialogProvider';
 import StorageGalleryTimeline from './StorageGalleryTimeline';
@@ -35,6 +36,12 @@ const COLLECTIONS = [
   { key: 'porto_bookings', label: 'Janji Temu Klien', icon: Calendar, color: '#06b6d4', tier: 'Drive + Kalender', desc: 'Booking slot & sinkronisasi Google Calendar' },
   { key: 'porto_users', label: 'Pengguna & Akun', icon: Users, color: '#84cc16', tier: 'Firebase + Drive', desc: 'Data akun klien & hak akses admin' },
   { key: 'porto_links', label: 'Biolink Hub', icon: Link2, color: '#eab308', tier: 'Firebase + Drive', desc: 'Linktree biolink profil & tautan sosial' },
+  { key: 'porto_portfolio', label: 'Showcase Portofolio', icon: Layers, color: '#d95629', tier: 'Firebase + Drive', desc: 'Karya visual publik & studi kasus' },
+  { key: 'porto_media_vault', label: 'Media Vault & Drive', icon: HardDrive, color: '#22c55e', tier: 'Drive + Cloudinary', desc: 'Pustaka berkas aset, gambar, video & dokumen' },
+  { key: 'porto_biodata', label: 'Profil & Biodata', icon: Users, color: '#0ea5e9', tier: 'Firebase + Drive', desc: 'Identitas personal & profil bisnis studio' },
+  { key: 'porto_rate_cards', label: 'Paket Tarif & Layanan', icon: DollarSign, color: '#f97316', tier: 'Firebase + Drive', desc: 'Struktur harga & add-on layanan' },
+  { key: 'porto_client_reviews', label: 'Testimoni & Ulasan', icon: CheckCircle, color: '#ec4899', tier: 'Firebase + Drive', desc: 'Ulasan terverifikasi & kepuasan klien' },
+  { key: 'porto_forms', label: 'Formulir & Survei', icon: FileSpreadsheet, color: '#6366f1', tier: 'Drive + Sheets', desc: 'Skema formulir brief & kuesioner klien' },
 ];
 
 const fmtBytes = (b) => {
@@ -211,11 +218,21 @@ const StorageMonitor = ({ userData }) => {
   const handleOptimizeDatabase = async () => {
     setIsOptimizing(true);
     try {
+      let prunedCount = 0;
+      let savedBytes = 0;
       if (storage.autoPruneStorage) {
-        await storage.autoPruneStorage();
+        const res = await storage.autoPruneStorage();
+        prunedCount += res?.prunedCount || 0;
+        savedBytes += res?.savedBytes || 0;
       }
+      if (storage.reconcileDatabaseIntegrity) {
+        const rec = await storage.reconcileDatabaseIntegrity();
+        prunedCount += rec?.repaired?.length || 0;
+      }
+      await auditAndBalanceStorage();
       await fetchData();
-      addNotification?.('system', 'Optimasi Sukses', '⚡ Database berhasil dioptimalkan! File temporary dan cache usang telah dibersihkan.', { type: 'success' });
+      const savedText = savedBytes > 0 ? ` (${fmtBytes(savedBytes)} dihemat)` : '';
+      addNotification?.('system', 'Optimasi Sukses', `⚡ Database berhasil dioptimalkan! ${prunedCount} entri usang/duplikat telah dibersihkan${savedText}.`, { type: 'success' });
     } catch (err) {
       console.error(err);
       addNotification?.('system', 'Optimasi Selesai', 'Pembersihan cache dan defragmentasi selesai.');
@@ -1214,7 +1231,7 @@ const StorageMonitor = ({ userData }) => {
 
         @media (max-width: 768px) {
           .storage-monitor-root {
-            padding: 12px 12px calc(110px + env(safe-area-inset-bottom, 24px)) 12px !important;
+            padding: 12px 12px 8px 12px !important;
           }
           .storage-header {
             flex-direction: column !important;

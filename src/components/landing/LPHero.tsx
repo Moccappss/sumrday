@@ -44,8 +44,8 @@ const LPHero: React.FC<LPHeroProps> = ({ data, isDark, accentColor }) => {
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
   const textColor = isDark ? '#f8fafc' : '#0f172a';
   const subTextColor = isDark ? '#94a3b8' : '#64748b';
-  const cardBg = isDark ? 'rgba(30, 41, 59, 0.45)' : 'rgba(255, 255, 255, 0.85)';
-  const cardBorder = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)';
+  const cardBg = isDark ? '#14161f' : '#ffffff';
+  const cardBorder = isDark ? '#262938' : '#e5e7eb';
 
   const handleCtaClick = (e: React.MouseEvent<HTMLAnchorElement>, url: string) => {
     haptic.light();
@@ -71,21 +71,7 @@ const LPHero: React.FC<LPHeroProps> = ({ data, isDark, accentColor }) => {
         paddingTop: 80,
       }}
     >
-      {/* Background Ambient Glow */}
-      <div 
-        style={{
-          position: 'absolute',
-          top: '-15%',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: 'min(900px, 90vw)',
-          height: '500px',
-          background: `radial-gradient(ellipse at center, ${accentColor}25 0%, rgba(99, 102, 241, 0.08) 45%, transparent 70%)`,
-          filter: 'blur(90px)',
-          zIndex: 0,
-          pointerEvents: 'none',
-        }} 
-      />
+      {/* Clean Flat Hero Background */}
 
       <div
         className="lp-hero-grid"
@@ -93,20 +79,30 @@ const LPHero: React.FC<LPHeroProps> = ({ data, isDark, accentColor }) => {
           width: '100%',
           maxWidth: 1240,
           margin: '0 auto',
-          padding: '100px 24px 60px',
+          padding: '100px clamp(16px, 3.5vw, 24px) 60px',
           display: 'grid',
           gridTemplateColumns: data?.heroImage ? '1.1fr 0.9fr' : '1fr',
           gap: 56,
           alignItems: 'center',
           position: 'relative',
           zIndex: 10,
+          boxSizing: 'border-box'
         }}
       >
         {/* ── Left: Main Content ── */}
-        <div data-reveal="true" className="reveal-delay-1" style={{ display: 'flex', flexDirection: 'column' }}>
+        <div
+          data-reveal="true"
+          className="reveal-delay-1 lp-hero-content-col"
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: data?.heroImage ? undefined : 'center',
+            textAlign: data?.heroImage ? undefined : 'center',
+          }}
+        >
           
           {/* Top Status Pill */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24, flexWrap: 'wrap' }}>
+          <div className="lp-hero-status-row" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24, flexWrap: 'wrap', justifyContent: data?.heroImage ? undefined : 'center' }}>
             <div
               style={{
                 display: 'inline-flex',
@@ -124,7 +120,7 @@ const LPHero: React.FC<LPHeroProps> = ({ data, isDark, accentColor }) => {
                   height: 7,
                   borderRadius: '50%',
                   background: '#10b981',
-                  boxShadow: '0 0 10px #10b981',
+                  boxShadow: 'none',
                   animation: 'lpPulse 2s infinite ease-in-out',
                 }}
               />
@@ -188,12 +184,13 @@ const LPHero: React.FC<LPHeroProps> = ({ data, isDark, accentColor }) => {
 
           {/* Description */}
           <p
+            className="lp-hero-desc"
             style={{
               fontFamily: "'Inter', sans-serif",
               fontSize: 'clamp(15px, 1.6vw, 17px)',
               color: subTextColor,
               lineHeight: 1.7,
-              margin: '0 0 36px',
+              margin: data?.heroImage ? '0 0 36px' : '0 auto 36px',
               maxWidth: 540,
             }}
           >
@@ -265,16 +262,16 @@ const LPHero: React.FC<LPHeroProps> = ({ data, isDark, accentColor }) => {
                   fontFamily: "'Outfit', sans-serif",
                   fontSize: 14,
                   fontWeight: 700,
-                  boxShadow: `0 8px 24px ${accentColor}40`,
+                  boxShadow: 'none',
                   transition: 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s',
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.transform = 'translateY(-2px)';
-                  e.currentTarget.style.boxShadow = `0 12px 32px ${accentColor}60`;
+                  e.currentTarget.style.boxShadow = 'none';
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = `0 8px 24px ${accentColor}40`;
+                  e.currentTarget.style.boxShadow = 'none';
                 }}
               >
                 <ArrowRight size={16} />
@@ -364,12 +361,14 @@ const LPHero: React.FC<LPHeroProps> = ({ data, isDark, accentColor }) => {
           {/* Bento Stats / Cards Row */}
           {data?.cards && data.cards.length > 0 && (
             <div
+              className="lp-hero-cards-grid"
               style={{
                 display: 'grid',
-                gridTemplateColumns: `repeat(${Math.min(data.cards.length, 3)}, 1fr)`,
+                gridTemplateColumns: `repeat(${Math.min(data.cards.length, 3)}, minmax(0, 1fr))`,
                 gap: 12,
                 paddingTop: 24,
                 borderTop: `1px solid ${cardBorder}`,
+                width: '100%',
               }}
             >
               {data.cards.map((card) => {
@@ -383,8 +382,8 @@ const LPHero: React.FC<LPHeroProps> = ({ data, isDark, accentColor }) => {
                       gap: 6,
                       padding: '14px 16px',
                       background: cardBg,
-                      backdropFilter: 'blur(12px)',
-                      WebkitBackdropFilter: 'blur(12px)',
+                      backdropFilter: 'none',
+                      WebkitBackdropFilter: 'none',
                       borderRadius: 16,
                       border: `1px solid ${cardBorder}`,
                     }}
@@ -435,14 +434,10 @@ const LPHero: React.FC<LPHeroProps> = ({ data, isDark, accentColor }) => {
                 aspectRatio: '4/5',
                 borderRadius: 32,
                 padding: 10,
-                background: isDark
-                  ? 'linear-gradient(145deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 100%)'
-                  : 'linear-gradient(145deg, rgba(255,255,255,0.9) 0%, rgba(240,240,245,0.7) 100%)',
-                boxShadow: isDark
-                  ? `0 24px 64px -12px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.08)`
-                  : `0 24px 64px -12px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.05)`,
-                backdropFilter: 'blur(20px)',
-                WebkitBackdropFilter: 'blur(20px)',
+                background: isDark ? '#15171e' : '#f4f5f7',
+                boxShadow: 'none',
+                backdropFilter: 'none',
+                WebkitBackdropFilter: 'none',
               }}
             >
               <div
@@ -458,6 +453,8 @@ const LPHero: React.FC<LPHeroProps> = ({ data, isDark, accentColor }) => {
                   src={data.heroImage}
                   alt="Hero Profile"
                   loading="eager"
+                  decoding="async"
+                  {...({ fetchPriority: 'high' } as any)}
                   onError={(e) => {
                     e.currentTarget.style.display = 'none';
                   }}
@@ -473,18 +470,17 @@ const LPHero: React.FC<LPHeroProps> = ({ data, isDark, accentColor }) => {
               {/* Verified Floating Badge */}
               {data.badge?.active !== false && (
                 <div
+                  className="lp-verified-badge"
                   style={{
                     position: 'absolute',
                     bottom: 24,
                     right: -12,
                     background: isDark ? 'rgba(15, 23, 42, 0.92)' : 'rgba(255, 255, 255, 0.95)',
-                    backdropFilter: 'blur(16px)',
-                    WebkitBackdropFilter: 'blur(16px)',
+                    backdropFilter: 'none',
+                    WebkitBackdropFilter: 'none',
                     padding: '12px 18px',
                     borderRadius: 18,
-                    boxShadow: isDark
-                      ? '0 12px 32px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.1)'
-                      : '0 12px 32px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.06)',
+                    boxShadow: 'none',
                     display: 'flex',
                     alignItems: 'center',
                     gap: 12,
@@ -550,6 +546,31 @@ const LPHero: React.FC<LPHeroProps> = ({ data, isDark, accentColor }) => {
             grid-template-columns: 1fr !important;
             padding: 80px 20px 40px !important;
             gap: 40px !important;
+          }
+          .lp-hero-content-col {
+            align-items: center !important;
+            text-align: center !important;
+          }
+          .lp-hero-status-row,
+          .lp-hero-cta-group {
+            justify-content: center !important;
+          }
+          .lp-hero-desc {
+            margin: 0 auto 32px !important;
+          }
+        }
+        @media (max-width: 640px) {
+          .lp-hero-grid {
+            padding: 40px 16px 24px !important;
+            gap: 28px !important;
+          }
+          .lp-hero-cards-grid {
+            gap: 8px !important;
+          }
+          .lp-verified-badge {
+            right: 8px !important;
+            bottom: 12px !important;
+            padding: 8px 12px !important;
           }
         }
       `}</style>

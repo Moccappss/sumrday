@@ -16,6 +16,7 @@ import { sendNativeNotification, addNotification, NOTIF_TYPES } from '../../util
 import { uploadToCloudinary } from '../../utils/cloudinary';
 import { storage } from '../../utils/storage';
 import { haptic } from '../../utils/haptics';
+import { ImageInputWithActions } from '../common/ImageInputWithActions';
 
 interface BroadcastStudioProps {
   onClose?: () => void;
@@ -1088,65 +1089,12 @@ export const BroadcastStudio: React.FC<BroadcastStudioProps> = ({ onClose, hideH
                 Gambar Banner:
               </label>
               
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleImageUpload}
-                  accept="image/*"
-                  style={{ display: 'none' }}
+              <div style={{ width: '100%' }}>
+                <ImageInputWithActions
+                  value={imageUrl}
+                  onChange={setImageUrl}
+                  placeholder="URL gambar (https://...)"
                 />
-
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isUploadingImage}
-                  style={{
-                    padding: '7px 12px',
-                    borderRadius: 8,
-                    background: 'var(--cms-switcher-bg)',
-                    border: '1px solid var(--glass-border)',
-                    color: 'var(--cms-text)',
-                    fontSize: 11,
-                    fontWeight: 700,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 5,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <Upload size={12} className={isUploadingImage ? 'cms-spin' : ''} />
-                  <span>{isUploadingImage ? 'Mengunggah...' : 'Unggah'}</span>
-                </button>
-
-                <div style={{ flex: 1, minWidth: 180, position: 'relative' }}>
-                  <input
-                    className="cms-input"
-                    value={imageUrl}
-                    onChange={(e) => setImageUrl(e.target.value)}
-                    placeholder="URL gambar (https://...)"
-                    style={{ height: 36, fontSize: 11.5, borderRadius: 8, width: '100%', boxSizing: 'border-box' }}
-                  />
-                </div>
-
-                {imageUrl && (
-                  <button
-                    type="button"
-                    onClick={() => setImageUrl('')}
-                    style={{
-                      padding: '7px 10px',
-                      borderRadius: 8,
-                      background: 'rgba(239, 68, 68, 0.1)',
-                      border: '1px solid rgba(239, 68, 68, 0.2)',
-                      color: '#ef4444',
-                      fontSize: 10.5,
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Hapus
-                  </button>
-                )}
               </div>
 
               {imageUrl && (
@@ -1498,9 +1446,9 @@ export const BroadcastStudio: React.FC<BroadcastStudioProps> = ({ onClose, hideH
             position: 'fixed',
             inset: 0,
             zIndex: 99999,
-            background: 'rgba(0,0,0,0.6)',
-            backdropFilter: 'blur(8px)',
-            WebkitBackdropFilter: 'blur(8px)',
+            background: 'rgba(0,0,0,0.8)',
+            backdropFilter: 'none',
+            WebkitBackdropFilter: 'none',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',

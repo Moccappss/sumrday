@@ -3,12 +3,27 @@
  * ║                    APP CONFIGURATION                        ║
  * ║          Satu Titik Kontrol untuk Semua Layanan             ║
  * ╠══════════════════════════════════════════════════════════════╣
- * ║  Edit file ini saja untuk deploy ke project/klien baru!    ║
- * ║  Urutan prioritas:                                          ║
- * ║  1. File .env (VITE_*)   → untuk production CI/CD          ║
- * ║  2. Nilai hardcode di bawah → fallback / development       ║
+ * ║  Mendukung Multi-Deploy Target secara otomatis tanpa        ║
+ * ║  saling menimpa data konfigurasi penyimpanan / server!     ║
  * ╚══════════════════════════════════════════════════════════════╝
  */
+import deployTargets from '../../deploy-targets.json';
+
+export interface DeployTarget {
+  id: string;
+  name: string;
+  projectId: string;
+  apiKey?: string;
+  appId?: string;
+  storagePrefix?: string;
+  messagingSenderId?: string;
+  measurementId?: string;
+  cloudinaryName?: string;
+  cloudinaryPreset?: string;
+  sheetId?: string;
+  appsScriptUrl?: string;
+  geminiApiKey?: string;
+}
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 export const getEnvOverrides = (): Record<string, string> => {
@@ -32,6 +47,49 @@ export const saveEnvOverrides = (updates: Record<string, string>): void => {
   }
 };
 
+/**
+ * Resolves the active deploy target:
+ * 1. Checks window.location.hostname against project IDs and domains
+ * 2. Checks import.meta.env.VITE_FIREBASE_PROJECT_ID
+ * 3. Falls back to target-sumrday as primary default
+ */
+export const getActiveDeployTarget = (): DeployTarget => {
+  const targets: DeployTarget[] = (deployTargets as DeployTarget[]) || [];
+
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname.toLowerCase();
+    // 1. Direct match on hostname (e.g. sumr-day.web.app or websiteagenzie.web.app)
+    const hostMatch = targets.find(t => {
+      if (!t.projectId) return false;
+      const pid = t.projectId.toLowerCase();
+      const sanitizedName = (t.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      return host.includes(pid) || (sanitizedName && host.includes(sanitizedName));
+    });
+    if (hostMatch) return hostMatch;
+  }
+
+  // 2. Build-time or local environment project match
+  const envProject = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+  if (envProject) {
+    const envMatch = targets.find(t => t.projectId.toLowerCase() === envProject.toLowerCase());
+    if (envMatch) return envMatch;
+  }
+
+  // 3. Fallback to sumr-day default
+  return targets[0] || {
+    id: 'target-sumrday',
+    name: 'sumr.day (Utama)',
+    projectId: 'sumr-day',
+    apiKey: 'AIzaSyA0ebREB9RCSE14pOptxhrtqm3YpQns2co',
+    appId: '1:333413040741:web:03cd168046d95d72d33c8c',
+    storagePrefix: 'sumrday',
+    messagingSenderId: '333413040741',
+    measurementId: 'G-N8LQKJKXCN'
+  };
+};
+
+const activeTarget = getActiveDeployTarget();
+
 const env = (key: string, fallback: string = ''): string => {
   if (typeof window !== 'undefined') {
     try {
@@ -41,101 +99,84 @@ const env = (key: string, fallback: string = ''): string => {
       }
     } catch {}
   }
-  return (import.meta.env[key] as string | undefined) || fallback;
+  const metaVal = import.meta.env[key] as string | undefined;
+  if (metaVal !== undefined && metaVal !== '') {
+    return metaVal;
+  }
+  return fallback;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  🔥 FIREBASE
-//  Project: https://console.firebase.google.com/project/websiteagenzie
 // ─────────────────────────────────────────────────────────────────────────────
 export const FIREBASE_CONFIG = {
-  apiKey:            env('VITE_FIREBASE_API_KEY',            'AIzaSyAHO3ImKaomLGyywH9bukut7QpG-ETxAdg'),
-  authDomain:        env('VITE_FIREBASE_AUTH_DOMAIN',        'websiteagenzie.firebaseapp.com'),
-  projectId:         env('VITE_FIREBASE_PROJECT_ID',         'websiteagenzie'),
-  storageBucket:     env('VITE_FIREBASE_STORAGE_BUCKET',     'websiteagenzie.firebasestorage.app'),
-  messagingSenderId: env('VITE_FIREBASE_MESSAGING_SENDER_ID','434116660065'),
-  appId:             env('VITE_FIREBASE_APP_ID',             '1:434116660065:web:4c53914345bf75bd645320'),
-  measurementId:     env('VITE_FIREBASE_MEASUREMENT_ID',     'G-CVSGZLLJ0K'),
+  apiKey:            env('VITE_FIREBASE_API_KEY',            activeTarget.apiKey || ''),
+  authDomain:        env('VITE_FIREBASE_AUTH_DOMAIN',        `${activeTarget.projectId}.firebaseapp.com`),
+  projectId:         env('VITE_FIREBASE_PROJECT_ID',         activeTarget.projectId),
+  storageBucket:     env('VITE_FIREBASE_STORAGE_BUCKET',     `${activeTarget.projectId}.firebasestorage.app`),
+  messagingSenderId: env('VITE_FIREBASE_MESSAGING_SENDER_ID',activeTarget.messagingSenderId || ''),
+  appId:             env('VITE_FIREBASE_APP_ID',             activeTarget.appId || ''),
+  measurementId:     env('VITE_FIREBASE_MEASUREMENT_ID',     activeTarget.measurementId || ''),
 } as const;
+
+// Targets pool for smart fallback across environments
+const targetsPool: DeployTarget[] = (deployTargets as DeployTarget[]) || [];
+const sharedCloudinaryTarget = targetsPool.find(t => t.cloudinaryName) || targetsPool[1] || targetsPool[0];
+const sharedGoogleTarget = targetsPool.find(t => t.sheetId && t.appsScriptUrl) || targetsPool[1] || targetsPool[0];
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  🖼️  CLOUDINARY
-//  Dashboard: https://cloudinary.com/console
 // ─────────────────────────────────────────────────────────────────────────────
 export const CLOUDINARY_CONFIG = {
-  cloudName:    env('VITE_CLOUDINARY_NAME',   'mutwtddt'),
-  uploadPreset: env('VITE_CLOUDINARY_PRESET', 'ml_default'),
-  /** URL base CDN — jangan ubah kecuali pindah region */
+  cloudName:    env('VITE_CLOUDINARY_NAME',   activeTarget.cloudinaryName || sharedCloudinaryTarget?.cloudinaryName || 'dlvjat7lg'),
+  uploadPreset: env('VITE_CLOUDINARY_PRESET', activeTarget.cloudinaryPreset || sharedCloudinaryTarget?.cloudinaryPreset || 'ml_default'),
   baseUrl: 'https://res.cloudinary.com',
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  📊 GOOGLE SERVICES
-//  - Apps Script  : https://script.google.com
-//  - Sheet ID     : ID di URL Google Sheets (bukan nama sheet)
 // ─────────────────────────────────────────────────────────────────────────────
 export const GOOGLE_CONFIG = {
-  /**
-   * URL deployment Google Apps Script (berakhiran /exec).
-   * Kosongkan jika tidak pakai Google Sheets sync.
-   */
-  appsScriptUrl: env('VITE_GOOGLE_APPS_SCRIPT_URL', ''),
-
-  /**
-   * ID Google Spreadsheet (opsional, dipakai jika Ada integrasi langsung).
-   * Contoh: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms'
-   */
-  sheetId: env('VITE_GOOGLE_SHEET_ID', ''),
+  appsScriptUrl: env('VITE_GOOGLE_APPS_SCRIPT_URL', activeTarget.appsScriptUrl || sharedGoogleTarget?.appsScriptUrl || ''),
+  sheetId:       env('VITE_GOOGLE_SHEET_ID',       activeTarget.sheetId || sharedGoogleTarget?.sheetId || ''),
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  🤖 AI / GEMINI
-//  Key: https://aistudio.google.com/app/apikey
 // ─────────────────────────────────────────────────────────────────────────────
 export const AI_CONFIG = {
-  geminiApiKey: env('VITE_GEMINI_API_KEY', 'AIzaSyD9bBc6wuuR_clv28jF4sUI4LN627yw9h4'),
-
-  /** Model priority list — urutan pertama = dicoba pertama */
+  geminiApiKey: env('VITE_GEMINI_API_KEY', activeTarget.geminiApiKey || ''),
   priorityModels: [
-    'gemini-2.5-flash',       // Utama — cepat, stabil, support v1beta
-    'gemini-3.5-flash',       // Generasi terbaru
-    'gemini-flash-latest',    // Alias auto-update Google
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+    'gemini-1.5-pro',
+    'gemini-flash-latest',
   ],
-
-  /** Max output tokens default */
   defaultMaxTokens: 1000,
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  🏢 APP / BRAND
-//  Identitas aplikasi untuk PWA, meta tag, dll.
 // ─────────────────────────────────────────────────────────────────────────────
 export const APP_CONFIG = {
-  name:        env('VITE_APP_NAME',    'sumr.day'),
+  name:        env('VITE_APP_NAME',    activeTarget.name || 'sumr.day'),
   tagline:     env('VITE_APP_TAGLINE', 'A little sunshine for your screen'),
-  /** Domain produksi (tanpa trailing slash) */
-  domain:      env('VITE_APP_DOMAIN',  'https://sumrday.web.app'),
-  /** Zona waktu default untuk format tanggal */
+  domain:      env('VITE_APP_DOMAIN',  `https://${activeTarget.projectId}.web.app`),
   timezone:    'Asia/Jakarta',
-  /** Kode bahasa default */
   locale:      'id-ID',
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  🔑 STORAGE KEYS  (localStorage / IndexedDB)
-//  Ganti prefix jika deploy ke klien baru agar data tidak cross-contaminate
+//  🔑 STORAGE KEYS
 // ─────────────────────────────────────────────────────────────────────────────
 export const STORAGE_KEYS = {
-  prefix:          env('VITE_STORAGE_PREFIX', 'porto'),
+  prefix:          env('VITE_STORAGE_PREFIX', activeTarget.storagePrefix || 'sumrday'),
   settings:        'porto_settings',
   mediaGallery:    'porto_media_gallery',
   geminiKey:       'GEMINI_API_KEY',
   cachedModel:     'porto_cached_gemini_model',
 } as const;
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  📦 EXPORT DEFAULT  (semua config dalam satu objek)
-// ─────────────────────────────────────────────────────────────────────────────
 const AppConfig = {
   firebase:    FIREBASE_CONFIG,
   cloudinary:  CLOUDINARY_CONFIG,
@@ -143,6 +184,7 @@ const AppConfig = {
   ai:          AI_CONFIG,
   app:         APP_CONFIG,
   storageKeys: STORAGE_KEYS,
+  activeTarget: activeTarget,
 } as const;
 
 export default AppConfig;

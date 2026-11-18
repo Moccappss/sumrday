@@ -1,12 +1,17 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { 
-  X, ChevronLeft, ChevronRight, ExternalLink, Calendar, Building, 
-  Tag, Maximize2, Minimize2, ArrowUpRight, Sparkles 
+import { useNavigate } from 'react-router-dom';
+import {
+  X, ChevronLeft, ChevronRight, ExternalLink, Calendar, Building,
+  Tag, Maximize2, Minimize2, ArrowUpRight, Sparkles, MessageCircle,
+  ShoppingBag, ArrowRight
 } from 'lucide-react';
 import SoftwareBadge from '../common/SoftwareBadge';
+import Model3DViewer from '../common/Model3DViewer';
+import PdfFlipbookViewer from '../common/PdfFlipbookViewer';
 import { useNativeBackHandler } from '../../utils/nativeNavigation';
 import { safeHtml } from '../../utils/security';
+import { haptic } from '../../utils/haptics';
 
 export interface ProjectData {
   id: string;
@@ -22,10 +27,13 @@ export interface ProjectData {
   software?: string[];
   client?: string;
   year?: string | number;
-  mediaType?: 'image' | 'video' | 'youtube';
+  mediaType?: 'image' | 'video' | 'youtube' | '3d' | 'flipbook';
   youtubeUrl?: string;
   videoUrl?: string;
   videoOrientation?: 'landscape' | 'portrait';
+  model3dUrl?: string;
+  pdfUrl?: string;
+  pdfTotalPages?: number;
 }
 
 interface LPProjectModalProps {
@@ -37,16 +45,38 @@ interface LPProjectModalProps {
   accentColor: string;
 }
 
-const LPProjectModal: React.FC<LPProjectModalProps> = ({ 
-  project, 
-  onClose, 
+const LPProjectModal: React.FC<LPProjectModalProps> = ({
+  project,
+  onClose,
   onSelectProject,
   allProjects = [],
-  isDark, 
-  accentColor 
+  isDark,
+  accentColor
 }) => {
   const [currentImageIdx, setCurrentImageIdx] = useState(0);
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  const navigate = useNavigate();
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.touches[0].clientX);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX === null) return;
+    const touchEndX = e.changedTouches[0].clientX;
+    const diff = touchStartX - touchEndX;
+    if (Math.abs(diff) > 40) {
+      if (diff > 0) {
+        setCurrentImageIdx((prev) => (prev < allImages.length - 1 ? prev + 1 : 0));
+        haptic.light();
+      } else {
+        setCurrentImageIdx((prev) => (prev > 0 ? prev - 1 : allImages.length - 1));
+        haptic.light();
+      }
+    }
+    setTouchStartX(null);
+  };
 
   // Native 1-step back navigation
   useNativeBackHandler(Boolean(project) && !isFullScreen, onClose, 'lp_project_modal', 10);
@@ -59,13 +89,13 @@ const LPProjectModal: React.FC<LPProjectModalProps> = ({
   useEffect(() => {
     const scrollContainer = document.querySelector('.page-scroll') as HTMLElement;
     const originalOverflow = scrollContainer ? scrollContainer.style.overflowY : document.body.style.overflow;
-    
+
     if (scrollContainer) {
       scrollContainer.style.overflowY = 'hidden';
     } else {
       document.body.style.overflow = 'hidden';
     }
-    
+
     return () => {
       if (scrollContainer) {
         scrollContainer.style.overflowY = originalOverflow;
@@ -129,10 +159,10 @@ const LPProjectModal: React.FC<LPProjectModalProps> = ({
   const title = project.name || project.title || 'Proyek Tanpa Judul';
   const textColor = isDark ? '#f1f5f9' : '#0f172a';
   const subTextColor = isDark ? '#94a3b8' : '#64748b';
-  const bgColor = isDark ? '#0c0d14' : '#ffffff';
+  const bgColor = isDark ? '#151824' : '#ffffff';
   const cardBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
-  const borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const headerBg = isDark ? 'rgba(18, 19, 29, 0.95)' : 'rgba(255, 255, 255, 0.95)';
+  const borderColor = isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(15, 23, 42, 0.08)';
+  const headerBg = isDark ? '#151824' : '#ffffff';
 
   // Suggested projects
   const suggestedProjects = useMemo(() => {
@@ -154,6 +184,63 @@ const LPProjectModal: React.FC<LPProjectModalProps> = ({
 
   // Reusable Media Component
   const renderMedia = (isPortrait: boolean) => {
+    // 3D Interactive Model Viewer (Zero Token, Zero Firebase, Local-First)
+    if (project.mediaType === '3d' || project.model3dUrl || (project.category && project.category.toLowerCase().includes('3d'))) {
+      let glbSource = project.model3dUrl ||
+        (project.attachments?.find((a) => a?.url?.endsWith('.glb') || a?.url?.endsWith('.gltf'))?.url);
+
+      if (!glbSource || glbSource.includes('Chair.glb') || glbSource === 'https://modelviewer.dev/shared-assets/models/Chair.glb') {
+        glbSource = '/models/armchair.glb';
+      } else if (glbSource.includes('Astronaut.glb') || glbSource === 'https://modelviewer.dev/shared-assets/models/Astronaut.glb') {
+        glbSource = '/models/helmet.glb';
+      }
+
+      return (
+        <div style={{
+          position: 'relative',
+          width: '100%',
+          maxWidth: isFullScreen ? '100%' : 1040,
+          margin: '0 auto',
+          padding: isFullScreen ? '20px 16px' : '16px 0 8px',
+          boxSizing: 'border-box'
+        }}>
+          <Model3DViewer
+            src={glbSource}
+            title={title}
+            height={isFullScreen ? '78vh' : '520px'}
+            isDark={isDark}
+            accentColor={accentColor}
+            allowLocalUpload={false}
+            autoRotate={true}
+          />
+        </div>
+      );
+    }
+
+    if (project.mediaType === 'flipbook' || project.pdfUrl) {
+      return (
+        <div style={{
+          position: 'relative',
+          width: '100%',
+          maxWidth: isFullScreen ? '100%' : 1040,
+          margin: '0 auto',
+          padding: isFullScreen ? '20px 16px' : '16px 0 8px',
+          boxSizing: 'border-box'
+        }}>
+          <PdfFlipbookViewer
+            pdfUrl={project.pdfUrl}
+            totalPages={project.pdfTotalPages || 8}
+            title={title}
+            height={isFullScreen ? '78vh' : '520px'}
+            isDark={isDark}
+            accentColor={accentColor}
+            allowDownload={true}
+            showModeSwitch={true}
+          />
+        </div>
+      );
+    }
+
     if (project.mediaType === 'youtube' && youtubeEmbedUrl) {
       if (isPortrait) {
         return (
@@ -187,10 +274,10 @@ const LPProjectModal: React.FC<LPProjectModalProps> = ({
                 title={title}
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen
-                style={{ 
-                  width: '100%', 
-                  height: '100%', 
-                  border: 'none', 
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  border: 'none',
                   display: 'block',
                   borderRadius: 22
                 }}
@@ -225,10 +312,10 @@ const LPProjectModal: React.FC<LPProjectModalProps> = ({
                 title={title}
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen
-                style={{ 
-                  width: '100%', 
-                  height: '100%', 
-                  border: 'none', 
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  border: 'none',
                   display: 'block',
                   borderRadius: 22
                 }}
@@ -334,45 +421,54 @@ const LPProjectModal: React.FC<LPProjectModalProps> = ({
     if (allImages.length > 0) {
       if (isPortrait) {
         return (
-          <div style={{ 
-            position: 'relative', 
-            width: '100%', 
-            height: '100%', 
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center', 
+          <div style={{
+            position: 'relative',
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             background: 'transparent',
             padding: isFullScreen ? '24px 20px' : '16px 14px',
             boxSizing: 'border-box'
           }}>
-            <div style={{
-              width: '100%',
-              height: '100%',
-              maxWidth: isFullScreen ? 460 : 400,
-              borderRadius: 22,
-              overflow: 'hidden',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 16px 44px rgba(0,0,0,0.4)',
-              position: 'relative',
-              background: 'transparent'
-            }}>
+            <div
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+              style={{
+                width: '100%',
+                height: '100%',
+                maxWidth: isFullScreen ? 460 : 400,
+                borderRadius: 22,
+                overflow: 'hidden',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 16px 44px rgba(0,0,0,0.4)',
+                position: 'relative',
+                background: 'transparent',
+                touchAction: 'pan-y'
+              }}
+            >
               <img
                 src={allImages[currentImageIdx]}
                 alt={`${title} - Preview ${currentImageIdx + 1}`}
-                style={{ 
-                  width: '100%', 
-                  height: '100%', 
-                  objectFit: 'contain', 
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'contain',
                   display: 'block',
-                  borderRadius: 22
+                  borderRadius: 22,
+                  userSelect: 'none',
                 }}
               />
               {allImages.length > 1 && (
                 <>
                   <button
-                    onClick={() => setCurrentImageIdx((prev) => (prev > 0 ? prev - 1 : allImages.length - 1))}
+                    onClick={() => {
+                      haptic.light();
+                      setCurrentImageIdx((prev) => (prev > 0 ? prev - 1 : allImages.length - 1));
+                    }}
                     style={{
                       position: 'absolute',
                       left: 14,
@@ -394,7 +490,10 @@ const LPProjectModal: React.FC<LPProjectModalProps> = ({
                     <ChevronLeft size={20} />
                   </button>
                   <button
-                    onClick={() => setCurrentImageIdx((prev) => (prev < allImages.length - 1 ? prev + 1 : 0))}
+                    onClick={() => {
+                      haptic.light();
+                      setCurrentImageIdx((prev) => (prev < allImages.length - 1 ? prev + 1 : 0));
+                    }}
                     style={{
                       position: 'absolute',
                       right: 14,
@@ -452,45 +551,54 @@ const LPProjectModal: React.FC<LPProjectModalProps> = ({
         );
       } else {
         return (
-          <div style={{ 
-            position: 'relative', 
-            width: '100%', 
+          <div style={{
+            position: 'relative',
+            width: '100%',
             padding: isFullScreen ? '24px 0 12px' : '16px 0 8px',
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center', 
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             background: 'transparent',
-            boxSizing: 'border-box' 
+            boxSizing: 'border-box'
           }}>
-            <div style={{
-              width: '100%',
-              maxWidth: 1040,
-              margin: '0 auto',
-              borderRadius: 22,
-              overflow: 'hidden',
-              boxShadow: '0 16px 44px rgba(0,0,0,0.25)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              position: 'relative',
-              background: 'transparent'
-            }}>
+            <div
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+              style={{
+                width: '100%',
+                maxWidth: 1040,
+                margin: '0 auto',
+                borderRadius: 22,
+                overflow: 'hidden',
+                boxShadow: '0 16px 44px rgba(0,0,0,0.25)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                position: 'relative',
+                background: 'transparent',
+                touchAction: 'pan-y'
+              }}
+            >
               <img
                 src={allImages[currentImageIdx]}
                 alt={`${title} - Preview ${currentImageIdx + 1}`}
-                style={{ 
-                  width: '100%', 
-                  height: 'auto', 
-                  maxHeight: isFullScreen ? '78vh' : '650px', 
-                  objectFit: 'contain', 
+                style={{
+                  width: '100%',
+                  height: 'auto',
+                  maxHeight: isFullScreen ? '78vh' : '650px',
+                  objectFit: 'contain',
                   display: 'block',
-                  borderRadius: 22 
+                  borderRadius: 22,
+                  userSelect: 'none',
                 }}
               />
               {allImages.length > 1 && (
                 <>
                   <button
-                    onClick={() => setCurrentImageIdx((prev) => (prev > 0 ? prev - 1 : allImages.length - 1))}
+                    onClick={() => {
+                      haptic.light();
+                      setCurrentImageIdx((prev) => (prev > 0 ? prev - 1 : allImages.length - 1));
+                    }}
                     style={{
                       position: 'absolute',
                       left: 14,
@@ -512,7 +620,10 @@ const LPProjectModal: React.FC<LPProjectModalProps> = ({
                     <ChevronLeft size={20} />
                   </button>
                   <button
-                    onClick={() => setCurrentImageIdx((prev) => (prev < allImages.length - 1 ? prev + 1 : 0))}
+                    onClick={() => {
+                      haptic.light();
+                      setCurrentImageIdx((prev) => (prev < allImages.length - 1 ? prev + 1 : 0));
+                    }}
                     style={{
                       position: 'absolute',
                       right: 14,
@@ -549,7 +660,10 @@ const LPProjectModal: React.FC<LPProjectModalProps> = ({
                     {allImages.map((_, idx) => (
                       <button
                         key={idx}
-                        onClick={() => setCurrentImageIdx(idx)}
+                        onClick={() => {
+                          haptic.light();
+                          setCurrentImageIdx(idx);
+                        }}
                         style={{
                           width: currentImageIdx === idx ? 18 : 6,
                           height: 6,
@@ -566,6 +680,50 @@ const LPProjectModal: React.FC<LPProjectModalProps> = ({
                 </>
               )}
             </div>
+
+            {/* Interactive Thumbnail Filmstrip */}
+            {allImages.length > 1 && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                overflowX: 'auto',
+                maxWidth: 1040,
+                width: '100%',
+                margin: '12px auto 0',
+                padding: '4px 4px 10px',
+                scrollbarWidth: 'none',
+                boxSizing: 'border-box'
+              }}>
+                {allImages.map((img, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => {
+                      haptic.light();
+                      setCurrentImageIdx(i);
+                    }}
+                    style={{
+                      width: 68,
+                      height: 48,
+                      borderRadius: 10,
+                      overflow: 'hidden',
+                      border: currentImageIdx === i ? `2.5px solid ${accentColor}` : '1.5px solid rgba(255,255,255,0.18)',
+                      opacity: currentImageIdx === i ? 1 : 0.6,
+                      transform: currentImageIdx === i ? 'scale(1.05)' : 'none',
+                      transition: 'all 0.2s ease',
+                      padding: 0,
+                      background: '#090a10',
+                      cursor: 'pointer',
+                      flexShrink: 0
+                    }}
+                    title={`Lihat Foto ${i + 1}`}
+                  >
+                    <img src={img} alt={`Thumb ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         );
       }
@@ -576,12 +734,12 @@ const LPProjectModal: React.FC<LPProjectModalProps> = ({
 
   // Reusable Details Content
   const renderDetails = () => (
-    <div style={{ 
-      padding: isFullScreen ? '16px 0 60px' : '16px 0 40px', 
+    <div style={{
+      padding: isFullScreen ? '16px 0 60px' : '16px 0 40px',
       width: '100%',
       maxWidth: 1040,
       margin: '0 auto',
-      boxSizing: 'border-box' 
+      boxSizing: 'border-box'
     }}>
       {/* Title & Metadata */}
       <div style={{ marginBottom: 18 }}>
@@ -668,23 +826,264 @@ const LPProjectModal: React.FC<LPProjectModalProps> = ({
         )}
       </div>
 
-      {/* Stacked Gallery for Image Type */}
+      {/* Redesigned Gallery Grid for Image Type */}
       {(project.mediaType === 'image' || !project.mediaType) && allImages.length > 1 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 32 }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: textColor, fontFamily: "'Outfit', sans-serif" }}>
-            Galeri Tambahan:
+        <div style={{ marginTop: 36, paddingTop: 24, borderTop: `1px solid ${borderColor}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Sparkles size={16} color={accentColor} />
+              <span style={{ fontSize: 14.5, fontWeight: 900, color: textColor, fontFamily: "'Outfit', sans-serif" }}>
+                Galeri Visual Lengkap ({allImages.length} Foto)
+              </span>
+            </div>
+            <span style={{ fontSize: 12, color: subTextColor, fontWeight: 600 }}>
+              Pilih foto untuk melihat di tampilan utama
+            </span>
           </div>
-          {allImages.slice(1).map((img, i) => (
-            <img 
-              key={i} 
-              src={img} 
-              alt={`${title} - Gallery ${i + 1}`} 
-              loading="lazy"
-              style={{ width: '100%', borderRadius: 14, boxShadow: '0 8px 24px rgba(0,0,0,0.1)' }} 
-            />
-          ))}
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+            gap: 14
+          }}>
+            {allImages.map((img, i) => (
+              <div
+                key={i}
+                onClick={() => {
+                  setCurrentImageIdx(i);
+                  const modalContent = document.querySelector('.lp-project-modal-scroll');
+                  if (modalContent) {
+                    modalContent.scrollTo({ top: 0, behavior: 'smooth' });
+                  } else {
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }
+                }}
+                style={{
+                  borderRadius: 14,
+                  overflow: 'hidden',
+                  aspectRatio: '16/10',
+                  border: currentImageIdx === i ? `2.5px solid ${accentColor}` : `1px solid ${borderColor}`,
+                  background: isDark ? '#11131f' : '#f1f5f9',
+                  cursor: 'pointer',
+                  position: 'relative',
+                  transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                  boxShadow: currentImageIdx === i ? `0 0 16px ${accentColor}40` : 'none'
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.transform = 'translateY(-3px)';
+                  e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.2)';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.transform = 'none';
+                  e.currentTarget.style.boxShadow = currentImageIdx === i ? `0 0 16px ${accentColor}40` : 'none';
+                }}
+              >
+                <img
+                  src={img}
+                  alt={`${title} - Thumbnail ${i + 1}`}
+                  loading="lazy"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+                <div style={{
+                  position: 'absolute',
+                  top: 8,
+                  left: 8,
+                  background: currentImageIdx === i ? accentColor : 'rgba(0,0,0,0.65)',
+                  color: '#ffffff',
+                  fontSize: 10,
+                  fontWeight: 800,
+                  padding: '2px 8px',
+                  borderRadius: 100,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em'
+                }}>
+                  {currentImageIdx === i ? 'Aktif' : `#${i + 1}`}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
+
+      {/* ── STUDIO ACTION HUB (CONVERSION BRIDGE) ── */}
+      <div style={{
+        marginTop: 36,
+        padding: '24px 26px',
+        borderRadius: 22,
+        background: isDark ? 'linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%)' : 'linear-gradient(135deg, rgba(0,0,0,0.03) 0%, rgba(0,0,0,0.01) 100%)',
+        border: `1.5px solid ${borderColor}`,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16,
+        boxShadow: isDark ? '0 12px 30px rgba(0,0,0,0.25)' : '0 8px 24px rgba(0,0,0,0.04)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{
+              width: 32,
+              height: 32,
+              borderRadius: '50%',
+              background: `${accentColor}20`,
+              color: accentColor,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <Sparkles size={16} />
+            </div>
+            <div>
+              <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 16, fontWeight: 900, color: textColor }}>
+                Tertarik dengan Konsep Proyek Ini?
+              </div>
+              <div style={{ fontSize: 12.5, color: subTextColor, fontFamily: "'Inter', sans-serif", marginTop: 2 }}>
+                Diskusikan kebutuhan ide atau cari aset siap pakai yang selaras dengan gaya karya ini.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              const categoryMap: Record<string, string> = {
+                'web': 'web',
+                'website': 'web',
+                'ui/ux': 'web',
+                'branding': 'branding',
+                'logo': 'branding',
+                'social': 'social',
+                'konten': 'social',
+                'video': 'motion',
+                'motion': 'motion'
+              };
+              const normCat = (project.category || '').toLowerCase();
+              const matchedCategory = Object.keys(categoryMap).find(k => normCat.includes(k));
+              const finalCategory = matchedCategory ? categoryMap[matchedCategory] : 'web';
+
+              window.dispatchEvent(new CustomEvent('porto_open_concierge', {
+                detail: {
+                  service: finalCategory,
+                  description: `Halo tim sumr.day, saya baru saja melihat studi kasus "${project.title || project.name}" di portofolio dan sangat tertarik membuat proyek dengan estetika serupa. Boleh diskusi lebih lanjut?`
+                }
+              }));
+            }}
+            style={{
+              padding: '11px 22px',
+              borderRadius: 100,
+              border: 'none',
+              background: accentColor,
+              color: '#ffffff',
+              fontFamily: "'Outfit', sans-serif",
+              fontSize: 13,
+              fontWeight: 800,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 7,
+              boxShadow: `0 4px 16px ${accentColor}40`,
+              transition: 'transform 0.15s ease'
+            }}
+            onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+            onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+          >
+            <MessageCircle size={15} />
+            <span>Konsultasikan Proyek Serupa</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              const normCat = (project.category || '').toLowerCase();
+              let svcType = 'Desain Kustom / Konsultasi Lainnya';
+              if (normCat.includes('brand') || normCat.includes('logo') || normCat.includes('identit')) {
+                svcType = 'Brand Identity & Logo Suite';
+              } else if (normCat.includes('web') || normCat.includes('ui') || normCat.includes('ux') || normCat.includes('app')) {
+                svcType = 'UI/UX & Web Design (Figma)';
+              } else if (normCat.includes('pack') || normCat.includes('print') || normCat.includes('kemasan')) {
+                svcType = 'Packaging & Print Collateral';
+              } else if (normCat.includes('sosmed') || normCat.includes('social') || normCat.includes('feed')) {
+                svcType = 'Social Media Content Kit & Visual Feed';
+              }
+
+              window.dispatchEvent(new CustomEvent('porto_open_inquiry_modal', {
+                detail: {
+                  serviceType: svcType,
+                  brandName: project.client || '',
+                  goals: `Tertarik membuat proyek dengan estetika visual seperti studi kasus "${project.title || project.name}".`,
+                  referenceUrl: window.location.href
+                }
+              }));
+            }}
+            style={{
+              padding: '11px 22px',
+              borderRadius: 100,
+              border: `1.5px solid ${accentColor}`,
+              background: `${accentColor}18`,
+              color: accentColor,
+              fontFamily: "'Outfit', sans-serif",
+              fontSize: 13,
+              fontWeight: 800,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 7,
+              transition: 'all 0.15s ease'
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = accentColor;
+              e.currentTarget.style.color = '#ffffff';
+              e.currentTarget.style.transform = 'translateY(-2px)';
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = `${accentColor}18`;
+              e.currentTarget.style.color = accentColor;
+              e.currentTarget.style.transform = 'translateY(0)';
+            }}
+          >
+            <Sparkles size={15} />
+            <span>Ajukan Brief Kilat</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              const searchParam = project.category ? encodeURIComponent(project.category) : '';
+              navigate(searchParam ? `/katalog?search=${searchParam}` : '/katalog');
+            }}
+            style={{
+              padding: '11px 20px',
+              borderRadius: 100,
+              border: `1px solid ${borderColor}`,
+              background: isDark ? 'rgba(255,255,255,0.06)' : '#ffffff',
+              color: textColor,
+              fontFamily: "'Outfit', sans-serif",
+              fontSize: 13,
+              fontWeight: 750,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 7,
+              transition: 'all 0.15s ease'
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.borderColor = accentColor;
+              e.currentTarget.style.color = accentColor;
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.borderColor = borderColor;
+              e.currentTarget.style.color = textColor;
+            }}
+          >
+            <ShoppingBag size={14} />
+            <span>Jelajahi Aset di Katalog</span>
+            <ArrowRight size={13} />
+          </button>
+        </div>
+      </div>
 
       {/* ── REKOMENDASI KARYA LAIN (SUGGESTED PROJECTS) ── */}
       {suggestedProjects.length > 0 && (
@@ -789,6 +1188,7 @@ const LPProjectModal: React.FC<LPProjectModalProps> = ({
 
   const modalContent = (
     <div
+      className="lp-project-modal-backdrop"
       style={{
         position: 'fixed',
         inset: 0,
@@ -797,12 +1197,15 @@ const LPProjectModal: React.FC<LPProjectModalProps> = ({
         alignItems: isFullScreen ? 'stretch' : 'center',
         justifyContent: 'center',
         padding: isFullScreen ? 0 : '16px',
-        background: 'transparent',
+        background: 'rgba(0, 0, 0, 0.82)',
         backdropFilter: 'none',
         WebkitBackdropFilter: 'none',
-        animation: 'lpFadeIn 0.2s ease',
+        animation: 'lpFadeIn 0.22s ease',
       }}
-      onClick={onClose}
+      onClick={() => {
+        haptic.light();
+        onClose();
+      }}
     >
       <div
         className="lp-project-modal-card"
@@ -812,9 +1215,9 @@ const LPProjectModal: React.FC<LPProjectModalProps> = ({
           height: isFullScreen ? '100dvh' : '88vh',
           maxHeight: isFullScreen ? '100dvh' : '90vh',
           background: bgColor,
-          borderRadius: isFullScreen ? 0 : 28,
+          borderRadius: isFullScreen ? 0 : 24,
           border: isFullScreen ? 'none' : `1px solid ${borderColor}`,
-          boxShadow: '0 30px 80px rgba(0,0,0,0.6)',
+          boxShadow: isDark ? '0 30px 80px rgba(0, 0, 0, 0.8)' : '0 30px 80px rgba(15, 23, 42, 0.16)',
           overflow: isPortraitVideo ? 'hidden' : 'auto',
           animation: 'lpScaleIn 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
           display: 'flex',
@@ -980,6 +1383,18 @@ const LPProjectModal: React.FC<LPProjectModalProps> = ({
           .lp-portrait-content-col {
             height: auto !important;
             overflow-y: visible !important;
+          }
+        }
+
+        @media (max-width: 640px) {
+          .lp-project-modal-card {
+            border-radius: 20px !important;
+            height: calc(100dvh - 24px) !important;
+            max-height: calc(100dvh - 24px) !important;
+          }
+          .lp-project-modal-card button:active {
+            transform: scale(0.95);
+            transition: transform 0.1s ease;
           }
         }
 

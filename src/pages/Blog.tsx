@@ -163,6 +163,7 @@ const FeaturedHeroCard: React.FC<{ post: BlogPostType; onClick: () => void }> = 
 
   return (
     <div
+      data-card-3d="true"
       onClick={onClick}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -171,12 +172,10 @@ const FeaturedHeroCard: React.FC<{ post: BlogPostType; onClick: () => void }> = 
         gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
         background: 'var(--blog-card-bg)',
         border: `1.5px solid ${isHovered ? 'var(--blog-accent-35)' : 'var(--blog-border)'}`,
-        borderRadius: 24,
+        borderRadius: 22,
         overflow: 'hidden',
         cursor: 'pointer',
-        boxShadow: isHovered ? '0 20px 50px var(--blog-shadow-hover)' : '0 10px 30px var(--blog-shadow)',
-        transform: isHovered ? 'translateY(-4px)' : 'translateY(0)',
-        transition: 'all 0.35s cubic-bezier(0.2, 0.8, 0.2, 1)',
+        transition: 'border-color 0.45s cubic-bezier(0.16, 1, 0.3, 1)',
         position: 'relative'
       }}
     >
@@ -192,8 +191,6 @@ const FeaturedHeroCard: React.FC<{ post: BlogPostType; onClick: () => void }> = 
                 height: '100%',
                 objectFit: 'cover',
                 display: 'block',
-                transform: isHovered ? 'scale(1.05)' : 'scale(1)',
-                transition: 'transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1)'
               }}
             />
             <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.3) 0%, transparent 60%)' }} />
@@ -317,6 +314,7 @@ const RegularArticleCard: React.FC<{ post: BlogPostType; onClick: () => void; is
 
   return (
     <div
+      data-card-3d="true"
       onClick={onClick}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -325,12 +323,10 @@ const RegularArticleCard: React.FC<{ post: BlogPostType; onClick: () => void; is
         flexDirection: 'column',
         background: 'var(--blog-card-bg)',
         border: `1px solid ${isHovered ? 'var(--blog-accent-35)' : 'var(--blog-border)'}`,
-        borderRadius: 20,
+        borderRadius: 22,
         overflow: 'hidden',
         cursor: 'pointer',
-        boxShadow: isHovered ? '0 16px 40px var(--blog-shadow-hover)' : '0 4px 16px var(--blog-shadow)',
-        transform: isHovered ? 'translateY(-5px)' : 'translateY(0)',
-        transition: 'all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)',
+        transition: 'border-color 0.45s cubic-bezier(0.16, 1, 0.3, 1)',
         height: '100%'
       }}
     >
@@ -346,8 +342,6 @@ const RegularArticleCard: React.FC<{ post: BlogPostType; onClick: () => void; is
                 height: '100%',
                 objectFit: 'cover',
                 display: 'block',
-                transform: isHovered ? 'scale(1.06)' : 'scale(1)',
-                transition: 'transform 0.5s ease'
               }}
             />
             <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.2) 0%, transparent 60%)' }} />
@@ -474,14 +468,51 @@ export default function Blog() {
   const containerRef = useRef<HTMLDivElement>(null);
   useScrollReveal(containerRef);
 
-  const [posts, setPosts] = useState<BlogPostType[]>([]);
+  const [posts, setPosts] = useState<BlogPostType[]>(() => {
+    try {
+      const raw = localStorage.getItem('porto_blog_posts');
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr) && arr.length > 0) {
+          return arr.map((item: any) => ({
+            id: item.id || `post_${Date.now()}`,
+            slug: item.slug || (item.title ? item.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '') : item.id),
+            title: item.title || 'Tanpa Judul',
+            content: item.content || '',
+            category: item.category || 'Umum',
+            date: item.date || 'Terbaru',
+            thumbnail: item.thumbnail || '',
+            status: item.status || 'Published',
+            views: typeof item.views === 'number' ? item.views : 0,
+            tags: item.tags || '',
+            metaTitle: item.metaTitle,
+            metaDescription: item.metaDescription,
+            readTime: item.readTime
+          }));
+        }
+      }
+    } catch {}
+    return [];
+  });
   const [featuredIds, setFeaturedIds] = useState<string[]>([]);
-  const [categories, setCategories] = useState<string[]>(['All']);
+  const [categories, setCategories] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem('porto_blog_posts');
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr) && arr.length > 0) {
+          const dynamicCats = Array.from(new Set(arr.map((p: any) => p.category).filter(Boolean))) as string[];
+          return ['All', ...dynamicCats];
+        }
+      }
+    } catch {}
+    return ['All'];
+  });
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [searchFocused, setSearchFocused] = useState<boolean>(false);
   const [sortBy, setSortBy] = useState<'latest' | 'popular'>('latest');
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(() => posts.length === 0);
   const { isDark } = useWebsiteTheme(data?.theme?.defaultMode);
 
   const accentColor = (typeof localStorage !== 'undefined' ? localStorage.getItem('porto_accent_color') : null) || data?.theme?.accentColor || '#7c3aed';
@@ -599,13 +630,13 @@ export default function Blog() {
       --blog-accent-25: ${accentColor}40;
       --blog-accent-12: ${accentColor}1f;
       --blog-accent-10: ${accentColor}1a;
-      --blog-text: ${isDark ? '#f8fafc' : '#0f172a'};
+      --blog-text: ${isDark ? '#ffffff' : '#0f172a'};
       --blog-text-muted: ${isDark ? '#94a3b8' : '#64748b'};
-      --blog-card-bg: ${isDark ? 'rgba(255,255,255,0.035)' : '#ffffff'};
-      --blog-border: ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'};
-      --blog-shadow: ${isDark ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.04)'};
-      --blog-shadow-hover: ${isDark ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.09)'};
-      --blog-img-placeholder: ${isDark ? `linear-gradient(135deg, ${accentColor}14 0%, rgba(255,255,255,0.02) 100%)` : `linear-gradient(135deg, ${accentColor}0f 0%, #f1f5f9 100%)`};
+      --blog-card-bg: ${isDark ? '#151824' : '#ffffff'};
+      --blog-border: ${isDark ? 'rgba(255, 255, 255, 0.14)' : '#e5e7eb'};
+      --blog-shadow: none;
+      --blog-shadow-hover: none;
+      --blog-img-placeholder: ${isDark ? '#1c1f2e' : '#f3f4f6'};
       --blog-sk1: ${isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'};
       --blog-sk2: ${isDark ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.07)'};
     }
@@ -626,8 +657,8 @@ export default function Blog() {
       style={{
         width: '100%',
         minHeight: '100vh',
-        background: isDark ? '#08080f' : '#ffffff',
-        color: isDark ? '#f8fafc' : '#0f172a',
+        background: isDark ? '#06070a' : '#eef2f6',
+        color: isDark ? '#ffffff' : '#0f172a',
         overflowX: 'hidden',
         fontFamily: "'Inter', sans-serif"
       }}
@@ -644,10 +675,12 @@ export default function Blog() {
       />
 
       {/* ── Main Container ── */}
-      <div className="blog-main-wrap" style={{ maxWidth: 1140, margin: '0 auto', padding: '140px 24px 80px' }}>
+      <div className="blog-main-wrap" style={{ maxWidth: 1240, margin: '0 auto', padding: '120px clamp(16px, 3.5vw, 24px) 80px', boxSizing: 'border-box' }}>
 
         {/* ── Hero Header Section ── */}
         <PageHeroHeader
+          isDark={isDark}
+          bgPattern={(data?.pagesHeader as any)?.blog?.bgPattern || 'grid'}
           badgeIcon={<Compass size={14} />}
           badgeText={data?.pagesHeader?.blog?.badge || 'Jurnal & Publikasi Artikel'}
           title={data?.pagesHeader?.blog?.title || 'Ide, Wawasan & Catatan Eksplorasi'}
@@ -659,81 +692,87 @@ export default function Blog() {
             { icon: <Tag size={15} />, value: Math.max(1, categories.length - 1), label: 'Kategori Topik' },
             { icon: <Clock size={15} />, value: `~${totalReadingMinutes}`, label: 'Menit Total Baca' },
           ]}
-        />
+        >
+          {/* Quick Spotlight Search Input Box */}
+          <div style={{
+            position: 'relative',
+            maxWidth: 460,
+            margin: '0 auto'
+          }}>
+            <Search size={16} style={{ position: 'absolute', left: 18, top: '50%', transform: 'translateY(-50%)', color: searchFocused ? accentColor : 'var(--blog-text-muted)' }} />
+            <input
+              type="text"
+              placeholder="Cari berdasarkan judul, kata kunci, topik, atau isi..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setSearchFocused(false)}
+              style={{
+                width: '100%',
+                padding: '13px 44px 13px 46px',
+                borderRadius: 100,
+                border: `1.5px solid ${searchFocused ? accentColor : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(15,23,42,0.1)')}`,
+                background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                color: 'var(--blog-text)',
+                fontFamily: "'Outfit', sans-serif",
+                fontSize: 14,
+                outline: 'none',
+                boxSizing: 'border-box',
+                transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+                boxShadow: 'none'
+              }}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                style={{
+                  position: 'absolute',
+                  right: 14,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+                  border: 'none',
+                  color: 'var(--blog-text-muted)',
+                  width: 24,
+                  height: 24,
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer'
+                }}
+                title="Hapus pencarian"
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
+        </PageHeroHeader>
 
-        {/* ── Search & Filter Controls Bar ── */}
+        {/* ── Category Filters Bar ── */}
         <div data-reveal="true" style={{ marginBottom: 32 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* Search Input Box */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              background: 'var(--blog-card-bg)',
-              border: `1.5px solid ${searchFocused ? accentColor : 'var(--blog-border)'}`,
-              borderRadius: 99,
-              padding: '12px 22px',
-              boxShadow: searchFocused
-                ? `0 0 0 4px ${accentColor}18, 0 8px 24px var(--blog-shadow)`
-                : '0 4px 16px var(--blog-shadow)',
-              transition: 'all 0.25s ease'
-            }}>
-              <Search size={19} style={{ marginRight: 14, flexShrink: 0, color: searchFocused ? accentColor : 'var(--blog-text-muted)', transition: 'color 0.2s' }} />
-              <input
-                type="text"
-                placeholder="Cari berdasarkan judul, kata kunci, topik, atau isi artikel..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                onFocus={() => setSearchFocused(true)}
-                onBlur={() => setSearchFocused(false)}
-                style={{
-                  border: 'none',
-                  background: 'transparent',
-                  outline: 'none',
-                  color: 'var(--blog-text)',
-                  fontFamily: "'Inter', sans-serif",
-                  fontSize: 15,
-                  width: '100%'
-                }}
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  style={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: '50%',
-                    border: 'none',
-                    background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.07)',
-                    color: 'var(--blog-text-muted)',
-                    cursor: 'pointer',
-                    flexShrink: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 14,
-                    fontWeight: 700
-                  }}
-                  title="Hapus pencarian"
-                >
-                  ×
-                </button>
-              )}
-            </div>
 
             {/* Category Filter Pills & Sort Selector */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
               {/* Category Pills */}
-              <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
+              <div className="chip-scroll" style={{ display: 'flex', flexWrap: 'nowrap', gap: 8, overflowX: 'auto', overflowY: 'hidden', padding: '2px 2px 4px 2px', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch', maxWidth: '100%' }}>
                 {categories.map(cat => {
                   const count = cat === 'All' ? posts.length : posts.filter(p => p.category === cat).length;
                   const isActive = activeCategory === cat;
                   return (
                     <button
                       key={cat}
+                      type="button"
+                      className="cms-pill-filter"
                       onClick={() => setActiveCategory(cat)}
                       style={{
-                        padding: '7px 16px',
-                        borderRadius: 99,
+                        flexShrink: 0,
+                        height: 36,
+                        minHeight: 36,
+                        maxHeight: 36,
+                        padding: '0 14px',
+                        borderRadius: 9999,
                         whiteSpace: 'nowrap',
                         fontFamily: "'Outfit', sans-serif",
                         fontSize: 13,
@@ -743,20 +782,29 @@ export default function Blog() {
                         border: `1.5px solid ${isActive ? accentColor : 'var(--blog-border)'}`,
                         background: isActive ? accentColor : 'var(--blog-card-bg)',
                         color: isActive ? '#fff' : 'var(--blog-text-muted)',
-                        boxShadow: isActive ? `0 4px 14px ${accentColor}35` : 'none',
-                        display: 'flex',
+                        boxShadow: isActive ? `0 4px 12px ${accentColor}35` : 'none',
+                        display: 'inline-flex',
                         alignItems: 'center',
-                        gap: 6
+                        justifyContent: 'center',
+                        gap: 6,
+                        boxSizing: 'border-box',
                       }}
                     >
-                      {cat === 'All' ? '✦ Semua Topik' : cat}
+                      <span style={{ whiteSpace: 'nowrap', lineHeight: 1 }}>{cat === 'All' ? '✦ Semua Topik' : cat}</span>
                       <span style={{
                         fontSize: 11,
-                        padding: '1px 6px',
-                        borderRadius: 99,
+                        lineHeight: 1,
+                        height: 20,
+                        minWidth: 20,
+                        padding: '0 6px',
+                        borderRadius: 9999,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
                         background: isActive ? 'rgba(255,255,255,0.25)' : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'),
                         color: isActive ? '#fff' : 'var(--blog-text-muted)',
-                        fontWeight: 800
+                        fontWeight: 800,
+                        flexShrink: 0,
                       }}>
                         {count}
                       </span>
@@ -766,35 +814,43 @@ export default function Blog() {
               </div>
 
               {/* Sort Switcher */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--blog-card-bg)', border: '1px solid var(--blog-border)', borderRadius: 99, padding: '3px 4px' }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', height: 36, gap: 4, background: 'var(--blog-card-bg)', border: '1px solid var(--blog-border)', borderRadius: 9999, padding: 3, flexShrink: 0, boxSizing: 'border-box' }}>
                 <button
+                  type="button"
                   onClick={() => setSortBy('latest')}
                   style={{
-                    padding: '5px 12px',
-                    borderRadius: 99,
+                    height: 28,
+                    padding: '0 12px',
+                    borderRadius: 9999,
                     border: 'none',
                     background: sortBy === 'latest' ? 'var(--blog-accent-12)' : 'transparent',
                     color: sortBy === 'latest' ? accentColor : 'var(--blog-text-muted)',
                     fontSize: 12,
                     fontWeight: 700,
                     cursor: 'pointer',
-                    transition: 'all 0.2s'
+                    transition: 'all 0.2s',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
                   }}
                 >
                   Terbaru
                 </button>
                 <button
+                  type="button"
                   onClick={() => setSortBy('popular')}
                   style={{
-                    padding: '5px 12px',
-                    borderRadius: 99,
+                    height: 28,
+                    padding: '0 12px',
+                    borderRadius: 9999,
                     border: 'none',
                     background: sortBy === 'popular' ? 'var(--blog-accent-12)' : 'transparent',
                     color: sortBy === 'popular' ? accentColor : 'var(--blog-text-muted)',
                     fontSize: 12,
                     fontWeight: 700,
                     cursor: 'pointer',
-                    transition: 'all 0.2s'
+                    transition: 'all 0.2s',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
                   }}
                 >
                   Populer
@@ -818,7 +874,7 @@ export default function Blog() {
             padding: '60px 24px',
             textAlign: 'center',
             background: 'var(--blog-card-bg)',
-            borderRadius: 24,
+            borderRadius: 22,
             border: '1.5px dashed var(--blog-border)',
             display: 'flex',
             flexDirection: 'column',
@@ -924,7 +980,7 @@ export default function Blog() {
             <div data-reveal="true" style={{
               marginTop: 20,
               padding: '40px 32px',
-              borderRadius: 24,
+              borderRadius: 22,
               background: isDark
                 ? `linear-gradient(135deg, ${accentColor}18 0%, rgba(255,255,255,0.03) 100%)`
                 : `linear-gradient(135deg, ${accentColor}12 0%, #ffffff 100%)`,
@@ -934,7 +990,7 @@ export default function Blog() {
               justifyContent: 'space-between',
               flexWrap: 'wrap',
               gap: 24,
-              boxShadow: '0 12px 36px var(--blog-shadow)'
+              boxShadow: 'none'
             }}>
               <div style={{ maxWidth: 540 }}>
                 <h3 style={{ margin: '0 0 8px 0', fontFamily: "'Outfit', sans-serif", fontSize: 22, fontWeight: 900, color: 'var(--blog-text)' }}>

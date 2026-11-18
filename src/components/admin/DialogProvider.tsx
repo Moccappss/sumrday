@@ -120,9 +120,9 @@ const DialogModal = ({ dialog }) => {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'rgba(0, 0, 0, 0.55)',
-        backdropFilter: 'blur(4px)',
-        WebkitBackdropFilter: 'blur(4px)',
+        background: 'rgba(0, 0, 0, 0.8)',
+        backdropFilter: 'none',
+        WebkitBackdropFilter: 'none',
         animation: 'simpleOverlayFade 0.18s ease-out'
       }}
       onClick={(e) => {
@@ -145,10 +145,10 @@ const DialogModal = ({ dialog }) => {
           gap: 16,
           background: 'var(--cms-card-bg)',
           borderRadius: 24, 
-          boxShadow: '0 20px 48px rgba(0, 0, 0, 0.25)',
+          boxShadow: '0 20px 48px rgba(0, 0, 0, 0.4)',
           border: '1px solid var(--glass-border)', 
-          backdropFilter: 'blur(20px)', 
-          WebkitBackdropFilter: 'blur(20px)',
+          backdropFilter: 'none', 
+          WebkitBackdropFilter: 'none',
           animation: 'simpleCardFade 0.18s ease-out'
         }}
         onClick={e => e.stopPropagation()}

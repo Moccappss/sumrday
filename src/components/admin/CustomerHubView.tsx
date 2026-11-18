@@ -5,10 +5,13 @@ import {
   Sparkles, Crown, Receipt, Activity, ShoppingBag, 
   ExternalLink, Calendar, Filter, ChevronRight, Layers,
   RefreshCw, CheckCircle2, ArrowUpDown, Building2, MapPin,
-  Globe, Star, Save, MoreVertical
+  Globe, Star, Save, MoreVertical, Palette, FolderKanban,
+  Rocket, Send, MessageSquare, Briefcase, Target, Zap
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import { storage } from '../../utils/storage';
+import { callGemini } from '../../utils/ai';
+import ServiceOrderModal from './ServiceOrderModal';
+import ClientVaultFileManagerModal from './ClientVaultFileManagerModal';
 
 export type CustomerSegment = 'VIP' | 'Pelanggan' | 'Prospek' | 'Klien Proyek' | 'Baru';
 
@@ -24,9 +27,9 @@ export interface UnifiedContact {
   city?: string;
   instagram?: string;
   segment: CustomerSegment;
-  primarySource: 'bio-link' | 'client-account' | 'transaction' | 'project' | 'manual';
+  primarySource: 'bio-link' | 'client-account' | 'transaction' | 'project' | 'manual' | 'inquiry';
   sources: Array<{
-    type: 'bio-link' | 'client-account' | 'transaction' | 'project' | 'manual';
+    type: 'bio-link' | 'client-account' | 'transaction' | 'project' | 'manual' | 'inquiry';
     label: string;
     detail?: string;
     date?: string;
@@ -65,7 +68,7 @@ export const CustomerHubView: React.FC<CustomerHubViewProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [sourceFilter, setSourceFilter] = useState<'all' | 'bio-link' | 'client-account' | 'transaction' | 'project' | 'manual'>('all');
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'bio-link' | 'client-account' | 'transaction' | 'project' | 'manual' | 'inquiry'>('all');
   const [segmentFilter, setSegmentFilter] = useState<'all' | CustomerSegment>('all');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'name-asc' | 'spent-desc' | 'orders-desc'>('newest');
   
@@ -73,8 +76,45 @@ export const CustomerHubView: React.FC<CustomerHubViewProps> = ({
   const [selectedContact, setSelectedContact] = useState<UnifiedContact | null>(null);
   const [isEditingInModal, setIsEditingInModal] = useState(false);
   const [editForm, setEditForm] = useState<Partial<UnifiedContact>>({});
+  const [aiInsight, setAiInsight] = useState<{ persona: string; upsell: string; draftMsg: string } | null>(null);
+  const [isAnalyzingAi, setIsAnalyzingAi] = useState(false);
+
+  const handleAnalyzeClient = async () => {
+    if (!selectedContact) return;
+    setIsAnalyzingAi(true);
+    try {
+      const prompt = `Analisis profil pelanggan studio berikut:
+Nama: ${selectedContact.name}
+Perusahaan: ${selectedContact.company || '-'}
+Kota: ${selectedContact.city || selectedContact.address || '-'}
+Total Belanja: Rp ${selectedContact.totalSpent}
+Jumlah Order: ${selectedContact.totalOrders}
+Sumber Interaksi: ${selectedContact.sources?.map(s => s.label).join(', ') || '-'}
+Catatan: ${selectedContact.notes || '-'}
+
+Berikan insight cerdas dalam format JSON valid tanpa tanda kutip backtick markdown:
+{
+  "persona": "Tipe karakter/psikografi singkat (maks 5 kata)",
+  "upsell": "1 peluang penawaran/layanan lanjutan spesifik (maks 12 kata)",
+  "draftMsg": "Draft pesan WhatsApp follow-up santai dan profesional (maks 25 kata)"
+}`;
+      const res = await callGemini(prompt, 'Anda adalah konsultan CRM dan bisnis studio kreatif.', 300);
+      const cleanJson = res.replace(/```json/g, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(cleanJson);
+      setAiInsight(parsed);
+    } catch (e) {
+      console.error(e);
+      notify('Gagal menganalisis insight AI klien', 'error');
+    } finally {
+      setIsAnalyzingAi(false);
+    }
+  };
 
   const [showAddModal, setShowAddModal] = useState(false);
+  const [isServiceOrderModalOpen, setIsServiceOrderModalOpen] = useState(false);
+  const [serviceOrderCustomer, setServiceOrderCustomer] = useState<any>(null);
+  const [isVaultModalOpen, setIsVaultModalOpen] = useState(false);
+  const [vaultModalContact, setVaultModalContact] = useState<UnifiedContact | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set());
   const [expandedActionContactId, setExpandedActionContactId] = useState<string | null>(null);
@@ -141,13 +181,14 @@ export const CustomerHubView: React.FC<CustomerHubViewProps> = ({
     try {
       setIsLoading(true);
 
-      const [leads, transactions, trxCustomers, customers, projects, deletedKeys] = await Promise.all([
+      const [leads, transactions, trxCustomers, customers, projects, deletedKeys, studioInquiries] = await Promise.all([
         storage.getItem('porto_leads', []) as Promise<any[]>,
         storage.getItem('porto_transactions', []) as Promise<any[]>,
         storage.getItem('porto_trx_customers', []) as Promise<any[]>,
         storage.getItem('porto_customers', []) as Promise<any[]>,
         storage.getItem('porto_projects', []) as Promise<any[]>,
         storage.getItem('porto_deleted_customers', []) as Promise<string[]>,
+        storage.getItem('porto_studio_inquiries', []) as Promise<any[]>,
       ]);
       const deletedSet = new Set(deletedKeys || []);
 
@@ -458,6 +499,50 @@ export const CustomerHubView: React.FC<CustomerHubViewProps> = ({
         }
       });
 
+      // G. Creative Studio Inquiries (porto_studio_inquiries)
+      (studioInquiries || []).forEach(inq => {
+        if (!inq || (!inq.clientName && !inq.phone && !inq.email)) return;
+        const key = getMergeKey(inq.phone, inq.email, inq.clientName);
+        if (!key) return;
+
+        const sourceItem = {
+          type: 'inquiry' as const,
+          label: 'Brief Inquiry Studio',
+          detail: `Brief #${inq.id || ''}: ${inq.serviceType || 'Desain'} (${inq.budgetRange || 'Budget Fleksibel'})`,
+          date: inq.createdAt
+        };
+
+        const existing = contactMap.get(key);
+        if (!existing) {
+          contactMap.set(key, {
+            id: inq.id || `inq_${Date.now()}`,
+            name: inq.clientName || 'Calon Klien Studio',
+            phone: inq.phone || '',
+            cleanPhone: normalizePhone(inq.phone),
+            email: inq.email || '',
+            company: inq.brandName || '',
+            segment: 'Prospek',
+            primarySource: 'inquiry',
+            sources: [sourceItem],
+            totalOrders: 0,
+            totalSpent: 0,
+            createdAt: inq.createdAt || new Date().toISOString(),
+            lastActive: inq.createdAt,
+            notes: `[Brief #${inq.id}]\nLayanan: ${inq.serviceType}\nVisi: ${inq.goals || '-'}\nBudget: ${inq.budgetRange || '-'}\nTarget: ${inq.deadline || '-'}\nReferensi: ${inq.referenceUrl || '-'}`
+          });
+        } else {
+          if (inq.brandName && !existing.company) existing.company = inq.brandName;
+          if (inq.email && !existing.email) existing.email = inq.email;
+          if (inq.phone && !existing.phone) {
+            existing.phone = inq.phone;
+            existing.cleanPhone = normalizePhone(inq.phone);
+          }
+          if (!existing.sources.some(s => s.type === 'inquiry')) {
+            existing.sources.unshift(sourceItem);
+          }
+        }
+      });
+
       // Update segment for all unified contacts
       contactMap.forEach(c => {
         if (!c.segment || c.segment === 'Baru') {
@@ -495,15 +580,18 @@ export const CustomerHubView: React.FC<CustomerHubViewProps> = ({
     const handleCustUpdate = () => aggregateAllContacts();
     const handleLeadUpdate = () => aggregateAllContacts();
     const handleTrxUpdate = () => aggregateAllContacts();
+    const handleInquiryUpdate = () => aggregateAllContacts();
 
     window.addEventListener('porto_customers_updated', handleCustUpdate);
     window.addEventListener('porto_leads_updated', handleLeadUpdate);
     window.addEventListener('porto_transactions_updated', handleTrxUpdate);
+    window.addEventListener('porto_inquiries_updated', handleInquiryUpdate);
 
     return () => {
       window.removeEventListener('porto_customers_updated', handleCustUpdate);
       window.removeEventListener('porto_leads_updated', handleLeadUpdate);
       window.removeEventListener('porto_transactions_updated', handleTrxUpdate);
+      window.removeEventListener('porto_inquiries_updated', handleInquiryUpdate);
     };
   }, [aggregateAllContacts]);
 
@@ -514,6 +602,7 @@ export const CustomerHubView: React.FC<CustomerHubViewProps> = ({
     let fromWebAccount = 0;
     let fromTransactions = 0;
     let fromProjects = 0;
+    let fromInquiry = 0;
     let totalSpentSum = 0;
     let vipCount = 0;
 
@@ -524,9 +613,10 @@ export const CustomerHubView: React.FC<CustomerHubViewProps> = ({
       if (c.sources.some(s => s.type === 'client-account')) fromWebAccount++;
       if (c.sources.some(s => s.type === 'transaction')) fromTransactions++;
       if (c.sources.some(s => s.type === 'project')) fromProjects++;
+      if (c.sources.some(s => s.type === 'inquiry') || c.primarySource === 'inquiry') fromInquiry++;
     });
 
-    return { total, fromBioLink, fromWebAccount, fromTransactions, fromProjects, totalSpentSum, vipCount };
+    return { total, fromBioLink, fromWebAccount, fromTransactions, fromProjects, fromInquiry, totalSpentSum, vipCount };
   }, [contacts]);
 
   // Filtered and Sorted contacts
@@ -591,12 +681,14 @@ export const CustomerHubView: React.FC<CustomerHubViewProps> = ({
   };
 
   // Export to Excel (.xlsx) handler - LENGKAP 16 KOLOM DATA
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
     try {
       if (filteredContacts.length === 0) {
         notify('Tidak ada data pelanggan untuk diekspor', 'info');
         return;
       }
+
+      const XLSX = await import('xlsx');
 
       const headers = [
         'No.',
@@ -700,7 +792,7 @@ export const CustomerHubView: React.FC<CustomerHubViewProps> = ({
     switch (type) {
       case 'bio-link':
         return {
-          label: 'Bio Link (Lead Magnet)',
+          label: 'Bio Link',
           icon: <Sparkles size={11} />,
           bg: 'rgba(16, 185, 129, 0.12)',
           border: '1px solid rgba(16, 185, 129, 0.25)',
@@ -708,15 +800,15 @@ export const CustomerHubView: React.FC<CustomerHubViewProps> = ({
         };
       case 'client-account':
         return {
-          label: 'Akun Klien Website',
-          icon: <Crown size={11} />,
+          label: 'Akun Klien',
+          icon: <Globe size={13} />,
           bg: 'rgba(139, 92, 246, 0.12)',
           border: '1px solid rgba(139, 92, 246, 0.25)',
           color: '#8b5cf6'
         };
       case 'transaction':
         return {
-          label: 'Transaksi Kasir (Money)',
+          label: 'Kasir',
           icon: <Receipt size={11} />,
           bg: 'rgba(59, 130, 246, 0.12)',
           border: '1px solid rgba(59, 130, 246, 0.25)',
@@ -724,15 +816,23 @@ export const CustomerHubView: React.FC<CustomerHubViewProps> = ({
         };
       case 'project':
         return {
-          label: 'Proyek & Booking',
+          label: 'Proyek',
           icon: <Activity size={11} />,
           bg: 'rgba(245, 158, 11, 0.12)',
           border: '1px solid rgba(245, 158, 11, 0.25)',
           color: '#f59e0b'
         };
+      case 'inquiry':
+        return {
+          label: 'Brief Inquiry',
+          icon: <Palette size={11} />,
+          bg: 'rgba(217, 86, 41, 0.12)',
+          border: '1px solid rgba(217, 86, 41, 0.3)',
+          color: '#D95629'
+        };
       default:
         return {
-          label: 'Kontak Manual',
+          label: 'Manual',
           icon: <UserPlus size={11} />,
           bg: 'rgba(6, 182, 212, 0.12)',
           border: '1px solid rgba(6, 182, 212, 0.25)',
@@ -742,37 +842,102 @@ export const CustomerHubView: React.FC<CustomerHubViewProps> = ({
   };
 
   const getSourceLabel = (type: string) => {
-    if (type === 'bio-link') return 'Bio Link (Lead Magnet)';
-    if (type === 'client-account') return 'Akun Klien Website';
-    if (type === 'transaction') return 'Transaksi Kasir (Money)';
-    if (type === 'project') return 'Proyek & Booking';
-    return 'Kontak Manual';
+    if (type === 'bio-link') return 'Bio Link';
+    if (type === 'client-account') return 'Akun Klien';
+    if (type === 'transaction') return 'Kasir';
+    if (type === 'project') return 'Proyek';
+    if (type === 'inquiry') return 'Brief Inquiry';
+    return 'Manual';
   };
 
   // Helper for segment badges
   const getSegmentBadge = (seg: CustomerSegment) => {
     switch (seg) {
       case 'VIP':
-        return { label: 'VIP Customer', bg: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.3)', color: '#f59e0b', icon: <Star size={10} /> };
+        return { label: 'VIP', bg: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.3)', color: '#f59e0b', icon: <Star size={10} /> };
       case 'Pelanggan':
-        return { label: 'Pelanggan Aktif', bg: 'rgba(59, 130, 246, 0.12)', border: '1px solid rgba(59, 130, 246, 0.25)', color: '#3b82f6', icon: <ShoppingBag size={10} /> };
+        return { label: 'Pelanggan', bg: 'rgba(59, 130, 246, 0.12)', border: '1px solid rgba(59, 130, 246, 0.25)', color: '#3b82f6', icon: <ShoppingBag size={10} /> };
       case 'Klien Proyek':
-        return { label: 'Klien Proyek', bg: 'rgba(139, 92, 246, 0.12)', border: '1px solid rgba(139, 92, 246, 0.25)', color: '#8b5cf6', icon: <Activity size={10} /> };
+        return { label: 'Proyek', bg: 'rgba(139, 92, 246, 0.12)', border: '1px solid rgba(139, 92, 246, 0.25)', color: '#8b5cf6', icon: <Activity size={10} /> };
       case 'Prospek':
-        return { label: 'Prospek Lead', bg: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.25)', color: '#10b981', icon: <Sparkles size={10} /> };
+        return { label: 'Prospek', bg: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.25)', color: '#10b981', icon: <Sparkles size={10} /> };
       default:
-        return { label: 'Pelanggan Baru', bg: 'rgba(100, 116, 139, 0.12)', border: '1px solid rgba(100, 116, 139, 0.25)', color: '#94a3b8', icon: <UserPlus size={10} /> };
+        return { label: 'Baru', bg: 'rgba(100, 116, 139, 0.12)', border: '1px solid rgba(100, 116, 139, 0.25)', color: '#94a3b8', icon: <UserPlus size={10} /> };
     }
   };
 
-  // Direct WhatsApp chat
+  // WhatsApp Smart Templates State & Helpers
+  const [whatsappModalContact, setWhatsappModalContact] = useState<UnifiedContact | null>(null);
+  const [selectedWaTemplate, setSelectedWaTemplate] = useState('greeting');
+  const [customWaMessage, setCustomWaMessage] = useState('');
+
+  const getWaTemplateText = useCallback((type: string, c: UnifiedContact | null) => {
+    if (!c) return '';
+    const name = c.name ? `Kak ${c.name}` : 'Kak';
+    switch (type) {
+      case 'followup':
+        return `Halo ${name}, salam dari tim sumr.day Studio! Kami ingin follow-up terkait rencana proyek dan penawaran yang telah didiskusikan sebelumnya. Apakah ada detail yang ingin disesuaikan?`;
+      case 'progress':
+        return `Halo ${name}, tim sumr.day ingin mengabarkan pembaruan progres pengerjaan proyek Anda. Semua tahapan berjalan lancar sesuai rencana. Silakan kabari kami jika ada masukan!`;
+      case 'invoice':
+        return `Halo ${name}, berikut informasi rincian tagihan invoice resmi Anda dari sumr.day Studio. Mohon konfirmasi apabila pembayaran sudah dilakukan ya. Terima kasih banyak!`;
+      case 'vault':
+        return `Halo ${name}, seluruh berkas dan aset final proyek Anda kini sudah dapat diakses langsung melalui portal Brand Vault sumr.day Studio. Silakan akses kapan saja ya!`;
+      default:
+        return `Halo ${name}, salam hangat dari tim sumr.day Studio! Ada kebutuhan desain, branding, atau website yang ingin kita diskusikan bersama?`;
+    }
+  }, []);
+
   const handleOpenWhatsApp = (c: UnifiedContact) => {
     if (!c.cleanPhone) {
       notify('Nomor WhatsApp tidak tersedia', 'info');
       return;
     }
-    const greeting = encodeURIComponent(`Halo Kak ${c.name || ''}, terima kasih telah terhubung dengan kami!`);
-    window.open(`https://wa.me/${c.cleanPhone}?text=${greeting}`, '_blank');
+    setWhatsappModalContact(c);
+    setSelectedWaTemplate('greeting');
+    setCustomWaMessage(getWaTemplateText('greeting', c));
+  };
+
+  const handleSendWhatsAppMessage = () => {
+    if (!whatsappModalContact || !whatsappModalContact.cleanPhone) return;
+    const text = encodeURIComponent(customWaMessage);
+    window.open(`https://wa.me/${whatsappModalContact.cleanPhone}?text=${text}`, '_blank');
+    setWhatsappModalContact(null);
+  };
+
+  // Convert Lead / Customer directly into a Project
+  const handleConvertToProject = async (c: UnifiedContact) => {
+    try {
+      const existing = (await storage.getItem<any[]>('porto_projects', [])) || [];
+      const newId = `prj_${Date.now()}`;
+      const projectPayload = {
+        id: newId,
+        title: `Proyek: ${c.name}${c.company ? ` (${c.company})` : ''}`,
+        clientName: c.name,
+        clientPhone: c.phone || '',
+        clientEmail: c.email || '',
+        company: c.company || '',
+        status: 'todo',
+        priority: c.segment === 'VIP' ? 'high' : 'medium',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        tags: ['CRM Lead', c.segment],
+        budget: 0,
+        tasks: [
+          { id: `tsk_1_${Date.now()}`, title: 'Kickoff brief & konsultasi kebutuhan klien', completed: false },
+          { id: `tsk_2_${Date.now()}`, title: 'Penyusunan penawaran & kesepakatan SPK', completed: false },
+          { id: `tsk_3_${Date.now()}`, title: 'Pengembangan & preview hasil awal', completed: false }
+        ],
+        notes: `Data Klien dari CRM:\n• Nama: ${c.name}\n• WhatsApp: ${c.phone || '-'}\n• Email: ${c.email || '-'}\n• Segmen: ${c.segment}\n• Catatan: ${c.notes || '-'}`
+      };
+
+      const updatedProjects = [projectPayload, ...existing];
+      await storage.setItem('porto_projects', updatedProjects, true);
+      window.dispatchEvent(new CustomEvent('porto_projects_updated', { detail: updatedProjects }));
+      notify(`🚀 Proyek baru untuk "${c.name}" berhasil dibuat di menu Works/Projects!`, 'success');
+    } catch (err: any) {
+      notify('Gagal membuat proyek: ' + (err?.message || 'Error'), 'error');
+    }
   };
 
   // Copy helper
@@ -1115,7 +1280,7 @@ export const CustomerHubView: React.FC<CustomerHubViewProps> = ({
         </div>
 
         {/* Right: Quick Action Buttons (Excel Sync & Refresh & Add) */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <button
             type="button"
             onClick={() => {
@@ -1123,72 +1288,73 @@ export const CustomerHubView: React.FC<CustomerHubViewProps> = ({
               aggregateAllContacts();
             }}
             title="Muat Ulang / Sinkronkan Data Real-time"
+            aria-label="Muat Ulang / Sinkronkan Data Real-time"
             style={{
+              width: 40,
               height: 40,
-              padding: '0 14px',
-              borderRadius: 100,
+              padding: 0,
+              borderRadius: '50%',
               border: '1px solid var(--glass-border)',
               background: 'var(--cms-card-bg)',
               color: 'var(--cms-text)',
-              fontSize: 12,
-              fontWeight: 700,
               cursor: 'pointer',
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 6
+              justifyContent: 'center',
+              flexShrink: 0
             }}
           >
-            <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
-            <span>Sinkron</span>
+            <RefreshCw size={16} className={isSyncing ? 'animate-spin' : ''} />
           </button>
 
           {/* SINKRON KE EXCEL BUTTON (.XLSX) */}
           <button
             type="button"
             onClick={handleExportExcel}
-            title="Download dan Sinkronkan semua data pelanggan lengkap ke format Microsoft Excel (.xlsx)"
+            title="Download dan Sinkronkan semua data pelanggan ke format Microsoft Excel (.xlsx)"
+            aria-label="Download Excel"
             style={{
+              width: 40,
               height: 40,
-              padding: '0 16px',
-              borderRadius: 100,
+              padding: 0,
+              borderRadius: '50%',
               border: '1px solid rgba(16, 185, 129, 0.3)',
               background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
               color: '#ffffff',
-              fontSize: 12,
-              fontWeight: 800,
               cursor: 'pointer',
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 8,
+              justifyContent: 'center',
               boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
-              transition: 'all 0.2s ease'
+              transition: 'all 0.2s ease',
+              flexShrink: 0
             }}
           >
-            <Download size={14} />
-            <span>Excel</span>
+            <Download size={16} />
           </button>
 
           <button
             type="button"
             onClick={() => setShowAddModal(true)}
+            title="Tambah Kontak Pelanggan Baru"
+            aria-label="Tambah Kontak Pelanggan Baru"
             style={{
+              width: 40,
               height: 40,
-              padding: '0 16px',
-              borderRadius: 100,
+              padding: 0,
+              borderRadius: '50%',
               border: 'none',
               background: 'var(--cms-accent, #7c3aed)',
               color: '#ffffff',
-              fontSize: 12,
-              fontWeight: 800,
               cursor: 'pointer',
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 6,
-              boxShadow: '0 4px 12px rgba(124, 58, 237, 0.25)'
+              justifyContent: 'center',
+              boxShadow: '0 4px 12px rgba(124, 58, 237, 0.25)',
+              flexShrink: 0
             }}
           >
-            <UserPlus size={14} />
-            <span>Tambah</span>
+            <UserPlus size={17} />
           </button>
         </div>
       </div>
@@ -1204,48 +1370,56 @@ export const CustomerHubView: React.FC<CustomerHubViewProps> = ({
         }}
       >
         {[
-          { key: 'all', label: 'Semua', count: stats.total },
-          { key: 'bio-link', label: 'Bio', count: stats.fromBioLink },
-          { key: 'transaction', label: 'Kasir', count: stats.fromTransactions },
-          { key: 'client-account', label: 'Klien', count: stats.fromWebAccount },
-          { key: 'project', label: 'Proyek', count: stats.fromProjects },
-        ].map(tab => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => setSourceFilter(tab.key as any)}
-            style={{
-              padding: '6px 14px',
-              borderRadius: 100,
-              border: '1px solid',
-              borderColor: sourceFilter === tab.key ? 'var(--cms-accent, #7c3aed)' : 'var(--glass-border)',
-              background: sourceFilter === tab.key ? 'var(--cms-accent-soft, rgba(124,58,237,0.12))' : 'var(--cms-card-bg)',
-              color: sourceFilter === tab.key ? 'var(--cms-accent, #7c3aed)' : 'var(--cms-text-muted)',
-              fontSize: 12,
-              fontWeight: sourceFilter === tab.key ? 800 : 600,
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              transition: 'all 0.15s ease'
-            }}
-          >
-            <span>{tab.label}</span>
-            <span 
-              style={{ 
-                fontSize: 11, 
-                padding: '1px 6px', 
-                borderRadius: 100, 
-                background: sourceFilter === tab.key ? 'var(--cms-accent, #7c3aed)' : 'var(--cms-input-bg)',
-                color: sourceFilter === tab.key ? '#ffffff' : 'var(--cms-text)',
-                fontWeight: 800
+          { key: 'all', label: 'Semua', count: stats.total, icon: Users },
+          { key: 'inquiry', label: 'Brief Inquiry', count: stats.fromInquiry || 0, icon: Palette },
+          { key: 'project', label: 'Proyek', count: stats.fromProjects, icon: Activity },
+          { key: 'client-account', label: 'Klien', count: stats.fromWebAccount, icon: Crown },
+          { key: 'transaction', label: 'Kasir', count: stats.fromTransactions, icon: Receipt },
+          { key: 'bio-link', label: 'Bio Link', count: stats.fromBioLink, icon: Sparkles },
+        ].map(tab => {
+          const Icon = tab.icon;
+          const isActive = sourceFilter === tab.key;
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setSourceFilter(tab.key as any)}
+              title={`${tab.label} (${tab.count})`}
+              aria-label={tab.label}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '6px 12px',
+                borderRadius: 100,
+                border: '1px solid',
+                borderColor: isActive ? 'var(--cms-accent, #7c3aed)' : 'var(--glass-border)',
+                background: isActive ? 'var(--cms-accent-soft, rgba(124,58,237,0.12))' : 'var(--cms-card-bg)',
+                color: isActive ? 'var(--cms-accent, #7c3aed)' : 'var(--cms-text-muted)',
+                fontSize: 12,
+                fontWeight: isActive ? 800 : 600,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                flexShrink: 0,
+                whiteSpace: 'nowrap'
               }}
             >
-              {tab.count}
-            </span>
-          </button>
-        ))}
+              <Icon size={14} />
+              <span
+                style={{
+                  fontSize: 11,
+                  padding: '1px 6px',
+                  borderRadius: 100,
+                  background: isActive ? 'var(--cms-accent, #7c3aed)' : 'var(--cms-input-bg)',
+                  color: isActive ? '#ffffff' : 'var(--cms-text)',
+                  fontWeight: 800
+                }}
+              >
+                {tab.count}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {/* ── CONTACTS LIST CONTAINER ── */}
@@ -1667,6 +1841,61 @@ export const CustomerHubView: React.FC<CustomerHubViewProps> = ({
                         <ChevronRight size={15} />
                       </button>
 
+                      {/* Kirim & Kelola Berkas Klien (Brand Vault) */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setVaultModalContact(contact);
+                          setIsVaultModalOpen(true);
+                        }}
+                        title="Kirim / Kelola Berkas & Brand Vault Klien"
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: '50%',
+                          background: 'rgba(217, 86, 41, 0.15)',
+                          border: '1px solid rgba(217, 86, 41, 0.35)',
+                          color: '#D95629',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          transition: 'transform 0.15s ease'
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.1)'}
+                        onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                      >
+                        <FolderKanban size={14} />
+                      </button>
+
+                      {/* Convert to Project Pipeline */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleConvertToProject(contact);
+                        }}
+                        title="Buat Proyek Baru untuk Klien ini (Works Pipeline)"
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: '50%',
+                          background: 'rgba(99, 102, 241, 0.15)',
+                          border: '1px solid rgba(99, 102, 241, 0.35)',
+                          color: '#6366f1',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          transition: 'transform 0.15s ease'
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.1)'}
+                        onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                      >
+                        <Rocket size={14} />
+                      </button>
+
                       {/* Single Delete Button */}
                       <button
                         type="button"
@@ -1775,7 +2004,7 @@ export const CustomerHubView: React.FC<CustomerHubViewProps> = ({
             style={{ 
               position: 'fixed', 
               inset: 0, 
-              background: 'transparent', 
+              background: 'rgba(0, 0, 0, 0.78)', 
               backdropFilter: 'none', 
               WebkitBackdropFilter: 'none',
               zIndex: 999998 
@@ -2035,22 +2264,32 @@ export const CustomerHubView: React.FC<CustomerHubViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
+                  title="Batal"
+                  aria-label="Batal"
                   style={{
-                    flex: 1,
                     height: 42,
+                    padding: '0 18px',
                     borderRadius: 12,
                     border: '1px solid var(--glass-border)',
                     background: 'transparent',
                     color: 'var(--cms-text)',
                     fontSize: 13,
                     fontWeight: 700,
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    transition: 'background 0.15s ease'
                   }}
                 >
-                  Batal
+                  <X size={15} />
+                  <span>Batal</span>
                 </button>
                 <button
                   type="submit"
+                  title="Simpan Kontak Baru"
+                  aria-label="Simpan Kontak"
                   style={{
                     flex: 1,
                     height: 42,
@@ -2059,11 +2298,18 @@ export const CustomerHubView: React.FC<CustomerHubViewProps> = ({
                     background: 'var(--cms-accent, #7c3aed)',
                     color: '#ffffff',
                     fontSize: 13,
-                    fontWeight: 800,
-                    cursor: 'pointer'
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    boxShadow: '0 2px 10px rgba(124, 58, 237, 0.3)',
+                    transition: 'opacity 0.15s ease'
                   }}
                 >
-                  Simpan Kontak
+                  <Save size={15} />
+                  <span>Simpan Kontak</span>
                 </button>
               </div>
             </form>
@@ -2078,7 +2324,7 @@ export const CustomerHubView: React.FC<CustomerHubViewProps> = ({
             style={{ 
               position: 'fixed', 
               inset: 0, 
-              background: 'transparent', 
+              background: 'rgba(0, 0, 0, 0.78)', 
               backdropFilter: 'none', 
               WebkitBackdropFilter: 'none',
               zIndex: 999998 
@@ -2262,6 +2508,8 @@ export const CustomerHubView: React.FC<CustomerHubViewProps> = ({
                 <button
                   type="button"
                   onClick={handleSaveContactEdits}
+                  title="Simpan Perubahan Profil"
+                  aria-label="Simpan"
                   style={{
                     height: 38,
                     borderRadius: 10,
@@ -2269,15 +2517,18 @@ export const CustomerHubView: React.FC<CustomerHubViewProps> = ({
                     background: '#10b981',
                     color: '#fff',
                     fontSize: 12,
-                    fontWeight: 800,
+                    fontWeight: 700,
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    gap: 6
+                    gap: 6,
+                    padding: '0 16px',
+                    transition: 'transform 0.15s ease'
                   }}
                 >
-                  <Save size={14} /> Simpan Perubahan Profil
+                  <Save size={15} />
+                  <span>Simpan Perubahan Profil</span>
                 </button>
               </div>
             ) : (
@@ -2352,6 +2603,100 @@ export const CustomerHubView: React.FC<CustomerHubViewProps> = ({
               </div>
             )}
 
+            {/* 🧠 AI Client Persona & Upsell Intelligence */}
+            <div style={{
+              marginBottom: 16,
+              padding: 14,
+              borderRadius: 16,
+              background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(139, 92, 246, 0.08) 100%)',
+              border: '1px solid rgba(99, 102, 241, 0.25)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: aiInsight ? 8 : 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 800, color: 'var(--cms-accent, #6366f1)' }}>
+                  <Sparkles size={13} />
+                  <span>AI Client Intelligence</span>
+                </div>
+                <button
+                  type="button"
+                  disabled={isAnalyzingAi}
+                  onClick={handleAnalyzeClient}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: 9999,
+                    background: 'var(--cms-accent, #6366f1)',
+                    border: 'none',
+                    color: '#fff',
+                    fontSize: 10.5,
+                    fontWeight: 750,
+                    cursor: isAnalyzingAi ? 'wait' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4
+                  }}
+                >
+                  <Sparkles size={11} />
+                  <span>{isAnalyzingAi ? 'Menganalisis...' : aiInsight ? 'Analisis Ulang' : 'Analisis Karakter & Upsell'}</span>
+                </button>
+              </div>
+
+              {aiInsight && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10, fontSize: 11.5 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ color: 'var(--cms-text-muted)', fontWeight: 650 }}>Persona:</span>
+                    <span style={{ 
+                      padding: '2px 8px', borderRadius: 9999, 
+                      background: 'rgba(99, 102, 241, 0.18)', color: 'var(--cms-accent, #6366f1)',
+                      fontWeight: 800, fontSize: 11
+                    }}>
+                      {aiInsight.persona}
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--cms-text-muted)', fontWeight: 650 }}>Peluang Upsell: </span>
+                    <span style={{ color: 'var(--cms-text)', fontWeight: 750 }}>{aiInsight.upsell}</span>
+                  </div>
+                  {aiInsight.draftMsg && selectedContact.cleanPhone && (
+                    <div style={{ 
+                      marginTop: 4, 
+                      padding: '8px 10px', 
+                      borderRadius: 10, 
+                      background: 'rgba(16, 185, 129, 0.1)', 
+                      border: '1px solid rgba(16, 185, 129, 0.25)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 4
+                    }}>
+                      <div style={{ fontSize: 10.5, fontWeight: 800, color: '#10b981', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Send size={10} /> Rekomendasi Sapaan WhatsApp:
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--cms-text)', fontStyle: 'italic' }}>
+                        "{aiInsight.draftMsg}"
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const url = `https://wa.me/${selectedContact.cleanPhone}?text=${encodeURIComponent(aiInsight.draftMsg)}`;
+                          window.open(url, '_blank');
+                        }}
+                        style={{
+                          marginTop: 2,
+                          alignSelf: 'flex-start',
+                          padding: '3px 8px',
+                          borderRadius: 6,
+                          background: '#10b981',
+                          border: 'none',
+                          color: '#fff',
+                          fontSize: 10,
+                          fontWeight: 750,
+                          cursor: 'pointer'
+                        }}
+                      >Kirim WA</button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* All Touchpoints Timeline */}
             <div style={{ marginBottom: 16 }}>
               <h4 style={{ fontSize: 13, fontWeight: 800, color: 'var(--cms-text)', margin: '0 0 8px' }}>
@@ -2415,71 +2760,423 @@ export const CustomerHubView: React.FC<CustomerHubViewProps> = ({
             </div>
 
             {/* Bottom Actions */}
-            <div style={{ display: 'flex', gap: 10, marginTop: 14, flexShrink: 0, paddingTop: 12, borderTop: '1px solid var(--glass-border)' }}>
-              {selectedContact.cleanPhone && (
-                <button
-                  type="button"
-                  onClick={() => handleOpenWhatsApp(selectedContact)}
-                  style={{
-                    flex: 1,
-                    height: 42,
-                    borderRadius: 12,
-                    border: 'none',
-                    background: '#10b981',
-                    color: '#ffffff',
-                    fontSize: 13,
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 6
-                  }}
-                >
-                  <MessageCircle size={15} /> Chat WhatsApp
-                </button>
-              )}
+            <div style={{ 
+              display: 'flex', 
+              gap: 8, 
+              marginTop: 14, 
+              flexShrink: 0, 
+              paddingTop: 14, 
+              borderTop: '1px solid var(--glass-border)',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexWrap: 'wrap'
+            }}>
               <button
                 type="button"
-                onClick={() => handleDeleteContacts([selectedContact.id], `Hapus pelanggan "${selectedContact.name}" dari database?`)}
-                title="Hapus Data Pelanggan Ini"
+                onClick={() => {
+                  setServiceOrderCustomer({
+                    name: selectedContact.name || '',
+                    phone: selectedContact.cleanPhone || selectedContact.phone || '',
+                    email: selectedContact.email || '',
+                    instagram: selectedContact.instagram || ''
+                  });
+                  setIsServiceOrderModalOpen(true);
+                }}
+                title="Buat Pesanan Jasa"
+                aria-label="Buat Pesanan Jasa"
                 style={{
+                  width: 42,
                   height: 42,
-                  padding: '0 16px',
-                  borderRadius: 12,
-                  border: '1px solid rgba(239, 68, 68, 0.25)',
-                  background: 'rgba(239, 68, 68, 0.08)',
-                  color: '#ef4444',
-                  fontSize: 13,
-                  fontWeight: 700,
+                  minWidth: 42,
+                  minHeight: 42,
+                  borderRadius: '50%',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #f97316, #ec4899)',
+                  color: '#ffffff',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: 6,
+                  boxShadow: '0 4px 12px rgba(249, 115, 22, 0.35)',
+                  transition: 'all 0.15s ease',
+                  padding: 0,
+                  flexShrink: 0
+                }}
+                onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px) scale(1.05)'; }}
+                onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0) scale(1)'; }}
+              >
+                <Sparkles size={18} strokeWidth={2.2} />
+              </button>
+
+              {/* Tombol Buat Proyek Baru dari Klien ini */}
+              <button
+                type="button"
+                onClick={() => {
+                  handleConvertToProject(selectedContact);
+                }}
+                title="Buat Proyek Baru untuk Klien ini (Works Pipeline)"
+                aria-label="Buat Proyek Baru"
+                style={{
+                  height: 42,
+                  padding: '0 16px',
+                  borderRadius: 100,
+                  border: '1px solid rgba(99, 102, 241, 0.4)',
+                  background: 'rgba(99, 102, 241, 0.15)',
+                  color: '#818cf8',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 7,
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                  boxShadow: '0 4px 12px rgba(99, 102, 241, 0.2)',
                   transition: 'all 0.15s ease'
                 }}
-                onMouseEnter={e => { e.currentTarget.style.background = '#ef4444'; e.currentTarget.style.color = '#fff'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)'; e.currentTarget.style.color = '#ef4444'; }}
+                onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px) scale(1.02)'; e.currentTarget.style.background = 'rgba(99, 102, 241, 0.25)'; }}
+                onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0) scale(1)'; e.currentTarget.style.background = 'rgba(99, 102, 241, 0.15)'; }}
               >
-                <Trash2 size={15} /> Hapus
+                <Rocket size={16} strokeWidth={2.2} />
+                <span style={{ whiteSpace: 'nowrap' }}>Buat Proyek</span>
               </button>
+
+              {/* Tombol Kirim & Kelola Berkas Klien */}
+              <button
+                type="button"
+                onClick={() => {
+                  setVaultModalContact(selectedContact);
+                  setIsVaultModalOpen(true);
+                }}
+                title="Kirim / Kelola Berkas & Brand Vault Klien"
+                aria-label="Kirim / Kelola Berkas & Brand Vault Klien"
+                style={{
+                  height: 42,
+                  padding: '0 16px',
+                  borderRadius: 100,
+                  border: '1px solid rgba(217, 86, 41, 0.4)',
+                  background: 'rgba(217, 86, 41, 0.15)',
+                  color: '#f97316',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 7,
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                  boxShadow: '0 4px 12px rgba(217, 86, 41, 0.2)',
+                  transition: 'all 0.15s ease'
+                }}
+                onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px) scale(1.02)'; e.currentTarget.style.background = 'rgba(217, 86, 41, 0.25)'; }}
+                onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0) scale(1)'; e.currentTarget.style.background = 'rgba(217, 86, 41, 0.15)'; }}
+              >
+                <FolderKanban size={16} strokeWidth={2.2} />
+                <span style={{ whiteSpace: 'nowrap' }}>Brand Vault</span>
+              </button>
+
+              {selectedContact.cleanPhone && (
+                <button
+                  type="button"
+                  onClick={() => handleOpenWhatsApp(selectedContact)}
+                  title="Chat WhatsApp"
+                  aria-label="Chat WhatsApp"
+                  style={{
+                    width: 42,
+                    height: 42,
+                    minWidth: 42,
+                    minHeight: 42,
+                    borderRadius: '50%',
+                    border: 'none',
+                    background: '#10b981',
+                    color: '#ffffff',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.35)',
+                    transition: 'all 0.15s ease',
+                    padding: 0,
+                    flexShrink: 0
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px) scale(1.05)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0) scale(1)'; }}
+                >
+                  <MessageCircle size={18} strokeWidth={2.2} />
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => handleDeleteContacts([selectedContact.id], `Hapus pelanggan "${selectedContact.name}" dari database?`)}
+                title="Hapus Data Pelanggan"
+                aria-label="Hapus Data Pelanggan"
+                style={{
+                  width: 42,
+                  height: 42,
+                  minWidth: 42,
+                  minHeight: 42,
+                  borderRadius: '50%',
+                  border: '1px solid rgba(239, 68, 68, 0.25)',
+                  background: 'rgba(239, 68, 68, 0.08)',
+                  color: '#ef4444',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.15s ease',
+                  padding: 0,
+                  flexShrink: 0
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = '#ef4444'; e.currentTarget.style.color = '#fff'; e.currentTarget.style.transform = 'translateY(-2px) scale(1.05)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)'; e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.transform = 'translateY(0) scale(1)'; }}
+              >
+                <Trash2 size={18} strokeWidth={2.2} />
+              </button>
+
               <button
                 type="button"
                 onClick={() => { setSelectedContact(null); setIsEditingInModal(false); }}
+                title="Tutup"
+                aria-label="Tutup"
                 style={{
-                  flex: 1,
+                  width: 42,
                   height: 42,
-                  borderRadius: 12,
+                  minWidth: 42,
+                  minHeight: 42,
+                  borderRadius: '50%',
                   border: '1px solid var(--glass-border)',
                   background: 'var(--cms-input-bg)',
                   color: 'var(--cms-text)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.15s ease',
+                  padding: 0,
+                  flexShrink: 0
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'var(--glass-border)'; e.currentTarget.style.transform = 'translateY(-2px) scale(1.05)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'var(--cms-input-bg)'; e.currentTarget.style.transform = 'translateY(0) scale(1)'; }}
+              >
+                <X size={18} strokeWidth={2.2} />
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+      {isServiceOrderModalOpen && (
+        <ServiceOrderModal
+          isOpen={isServiceOrderModalOpen}
+          onClose={() => {
+            setIsServiceOrderModalOpen(false);
+            setServiceOrderCustomer(null);
+          }}
+          notify={notify}
+          defaultCustomer={serviceOrderCustomer}
+        />
+      )}
+      {isVaultModalOpen && (
+        <ClientVaultFileManagerModal
+          isOpen={isVaultModalOpen}
+          onClose={() => {
+            setIsVaultModalOpen(false);
+            setVaultModalContact(null);
+          }}
+          contact={vaultModalContact}
+          notify={notify}
+        />
+      )}
+
+      {/* ── SMART WHATSAPP TEMPLATE MODAL ── */}
+      {whatsappModalContact && (
+        <>
+          <div 
+            onClick={() => setWhatsappModalContact(null)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0, 0, 0, 0.78)',
+              backdropFilter: 'none',
+              WebkitBackdropFilter: 'none',
+              zIndex: 99999,
+              animation: 'fadeIn 0.2s ease'
+            }}
+          />
+          <div
+            style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '92%',
+              maxWidth: 540,
+              background: 'var(--cms-card-bg, #1e1f2e)',
+              border: '1.5px solid var(--glass-border)',
+              borderRadius: 24,
+              boxShadow: '0 24px 70px rgba(0,0,0,0.6)',
+              zIndex: 100000,
+              padding: 24,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 16,
+              animation: 'popIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  width: 42,
+                  height: 42,
+                  borderRadius: 14,
+                  background: 'rgba(34, 197, 94, 0.15)',
+                  border: '1px solid rgba(34, 197, 94, 0.3)',
+                  color: '#22c55e',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <MessageCircle size={22} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--cms-text)' }}>
+                    Pesan WhatsApp
+                  </h3>
+                  <div style={{ fontSize: 12, color: 'var(--cms-text-muted)' }}>
+                    {whatsappModalContact.name} &bull; <strong style={{ color: '#22c55e' }}>{whatsappModalContact.phone}</strong>
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWhatsappModalContact(null)}
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  border: 'none',
+                  background: 'var(--cms-input-bg)',
+                  color: 'var(--cms-text-muted)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Template Chips */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--cms-text-muted)', textTransform: 'uppercase', marginBottom: 8, letterSpacing: '0.05em' }}>
+                Pilih Template Pesan
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {[
+                  { id: 'greeting', label: 'Sapaan & Konsultasi', icon: MessageSquare },
+                  { id: 'followup', label: 'Follow-up Penawaran', icon: Target },
+                  { id: 'progress', label: 'Update Progres', icon: Zap },
+                  { id: 'invoice', label: 'Tagihan Invoice', icon: Receipt },
+                  { id: 'vault', label: 'Akses Brand Vault', icon: FolderKanban }
+                ].map(tpl => {
+                  const isActive = selectedWaTemplate === tpl.id;
+                  const IconComp = tpl.icon;
+                  return (
+                    <button
+                      key={tpl.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedWaTemplate(tpl.id);
+                        setCustomWaMessage(getWaTemplateText(tpl.id, whatsappModalContact));
+                      }}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: 100,
+                        border: `1px solid ${isActive ? '#22c55e' : 'var(--glass-border)'}`,
+                        background: isActive ? 'rgba(34, 197, 94, 0.15)' : 'var(--cms-input-bg)',
+                        color: isActive ? '#22c55e' : 'var(--cms-text)',
+                        fontSize: 12,
+                        fontWeight: isActive ? 800 : 600,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6
+                      }}
+                    >
+                      <IconComp size={13} style={{ flexShrink: 0 }} />
+                      <span>{tpl.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Editable Text Area */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--cms-text-muted)', textTransform: 'uppercase', marginBottom: 6, letterSpacing: '0.05em' }}>
+                Isi Pesan (Dapat diedit bebas)
+              </div>
+              <textarea
+                value={customWaMessage}
+                onChange={(e) => setCustomWaMessage(e.target.value)}
+                rows={5}
+                style={{
+                  width: '100%',
+                  padding: '12px 14px',
+                  borderRadius: 14,
+                  border: '1px solid var(--glass-border)',
+                  background: 'var(--cms-input-bg)',
+                  color: 'var(--cms-text)',
+                  fontSize: 13,
+                  lineHeight: 1.6,
+                  resize: 'vertical',
+                  boxSizing: 'border-box',
+                  fontFamily: 'inherit',
+                  outline: 'none'
+                }}
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
+              <button
+                type="button"
+                onClick={() => setWhatsappModalContact(null)}
+                style={{
+                  padding: '10px 18px',
+                  borderRadius: 100,
+                  border: '1px solid var(--glass-border)',
+                  background: 'transparent',
+                  color: 'var(--cms-text-muted)',
                   fontSize: 13,
                   fontWeight: 700,
                   cursor: 'pointer'
                 }}
               >
-                Tutup
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleSendWhatsAppMessage}
+                style={{
+                  padding: '10px 22px',
+                  borderRadius: 100,
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #22c55e, #16a34a)',
+                  color: '#ffffff',
+                  fontSize: 13,
+                  fontWeight: 800,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 16px rgba(34, 197, 94, 0.4)'
+                }}
+              >
+                <Send size={15} />
+                <span>Buka WhatsApp</span>
               </button>
             </div>
           </div>

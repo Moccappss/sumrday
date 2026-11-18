@@ -57,7 +57,13 @@ export const playBroadcastChime = (type = 'promo') => {
     gain.gain.setValueAtTime(0.001, now);
     gain.gain.linearRampToValueAtTime(0.12, now + 0.04);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
-    
+
+    osc.onended = () => {
+      try {
+        ctx.close().catch(() => {});
+      } catch (_) {}
+    };
+
     osc.start(now);
     osc.stop(now + 0.55);
   } catch (_) {}

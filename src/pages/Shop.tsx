@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { 
   ShoppingBag, Search, Filter, X, ChevronRight, CheckCircle2, 
   AlertCircle, ShoppingCart, ArrowLeft, MessageSquare, Copy, 
-  Share2, Eye, ExternalLink, Sparkles, Plus 
+  Share2, Eye, ExternalLink, Sparkles, Plus, Check 
 } from 'lucide-react';
 import { haptic } from '../utils/haptics';
 import SEOHelmet from '../components/SEOHelmet';
@@ -104,6 +104,7 @@ const Shop: React.FC = () => {
   
   const [shopSettings, setShopSettings] = useState<ShopSettings>({ whatsappNumber: '', paymentMethods: [] });
   const [selectedPaymentId, setSelectedPaymentId] = useState('');
+  const [copiedBankId, setCopiedBankId] = useState<string | null>(null);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -450,16 +451,17 @@ const Shop: React.FC = () => {
 
         {/* PDP (PRODUCT DETAIL PAGE) MODAL */}
         {selectedProduct && (
-          <div className="fixed inset-0 z-[9998] flex justify-center items-center bg-black/60 backdrop-blur-sm animate-[cmsFadeIn_0.35s_ease] p-4">
-            <div className="w-full max-w-[500px] max-h-[90vh] bg-[var(--cms-bg)] rounded-[32px] flex flex-col overflow-hidden border border-[var(--cms-border)] animate-[cmsScaleIn_0.4s_cubic-bezier(0.16,1,0.3,1)] shadow-2xl">
+          <div className="fixed inset-0 z-[9998] flex justify-center items-center bg-black/80 animate-[cmsFadeIn_0.25s_ease] p-4">
+            <div className="w-full max-w-[500px] max-h-[90vh] bg-[var(--cms-bg)] rounded-[32px] flex flex-col overflow-hidden border border-[var(--cms-border)] animate-[cmsScaleIn_0.3s_cubic-bezier(0.16,1,0.3,1)] shadow-2xl">
               <div className="relative h-[300px] bg-black/20 shrink-0">
                 <ProductCarousel images={selectedProduct.images && selectedProduct.images.length > 0 ? selectedProduct.images : [selectedProduct.image]} />
-                <button onClick={() => setSelectedProduct(null)} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/50 text-white border-none flex items-center justify-center cursor-pointer backdrop-blur-sm transition-transform hover:scale-110 z-10">
+                <button onClick={() => setSelectedProduct(null)} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/70 text-white border-none flex items-center justify-center cursor-pointer transition-transform hover:scale-110 z-10" title="Tutup" aria-label="Tutup">
                   <X size={20} />
                 </button>
                 {selectedProduct.type === 'Digital' && (
-                  <div className="absolute bottom-4 left-4 bg-white/90 text-black px-3 py-1.5 rounded-full text-xs font-extrabold shadow-md z-10">
-                    🌟 Digital Download (Akses Langsung)
+                  <div className="absolute bottom-4 left-4 bg-white/95 text-black px-3 py-1.5 rounded-full text-xs font-extrabold shadow-md z-10 inline-flex items-center gap-1.5">
+                    <Sparkles size={13} className="text-amber-500" />
+                    <span>Digital Download (Akses Langsung)</span>
                   </div>
                 )}
               </div>
@@ -515,7 +517,7 @@ const Shop: React.FC = () => {
 
         {/* OVERLAY CART & CHECKOUT */}
         {isCartOpen && (
-          <div className="fixed inset-0 z-[9999] flex justify-end bg-black/40 backdrop-blur-sm animate-[cmsFadeIn_0.3s_ease]">
+          <div className="fixed inset-0 z-[9999] flex justify-end bg-black/80 animate-[cmsFadeIn_0.25s_ease]">
             <div className="w-full max-w-[440px] h-full bg-[var(--cms-bg)] flex flex-col border-l border-[var(--cms-border)] animate-[markerSlideIn_0.4s_cubic-bezier(0.19,1,0.22,1)] shadow-2xl">
               {/* Header Cart */}
               <div className="p-6 border-b border-[var(--cms-border)] flex items-center justify-between bg-[var(--cms-panel-bg)] shrink-0">
@@ -621,12 +623,32 @@ const Shop: React.FC = () => {
                             <label className="text-[13px] font-extrabold text-[var(--cms-text-primary)] block mb-3 ml-1">Pilih Rekening Tujuan *</label>
                             <div className="flex flex-col gap-3">
                               {shopSettings.paymentMethods.map(p => (
-                                <label key={p.id} className={`flex items-start gap-3 bg-[var(--cms-panel-bg)] border-2 p-4 rounded-xl cursor-pointer transition-all ${selectedPaymentId === p.id ? 'border-[var(--cms-accent)] shadow-[0_4px_12px_rgba(var(--cms-accent-rgb),0.1)]' : 'border-[var(--cms-border)] hover:border-[rgba(255,255,255,0.2)]'}`}>
-                                  <input type="radio" name="payment" value={p.id} checked={selectedPaymentId === p.id} onChange={(e) => setSelectedPaymentId(e.target.value)} className="mt-1 w-4 h-4 accent-[var(--cms-accent)] cursor-pointer" />
-                                  <div className="flex-1">
-                                    <div className="text-sm font-extrabold text-[var(--cms-text-primary)]">{p.bankName}</div>
-                                    <div className="text-[13px] font-semibold text-[var(--cms-text-muted)] mt-1">{p.accountNumber} <br/> a.n {p.accountName}</div>
+                                <label key={p.id} className={`flex items-center justify-between gap-3 bg-[var(--cms-panel-bg)] border-2 p-3.5 rounded-xl cursor-pointer transition-all ${selectedPaymentId === p.id ? 'border-[var(--cms-accent)] shadow-[0_4px_12px_rgba(var(--cms-accent-rgb),0.1)]' : 'border-[var(--cms-border)] hover:border-[rgba(255,255,255,0.2)]'}`}>
+                                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                                    <input type="radio" name="payment" value={p.id} checked={selectedPaymentId === p.id} onChange={(e) => setSelectedPaymentId(e.target.value)} className="w-4 h-4 accent-[var(--cms-accent)] cursor-pointer shrink-0" />
+                                    <div className="min-w-0">
+                                      <div className="text-sm font-extrabold text-[var(--cms-text-primary)] select-text">{p.bankName}</div>
+                                      <div className="text-[12.5px] font-semibold text-[var(--cms-text-muted)] select-text font-mono">{p.accountNumber} <span className="font-sans font-normal text-[11px] block">a.n {p.accountName}</span></div>
+                                    </div>
                                   </div>
+                                  {p.accountNumber && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        haptic.light();
+                                        navigator.clipboard.writeText(p.accountNumber);
+                                        setCopiedBankId(p.id);
+                                        setTimeout(() => setCopiedBankId(null), 2000);
+                                      }}
+                                      className="px-2.5 py-1.5 rounded-lg border border-[var(--cms-border)] bg-[var(--cms-card-bg)] text-[var(--cms-text-primary)] text-xs font-bold shrink-0 flex items-center gap-1 hover:border-[var(--cms-accent)] select-none"
+                                      title="Salin Nomor Rekening"
+                                    >
+                                      {copiedBankId === p.id ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+                                      <span className={copiedBankId === p.id ? 'text-emerald-500' : ''}>{copiedBankId === p.id ? 'Tersalin' : 'Salin'}</span>
+                                    </button>
+                                  )}
                                 </label>
                               ))}
                             </div>
@@ -705,7 +727,7 @@ const Shop: React.FC = () => {
 
         {/* OVERLAY MESSAGE */}
         {isMessageOpen && (
-          <div className="fixed inset-0 z-[9999] flex justify-center items-center bg-black/60 backdrop-blur-sm animate-[cmsFadeIn_0.3s_ease] p-4">
+          <div className="fixed inset-0 z-[9999] flex justify-center items-center bg-black/80 animate-[cmsFadeIn_0.25s_ease] p-4">
             <div className="w-full max-w-[400px] bg-[var(--cms-panel-bg)] p-8 rounded-[32px] border border-[var(--cms-border)] shadow-2xl animate-[cmsScaleIn_0.3s_ease]">
               <div className="flex justify-between items-center mb-6">
                 <h2 className="m-0 text-xl font-black text-[var(--cms-text-primary)] tracking-tight">Kirim Pesan</h2>

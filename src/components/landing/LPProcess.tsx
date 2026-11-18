@@ -16,69 +16,78 @@ interface LPProcessProps {
 }
 
 const STEP_COLORS = [
-  { accent: '#3b82f6', bg: 'rgba(59, 130, 246, 0.08)', border: 'rgba(59, 130, 246, 0.22)', glow: 'rgba(59, 130, 246, 0.15)', icon: Lightbulb },
-  { accent: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.08)', border: 'rgba(139, 92, 246, 0.22)', glow: 'rgba(139, 92, 246, 0.15)', icon: Zap },
-  { accent: '#ec4899', bg: 'rgba(236, 72, 153, 0.08)', border: 'rgba(236, 72, 153, 0.22)', glow: 'rgba(236, 72, 153, 0.15)', icon: Code2 },
-  { accent: '#10b981', bg: 'rgba(16, 185, 129, 0.08)', border: 'rgba(16, 185, 129, 0.22)', glow: 'rgba(16, 185, 129, 0.15)', icon: Rocket },
+  { accent: '#D95629', bg: 'rgba(217, 86, 41, 0.08)', border: 'rgba(217, 86, 41, 0.22)', icon: Lightbulb },
+  { accent: '#F7BA38', bg: 'rgba(247, 186, 56, 0.08)', border: 'rgba(247, 186, 56, 0.22)', icon: Zap },
+  { accent: '#1687A7', bg: 'rgba(22, 135, 167, 0.08)', border: 'rgba(22, 135, 167, 0.22)', icon: Code2 },
+  { accent: '#52B3C5', bg: 'rgba(82, 179, 197, 0.08)', border: 'rgba(82, 179, 197, 0.22)', icon: Rocket },
+];
+
+const DEFAULT_PROCESS: ProcessData[] = [
+  { id: 'proc-1', title: 'Eksplorasi & Kebutuhan', description: 'Menyelami ekspektasi, arah visual, dan sasaran proyek brand Anda secara mendalam.' },
+  { id: 'proc-2', title: 'Perancangan Konsep', description: 'Merancang arsitektur informasi, moodboard visual, dan struktur antarmuka prototipe.' },
+  { id: 'proc-3', title: 'Produksi & Visual', description: 'Membangun antarmuka interaktif dengan animasi presisi, performa gesit, dan standar web modern.' },
+  { id: 'proc-4', title: 'Peluncuran & Rilis', description: 'Pengujian menyeluruh di semua perangkat, deployment live, serta pendampingan pasca-rilis.' },
 ];
 
 const LPProcess: React.FC<LPProcessProps> = ({ process, isDark = false, accentColor, localization }) => {
-  if (!process || process.length === 0) return null;
+  const activeProcess = (process && process.length > 0) ? process : DEFAULT_PROCESS;
 
-  const textColor = isDark ? '#f8fafc' : '#0f172a';
+  const textColor = isDark ? '#ffffff' : '#0f172a';
   const subTextColor = isDark ? '#94a3b8' : '#64748b';
-  const sectionBg = isDark ? '#08080f' : '#ffffff';
+  const sectionBg = isDark ? '#06070a' : '#eef2f6';
+  const cardBorder = isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(15, 23, 42, 0.08)';
+  const cardBg = isDark ? '#151824' : '#ffffff';
 
   return (
     <section
       id="process"
       style={{
-        padding: '110px 24px',
+        padding: 'clamp(56px, 7vw, 84px) clamp(16px, 3.5vw, 24px)',
         background: sectionBg,
         color: textColor,
         transition: 'background-color 0.3s ease, color 0.3s ease',
         position: 'relative',
+        boxSizing: 'border-box'
       }}
     >
-      <div style={{ maxWidth: 1240, margin: '0 auto' }}>
+      <div style={{ maxWidth: 1240, width: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
         
         {/* Section Header */}
-        <div data-reveal="true" style={{ textAlign: 'center', marginBottom: 56 }}>
+        <div data-reveal="true" style={{ textAlign: 'center', marginBottom: 52 }}>
           <div style={{
             fontFamily: "'Inter', sans-serif",
-            fontSize: 12,
+            fontSize: 11.5,
             fontWeight: 700,
             color: accentColor,
-            letterSpacing: '0.14em',
+            letterSpacing: '0.12em',
             textTransform: 'uppercase',
             marginBottom: 10,
             display: 'inline-flex',
             alignItems: 'center',
             gap: 6,
           }}>
-            <Sparkles size={14} />
-            <span>{localization?.processSectionTitle || 'PROSES KERJA'}</span>
+            <span>{localization?.processSectionTitle || 'ALUR KOLABORASI'}</span>
           </div>
           <h2 style={{
             fontFamily: "'Outfit', sans-serif",
-            fontSize: 'clamp(30px, 3.6vw, 44px)',
-            fontWeight: 850,
+            fontSize: 'clamp(28px, 3.4vw, 42px)',
+            fontWeight: 800,
             margin: 0,
             letterSpacing: '-0.025em',
             color: textColor,
           }}>
-            {localization?.processMainTitle || 'Bagaimana Kami Bekerja'}
+            {localization?.processMainTitle || 'Alur Pengerjaan'}
           </h2>
         </div>
 
         {/* 4-Step Colorful Grid */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 250px), 1fr))',
           gap: 22,
           alignItems: 'stretch',
         }}>
-          {process.map((step, index) => {
+          {activeProcess.map((step, index) => {
             const colorScheme = STEP_COLORS[index % STEP_COLORS.length];
             const StepIcon = colorScheme.icon;
             const stepNum = String(index + 1).padStart(2, '0');
@@ -92,44 +101,24 @@ const LPProcess: React.FC<LPProcessProps> = ({ process, isDark = false, accentCo
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 18,
-                  padding: '30px 24px',
-                  borderRadius: 24,
-                  border: `1px solid ${isDark ? colorScheme.border : 'rgba(0,0,0,0.06)'}`,
-                  background: isDark ? 'rgba(15, 23, 42, 0.65)' : '#ffffff',
-                  backdropFilter: 'blur(16px)',
-                  WebkitBackdropFilter: 'blur(16px)',
-                  boxShadow: isDark ? '0 10px 28px rgba(0,0,0,0.25)' : '0 8px 24px rgba(0,0,0,0.03)',
-                  transition: 'box-shadow 0.35s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.35s ease',
+                  padding: '28px 22px',
+                  borderRadius: 22,
+                  border: `1px solid ${cardBorder}`,
+                  background: cardBg,
+                  boxShadow: 'none',
+                  transition: 'transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease',
                   position: 'relative',
                   overflow: 'hidden',
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-6px)';
-                  e.currentTarget.style.borderColor = colorScheme.accent;
-                  e.currentTarget.style.boxShadow = `0 18px 40px ${colorScheme.glow}, 0 0 0 1px ${colorScheme.accent}30`;
+                  e.currentTarget.style.transform = 'translateY(-3px)';
+                  e.currentTarget.style.borderColor = accentColor;
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.borderColor = isDark ? colorScheme.border : 'rgba(0,0,0,0.06)';
-                  e.currentTarget.style.boxShadow = isDark ? '0 10px 28px rgba(0,0,0,0.25)' : '0 8px 24px rgba(0,0,0,0.03)';
+                  e.currentTarget.style.transform = 'none';
+                  e.currentTarget.style.borderColor = cardBorder;
                 }}
               >
-                {/* Ambient Soft Glow */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: -24,
-                    right: -24,
-                    width: 80,
-                    height: 80,
-                    borderRadius: '50%',
-                    background: colorScheme.accent,
-                    opacity: 0.1,
-                    filter: 'blur(20px)',
-                    pointerEvents: 'none',
-                  }}
-                />
-
                 {/* Top Row: Number & Icon */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div
@@ -152,6 +141,10 @@ const LPProcess: React.FC<LPProcessProps> = ({ process, isDark = false, accentCo
                     style={{
                       width: 40,
                       height: 40,
+                      minWidth: 40,
+                      minHeight: 40,
+                      aspectRatio: '1 / 1',
+                      flexShrink: 0,
                       borderRadius: 12,
                       background: colorScheme.bg,
                       color: colorScheme.accent,

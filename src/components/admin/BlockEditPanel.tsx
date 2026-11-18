@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Upload, Link, Trash2, ChevronUp, ChevronDown, ImageIcon, Play, Bookmark, Plus, X, FolderOpen, Info, Loader2, Music, Volume2, Volume1, Monitor, Fingerprint, Sparkles } from 'lucide-react';
+import { Upload, Link, Trash2, ChevronUp, ChevronDown, ImageIcon, Play, Bookmark, Plus, X, FolderOpen, Info, Loader2, Music, Volume2, Volume1, Monitor, Fingerprint, Sparkles, Box } from 'lucide-react';
 import { generateFileName } from '../../utils/fileNaming';
 import { uploadToCloudinary, uploadAudioToCloudinary } from '../../utils/cloudinary';
 import { storage } from '../../utils/storage';
@@ -9,6 +9,7 @@ import AiMagicButton from './AiMagicButton';
 import MediaGalleryModal from './MediaGalleryModal';
 import InfoTooltip from './InfoTooltip';
 import ActionPopupControl from './ActionPopupControl';
+import Model3DViewer from '../common/Model3DViewer';
 import { extractYouTubeId, getOptimizedUrl } from '../renderer/utils';
 
 /* ── Dark panel style matching the left sidebar ── */
@@ -54,6 +55,7 @@ const BlockEditPanel = ({ block, onUpdate, onRemove, onMoveUp, onMoveDown, canMo
   const markerSvgRefs = useRef({});
 
   const [mediaTab, setMediaTab] = useState(
+    block?.mediaType === '3d' ? '3d' :
     block?.mediaType === 'youtube' ? 'youtube' : 
     block?.mediaType === 'solid' ? 'solid' : 
     block?.mediaType === 'spacer' ? 'spacer' : 
@@ -160,6 +162,7 @@ const BlockEditPanel = ({ block, onUpdate, onRemove, onMoveUp, onMoveDown, canMo
           <div style={{ display: 'flex', gap: 6, background: 'var(--cms-switcher-bg)', borderRadius: 100, padding: 4, border: '1px solid var(--glass-border)', overflowX: 'auto' }}>
             {[
               { key: 'file', mediaType: 'image', icon: <Upload size={15} />, label: 'File Gambar/Video' },
+              { key: '3d', mediaType: '3d', icon: <Box size={15} />, label: 'Model 3D (.glb)' },
               { key: 'youtube', mediaType: 'youtube', icon: <Play size={15} />, label: 'YouTube' },
               { key: 'solid', mediaType: 'solid', icon: <div style={{ width: 15, height: 15, borderRadius: 4, background: 'currentColor' }} />, label: 'Background Solid' },
               { key: 'spacer', mediaType: 'spacer', icon: <div style={{ width: 15, height: 2, background: 'currentColor', borderRadius: 2 }} />, label: 'Pemisah' },
@@ -800,6 +803,101 @@ const BlockEditPanel = ({ block, onUpdate, onRemove, onMoveUp, onMoveDown, canMo
             >
               <Play size={16} />
             </button>
+          </div>
+        )}
+
+        {mediaTab === '3d' && (
+          <div className="cms-card" style={{ padding: 18, background: 'var(--cms-switcher-bg)', borderRadius: 16, border: '1px solid var(--cms-accent-border, rgba(245,158,11,0.3))', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--cms-accent-soft, rgba(245,158,11,0.15))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--cms-accent, #f59e0b)' }}>
+                <Box size={18} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--cms-text)' }}>Widget Model 3D</span>
+                <span style={{ fontSize: 11, color: 'var(--cms-text-muted)' }}>Format .glb (SketchUp / Blender)</span>
+              </div>
+            </div>
+
+            <div style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', fontSize: 11.5, color: 'var(--cms-text)', lineHeight: 1.4 }}>
+              💡 File 3D bisa diunggah langsung ke Cloud tanpa Firebase & tanpa biaya token. Klien bisa langsung memutarnya 360° di website mereka.
+            </div>
+
+            <div>
+              <label className="cms-label" style={{ fontSize: 11, marginBottom: 6, color: 'var(--cms-text)' }}>
+                Unggah File .glb ke Cloud
+              </label>
+              <label style={{ 
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                padding: '10px 14px', borderRadius: 10, background: 'var(--cms-card-bg)',
+                border: '1.5px solid var(--cms-accent-border, rgba(245,158,11,0.35))',
+                cursor: isUploading ? 'not-allowed' : 'pointer', fontSize: 12.5, fontWeight: 700, color: 'var(--cms-text)',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
+              }}>
+                {isUploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} style={{ color: 'var(--cms-accent)' }} />}
+                <span>{isUploading ? 'Mengunggah ke Cloud...' : 'Pilih File .glb dari Komputer'}</span>
+                <input 
+                  type="file" 
+                  accept=".glb,.gltf" 
+                  style={{ display: 'none' }} 
+                  disabled={isUploading}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setIsUploading(true);
+                    try {
+                      const res = await uploadToCloudinary(file, 'raw');
+                      if (res && res.url) {
+                        onUpdate(block.id, { url: res.url, name: file.name, mediaType: '3d' });
+                      }
+                    } catch (err: any) {
+                      alert('Gagal unggah 3D: ' + err.message);
+                    } finally {
+                      setIsUploading(false);
+                      e.target.value = '';
+                    }
+                  }}
+                />
+              </label>
+            </div>
+
+            <div>
+              <label className="cms-label" style={{ fontSize: 11, marginBottom: 6, color: 'var(--cms-text)' }}>
+                Atau Tempel URL / Path Model
+              </label>
+              <input
+                className="cms-input"
+                type="text"
+                placeholder="https://.../model.glb atau /models/file.glb"
+                value={block.url || ''}
+                onChange={e => onUpdate(block.id, { url: e.target.value, mediaType: '3d' })}
+                style={{ height: 38, fontSize: 12 }}
+              />
+            </div>
+
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <label className="cms-label" style={{ margin: 0, fontSize: 11, color: 'var(--cms-text)' }}>
+                  Tinggi Widget: {block.height || 450}px
+                </label>
+                <button
+                  type="button"
+                  onClick={() => onUpdate(block.id, { height: 450 })}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--cms-accent, #f59e0b)', fontSize: 10.5, fontWeight: 700, cursor: 'pointer' }}
+                >
+                  Reset (450px)
+                </button>
+              </div>
+              <input 
+                type="range" 
+                min="250" 
+                max="750" 
+                step="25"
+                value={block.height || 450} 
+                onChange={(e) => onUpdate(block.id, { height: parseInt(e.target.value) })}
+                className="cms-slider"
+                style={{ width: '100%' }}
+              />
+            </div>
           </div>
         )}
 

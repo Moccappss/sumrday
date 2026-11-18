@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { House, LayoutGrid, UserRound, Link, Layout, Store } from 'lucide-react';
+import DOMPurify from 'dompurify';
 import { haptic } from '../../utils/haptics';
 
 // Default icons for system pages (used as fallback when no custom iconSvg is set)
@@ -84,7 +85,7 @@ const BottomNav = ({
       if (settings && (!settings.isPublished || !settings.showInNav)) return null;
       const customIconSvg = settings?.iconSvg;
       const icon = customIconSvg ? (
-        <div className="cms-icon-wrapper" style={{ width: sizeConf.iconSize, height: sizeConf.iconSize, display: 'flex', alignItems: 'center', justifyContent: 'center' }} dangerouslySetInnerHTML={{ __html: customIconSvg }} />
+        <div className="cms-icon-wrapper" style={{ width: sizeConf.iconSize, height: sizeConf.iconSize, display: 'flex', alignItems: 'center', justifyContent: 'center' }} dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(customIconSvg) }} />
       ) : (
         React.cloneElement(DEFAULT_SYSTEM_ICONS[item.slug], { size: sizeConf.iconSize })
       );
@@ -99,7 +100,7 @@ const BottomNav = ({
     ...customPages.filter(p => !p.isSystem && p.isPublished && p.showInNav).map(p => ({
       path: `/lpimage/${p.slug}`,
       icon: p.iconSvg ? (
-        <div className="cms-icon-wrapper" style={{ width: sizeConf.iconSize, height: sizeConf.iconSize, display: 'flex', alignItems: 'center', justifyContent: 'center' }} dangerouslySetInnerHTML={{ __html: p.iconSvg }} />
+        <div className="cms-icon-wrapper" style={{ width: sizeConf.iconSize, height: sizeConf.iconSize, display: 'flex', alignItems: 'center', justifyContent: 'center' }} dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(p.iconSvg) }} />
       ) : <Layout size={sizeConf.iconSize} strokeWidth={2.4} />,
       label: p.name,
     }))
@@ -291,7 +292,7 @@ const BottomNav = ({
               >
                 <div className="dock-icon">
                   {c.iconSvg ? (
-                    <div style={{ width: sizeConf.iconSize, height: sizeConf.iconSize, display: 'flex', alignItems: 'center', justifyContent: 'center' }} dangerouslySetInnerHTML={{ __html: c.iconSvg }} />
+                    <div style={{ width: sizeConf.iconSize, height: sizeConf.iconSize, display: 'flex', alignItems: 'center', justifyContent: 'center' }} dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(c.iconSvg) }} />
                   ) : <Link size={sizeConf.iconSize} />}
                 </div>
               </a>

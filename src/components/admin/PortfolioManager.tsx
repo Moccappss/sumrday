@@ -2,17 +2,19 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { storage } from '../../utils/storage';
 import {
   Plus, Search, Star, Trash2, Edit3, Image as ImageIcon, Video,
-  Tag, Folder, ExternalLink, Sparkles, Filter, Check, Eye, X
+  Tag, Folder, ExternalLink, Sparkles, Filter, Check, Eye, X, Share2, ArrowLeft
 } from 'lucide-react';
 import CustomProjectModal from './CustomProjectModal';
 import { useContextMenu } from './ContextMenuProvider';
+import { getCloudinaryPdfPageUrl } from '../../utils/cloudinary';
 
 interface PortfolioManagerProps {
   notify?: (msg: string, type?: 'success' | 'error' | 'info') => void;
   confirm?: (opts: { title?: string; message: string; onConfirm: () => void; isDestructive?: boolean }) => void;
+  onBack?: () => void;
 }
 
-export const PortfolioManager: React.FC<PortfolioManagerProps> = ({ notify, confirm }) => {
+export const PortfolioManager: React.FC<PortfolioManagerProps> = ({ notify, confirm, onBack }) => {
   const { openContextMenu } = useContextMenu();
   const [projects, setProjects] = useState<any[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -150,6 +152,70 @@ export const PortfolioManager: React.FC<PortfolioManagerProps> = ({ notify, conf
     }
   };
 
+  const handleBroadcastProjectToFeed = async (p: any) => {
+    try {
+      const existingUpdates: any[] = (await storage.getItem('porto_social_updates', [])) || [];
+      const newUpdateId = `upd-${Date.now()}`;
+      const nowIso = new Date().toISOString();
+      const todayDate = nowIso.slice(0, 10);
+      const title = p.title || p.name || 'Karya Baru';
+      const cover = getCoverImage(p);
+
+      const sticker = {
+        type: 'portfolio_card',
+        projectId: p.id,
+        title,
+        category: p.category || 'KARYA TERPILIH',
+        imageUrl: cover || '',
+        projectUrl: `/portfolio/${p.id}`,
+        buttonText: 'Lihat Karya'
+      };
+
+      const newUpdate = {
+        id: newUpdateId,
+        title: `Karya Baru: ${title}`,
+        category: 'asset',
+        content: p.description?.slice(0, 200) || `Karya dan studi kasus visual terbaru dari sumr.day Studio: "${title}". Lihat dokumentasi lengkap di showcase kami.`,
+        mediaUrls: cover ? [cover] : [],
+        mediaType: p.mediaType === 'video' ? 'video' : 'image',
+        projectTag: p.category || 'Karya Visual',
+        projectUrl: `/portfolio/${p.id}`,
+        ctaLabel: 'Lihat Karya',
+        badge: 'Karya Terbaru',
+        customDate: todayDate,
+        createdAt: nowIso,
+        likesCount: 0,
+        isPinned: false,
+        isPublished: true,
+        sticker,
+        author: {
+          name: 'sumr.day',
+          role: 'Creative Digital Studio & Enterprise Systems',
+          avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80'
+        }
+      };
+
+      const updated = [newUpdate, ...(Array.isArray(existingUpdates) ? existingUpdates : [])];
+      await storage.setItem('porto_social_updates', updated);
+      window.dispatchEvent(new CustomEvent('porto_social_updates_changed', { detail: updated }));
+      window.dispatchEvent(new CustomEvent('porto_updates_updated', { detail: updated }));
+      notify?.(`✓ Karya "${title}" berhasil disiarkan ke Feed Beranda!`, 'success');
+    } catch (err) {
+      console.error('Broadcast project error:', err);
+      notify?.('Gagal menyiarkan karya ke feed', 'error');
+    }
+  };
+
+  const handleBulkBroadcastProjects = async () => {
+    if (selectedIds.length === 0) return;
+    const targets = projects.filter(p => selectedIds.includes(p.id));
+    for (const p of targets) {
+      await handleBroadcastProjectToFeed(p);
+    }
+    setSelectedIds([]);
+    notify?.(`✓ Berhasil menyiarkan ${targets.length} karya ke Feed Beranda!`, 'success');
+  };
+
   const handleImportProject = (agencyProj: any) => {
     let cover = agencyProj.coverImage || agencyProj.image || agencyProj.thumbnail || '';
     if (!cover && agencyProj.notes) {
@@ -237,6 +303,11 @@ export const PortfolioManager: React.FC<PortfolioManagerProps> = ({ notify, conf
           }
         },
         {
+          label: 'Siarkan Feed',
+          icon: <Share2 size={15} color="#6366f1" />,
+          action: () => handleBroadcastProjectToFeed(p)
+        },
+        {
           label: isSelected ? 'Hilangkan Tanda' : 'Tandai / Mode Pilih',
           icon: <Check size={15} color="#10b981" />,
           action: () => toggleSelectProject(p.id)
@@ -309,6 +380,14 @@ export const PortfolioManager: React.FC<PortfolioManagerProps> = ({ notify, conf
     if (p.thumbnail) return p.thumbnail;
     if (p.images && p.images.length > 0) return p.images[0];
     if (p.gallery && p.gallery.length > 0) return p.gallery[0];
+    if (p.mediaType === 'youtube' && p.youtubeUrl) {
+      const m = p.youtubeUrl.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/|youtube\.com\/shorts\/)([^"&?\/\s]{11})/i);
+      if (m && m[1]) return `https://img.youtube.com/vi/${m[1]}/hqdefault.jpg`;
+    }
+    if ((p.mediaType === 'flipbook' || p.pdfUrl) && p.pdfUrl) {
+      const pdfPageUrl = getCloudinaryPdfPageUrl(p.pdfUrl, 1, 800);
+      if (pdfPageUrl) return pdfPageUrl;
+    }
     return null;
   };
 
@@ -346,31 +425,57 @@ export const PortfolioManager: React.FC<PortfolioManagerProps> = ({ notify, conf
           paddingBottom: 16,
           borderBottom: '1px solid var(--glass-border, rgba(255,255,255,0.08))'
         }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{
-                width: 38,
-                height: 38,
-                borderRadius: 12,
-                background: 'linear-gradient(135deg, rgba(245,158,11,0.2), rgba(245,158,11,0.05))',
-                color: '#f59e0b',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                border: '1px solid rgba(245,158,11,0.3)',
-                boxShadow: '0 4px 14px rgba(245,158,11,0.15)'
-              }}>
-                <Star size={20} fill="#f59e0b" />
-              </div>
-              <div>
-                <h2 style={{ margin: 0, fontFamily: "'Outfit', sans-serif", fontSize: 20, fontWeight: 900, color: 'var(--cms-text, #f8fafc)' }}>
-                  Showcase Karya
-                </h2>
-                <p style={{ margin: '2px 0 0', fontSize: 12.5, color: 'var(--cms-text-muted, #94a3b8)' }}>
-                  Pusat kurasi proyek, karya visual & showcase utama di website publik ({projects.length} Karya)
-                </p>
-              </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                title="Kembali ke Vault"
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 12,
+                  border: '1px solid var(--glass-border, rgba(255,255,255,0.12))',
+                  background: 'var(--cms-card-bg, #1e293b)',
+                  color: 'var(--cms-text, #f8fafc)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <ArrowLeft size={18} />
+              </button>
+            )}
+            <div style={{
+              width: 38,
+              height: 38,
+              borderRadius: 12,
+              background: 'rgba(245,158,11,0.14)',
+              color: '#f59e0b',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: '1px solid rgba(245,158,11,0.28)',
+              boxShadow: 'none'
+            }}>
+              <Star size={19} fill="#f59e0b" />
             </div>
+            <h2 style={{ margin: 0, fontFamily: "'Outfit', sans-serif", fontSize: 20, fontWeight: 900, color: 'var(--cms-text, #f8fafc)' }}>
+              Showcase
+            </h2>
+            <span style={{
+              padding: '3px 10px',
+              borderRadius: 100,
+              background: 'var(--cms-accent-soft, rgba(99,102,241,0.12))',
+              border: '1px solid var(--cms-accent-border, rgba(99,102,241,0.25))',
+              color: 'var(--cms-accent, #6366f1)',
+              fontSize: 11.5,
+              fontWeight: 800
+            }}>
+              {projects.length} Karya
+            </span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -417,7 +522,7 @@ export const PortfolioManager: React.FC<PortfolioManagerProps> = ({ notify, conf
                 fontSize: 13,
                 fontWeight: 800,
                 cursor: 'pointer',
-                boxShadow: '0 4px 16px rgba(99,102,241,0.4)',
+                boxShadow: 'none',
                 transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
               }}
             >
@@ -563,6 +668,26 @@ export const PortfolioManager: React.FC<PortfolioManagerProps> = ({ notify, conf
               </button>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                type="button"
+                onClick={handleBulkBroadcastProjects}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(99,102,241,0.3)',
+                  background: 'rgba(99,102,241,0.18)',
+                  color: 'var(--cms-accent, #6366f1)',
+                  fontSize: 12.5,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6
+                }}
+              >
+                <Share2 size={15} />
+                Siarkan ({selectedIds.length})
+              </button>
               <button
                 type="button"
                 onClick={handleBulkDelete}
@@ -853,6 +978,29 @@ export const PortfolioManager: React.FC<PortfolioManagerProps> = ({ notify, conf
                       </span>
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleBroadcastProjectToFeed(p);
+                          }}
+                          title="Siarkan Feed"
+                          style={{
+                            width: 28,
+                            height: 28,
+                            borderRadius: 8,
+                            border: '1px solid rgba(99,102,241,0.25)',
+                            background: 'rgba(99,102,241,0.12)',
+                            color: 'var(--cms-accent, #6366f1)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <Share2 size={13} />
+                        </button>
                         <button
                           type="button"
                           onClick={(e) => {

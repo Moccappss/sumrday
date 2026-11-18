@@ -20,6 +20,7 @@ import MediaGalleryModal from './MediaGalleryModal';
 interface WhiteboardProps {
   notify?: (msg: string, type?: string) => void;
   embedded?: boolean;
+  readOnly?: boolean;
   canvasNotes?: any[];
   canvasLines?: any[];
   canvasBg?: string;
@@ -32,6 +33,7 @@ interface WhiteboardProps {
 const WhiteboardModule: React.FC<WhiteboardProps> = ({ 
   notify = (msg) => console.log(msg),
   embedded = false,
+  readOnly = false,
   canvasNotes = [],
   canvasLines = [],
   canvasBg = 'grid',
@@ -46,7 +48,7 @@ const WhiteboardModule: React.FC<WhiteboardProps> = ({
   const [activeCanvasId, setActiveCanvasId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(!embedded);
   const [activeNote, setActiveNote] = useState<any>(null);
-  const [activeTool, setActiveTool] = useState('select');
+  const [activeTool, setActiveTool] = useState(readOnly ? 'pan' : 'select');
   const [dragMode, setDragMode] = useState<string | null>(null); 
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0, width: 0, rotation: 0 });
   const [isUploading, setIsUploading] = useState(false);
@@ -166,6 +168,7 @@ const WhiteboardModule: React.FC<WhiteboardProps> = ({
   };
 
   const updateActiveCanvas = (props: any) => {
+    if (readOnly) return;
     if (embedded) {
       if (onUpdateCanvas) {
          const updates: any = {};
@@ -421,7 +424,7 @@ const WhiteboardModule: React.FC<WhiteboardProps> = ({
   }, [activeCanvas]);
 
   const handleMouseDown = (e, note, mode = 'translate') => {
-    if (activeTool === 'pan' || note.locked) return;
+    if (readOnly || activeTool === 'pan' || note.locked) return;
     e.stopPropagation();
     setActiveNote(note);
     setDragMode(mode);
@@ -444,6 +447,7 @@ const WhiteboardModule: React.FC<WhiteboardProps> = ({
   };
 
   const startDrawingLine = (e, note, side) => {
+    if (readOnly) return;
     e.stopPropagation();
     const rect = boardRef.current.getBoundingClientRect();
     const rawX = e.clientX - rect.left;
@@ -454,7 +458,7 @@ const WhiteboardModule: React.FC<WhiteboardProps> = ({
   };
 
   const handleBoardMouseDown = (e) => {
-    if (activeTool === 'pan' || e.button === 1) {
+    if (readOnly || activeTool === 'pan' || e.button === 1) {
       setIsPanning(true);
       setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
     } else {
@@ -783,69 +787,107 @@ const WhiteboardModule: React.FC<WhiteboardProps> = ({
           <style>{`.wb-toolbar-container::-webkit-scrollbar { display: none; }`}</style>
           <div className="wb-toolbar-inner" style={{ display: 'flex', gap: '8px', flexWrap: 'nowrap', flexShrink: 0, alignItems: 'center' }}>
             
-            {!embedded && (
-              <div style={{ display: 'flex', gap: '4px', background: 'var(--cms-bg)', padding: '4px', borderRadius: '12px', border: '1px solid var(--cms-border)', flexShrink: 0 }}>
-                <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} style={{ background: isSidebarOpen ? 'var(--cms-card-bg-hover)' : 'transparent', border: 'none', color: isSidebarOpen ? 'var(--cms-accent)' : 'var(--cms-text-primary)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title="Daftar Kanvas" onMouseOver={(e) => e.currentTarget.style.background = 'var(--cms-card-bg-hover)'} onMouseOut={(e) => { if(!isSidebarOpen) e.currentTarget.style.background = 'transparent'; }}>
-                   {isSidebarOpen ? <ChevronLeft size={20} /> : <Layers size={20} />}
-                </button>
-              </div>
-            )}
+            {readOnly ? (
+              <>
+                <div style={{ display: 'flex', gap: '4px', background: 'var(--cms-bg)', padding: '4px', borderRadius: '12px', border: '1px solid var(--cms-border)', flexShrink: 0 }}>
+                  <button onClick={() => setActiveTool(activeTool === 'pan' ? 'select' : 'pan')} style={{ background: activeTool === 'pan' ? 'var(--cms-card-bg-hover)' : 'transparent', border: 'none', color: activeTool === 'pan' ? 'var(--cms-accent)' : 'var(--cms-text-primary)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title="Geser Kanvas (Hand Tool)">
+                    <Hand size={20} />
+                  </button>
+                  <button onClick={resetView} style={{ background: 'transparent', border: 'none', color: 'var(--cms-text-primary)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title="Pusatkan Tampilan (Reset View)">
+                    <Target size={20} />
+                  </button>
+                </div>
 
-            <div style={{ display: 'flex', gap: '4px', background: 'var(--cms-bg)', padding: '4px', borderRadius: '12px', border: '1px solid var(--cms-border)', flexShrink: 0 }}>
-              <button onClick={() => addNote('text')} style={{ background: 'transparent', border: 'none', color: 'var(--cms-accent)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title="Tambah Note" onMouseOver={(e) => e.currentTarget.style.background = 'rgba(59,130,246,0.1)'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}>
-                 <Plus size={20} strokeWidth={3} />
-              </button>
-              <button onClick={() => addNote('todo')} style={{ background: 'transparent', border: 'none', color: 'var(--cms-text-primary)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title="Tambah Todo" onMouseOver={(e) => e.currentTarget.style.background = 'var(--cms-card-bg-hover)'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}>
-                 <ListTodo size={20} />
-              </button>
-              <button onClick={() => addNote('link')} style={{ background: 'transparent', border: 'none', color: 'var(--cms-text-primary)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title="Tambah Tautan" onMouseOver={(e) => e.currentTarget.style.background = 'var(--cms-card-bg-hover)'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}>
-                 <LinkIcon size={20} />
-              </button>
-              <div style={{ position: 'relative' }}>
-                <button onClick={() => setShowImageMenu(!showImageMenu)} style={{ background: 'transparent', border: 'none', color: 'var(--cms-text-primary)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title="Tambah Gambar" onMouseOver={(e) => e.currentTarget.style.background = 'var(--cms-card-bg-hover)'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}>
-                   {isUploading ? <Loader2 className="animate-spin" size={20} /> : <ImageIcon size={20} />}
-                </button>
-                {showImageMenu && (
-                   <div style={{ position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)', marginBottom: 8, background: 'var(--cms-card-bg)', borderRadius: 12, padding: 8, border: '1px solid var(--cms-border)', display: 'flex', flexDirection: 'column', gap: 4, boxShadow: '0 10px 25px rgba(0,0,0,0.2)', zIndex: 100 }}>
-                      <label style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 12px', cursor: 'pointer', borderRadius: 8, whiteSpace: 'nowrap', color: 'var(--cms-text)' }} className="cms-menu-item">
-                         <Upload size={16} /> <span>Upload PC</span>
-                         <input type="file" style={{ display: 'none' }} onChange={(e) => { setShowImageMenu(false); handleImageUpload(e); }} disabled={isUploading} />
-                      </label>
-                      <button onClick={() => { setShowImageMenu(false); setShowGalleryModal(true); }} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 12px', cursor: 'pointer', borderRadius: 8, border: 'none', background: 'transparent', color: 'var(--cms-text)', whiteSpace: 'nowrap', textAlign: 'left', width: '100%' }} className="cms-menu-item">
-                         <ImageIcon size={16} /> <span>Galeri Media</span>
-                      </button>
-                   </div>
+                <div style={{ display: 'flex', gap: '4px', background: 'var(--cms-bg)', padding: '4px', borderRadius: '12px', border: '1px solid var(--cms-border)', flexShrink: 0, alignItems: 'center' }}>
+                  <button onClick={() => handleZoom(1.2)} style={{ background: 'transparent', border: 'none', color: 'var(--cms-text-primary)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title="Zoom In"><ZoomIn size={20} /></button>
+                  <button onClick={() => handleZoom(0.8)} style={{ background: 'transparent', border: 'none', color: 'var(--cms-text-primary)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title="Zoom Out"><ZoomOut size={20} /></button>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--cms-text-muted)', padding: '0 6px', userSelect: 'none' }}>{Math.round(zoom * 100)}%</span>
+                </div>
+
+                <div style={{ display: 'flex', gap: '4px', background: 'var(--cms-bg)', padding: '4px', borderRadius: '12px', border: '1px solid var(--cms-border)', flexShrink: 0 }}>
+                  {Object.keys(bgStyles).map(key => (
+                    <button key={key} onClick={() => updateActiveCanvas({ bg: key })} style={{ background: activeCanvas?.bg === key ? 'var(--cms-card-bg-hover)' : 'transparent', border: 'none', color: activeCanvas?.bg === key ? 'var(--cms-accent)' : 'var(--cms-text-muted)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title={`Latar: ${key}`}>
+                      {key === 'grid' ? <Grid3X3 size={20} /> : key === 'dots' ? <Circle size={6} fill="currentColor" /> : key === 'plain' ? <Square size={20} /> : <Layout size={20} />}
+                    </button>
+                  ))}
+                </div>
+
+                <div style={{ display: 'flex', gap: '4px', background: 'var(--cms-bg)', padding: '4px', borderRadius: '12px', border: '1px solid var(--cms-border)', flexShrink: 0 }}>
+                  <button onClick={handleExportPng} style={{ background: 'transparent', border: 'none', color: 'var(--cms-text-primary)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title="Unduh Gambar PNG">
+                    <Download size={20} />
+                  </button>
+                  <button onClick={handleExportPdf} style={{ background: 'transparent', border: 'none', color: 'var(--cms-text-primary)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title="Unduh / Cetak PDF">
+                    <FileText size={20} />
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                {!embedded && (
+                  <div style={{ display: 'flex', gap: '4px', background: 'var(--cms-bg)', padding: '4px', borderRadius: '12px', border: '1px solid var(--cms-border)', flexShrink: 0 }}>
+                    <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} style={{ background: isSidebarOpen ? 'var(--cms-card-bg-hover)' : 'transparent', border: 'none', color: isSidebarOpen ? 'var(--cms-accent)' : 'var(--cms-text-primary)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title="Daftar Kanvas" onMouseOver={(e) => e.currentTarget.style.background = 'var(--cms-card-bg-hover)'} onMouseOut={(e) => { if(!isSidebarOpen) e.currentTarget.style.background = 'transparent'; }}>
+                       {isSidebarOpen ? <ChevronLeft size={20} /> : <Layers size={20} />}
+                    </button>
+                  </div>
                 )}
-              </div>
-            </div>
 
-            <div style={{ display: 'flex', gap: '4px', background: 'var(--cms-bg)', padding: '4px', borderRadius: '12px', border: '1px solid var(--cms-border)', flexShrink: 0 }}>
-               {Object.keys(bgStyles).map(key => (
-                 <button key={key} onClick={() => updateActiveCanvas({ bg: key })} style={{ background: activeCanvas?.bg === key ? 'var(--cms-card-bg-hover)' : 'transparent', border: 'none', color: activeCanvas?.bg === key ? 'var(--cms-accent)' : 'var(--cms-text-muted)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title={`Ganti Background: ${key}`} onMouseOver={(e) => e.currentTarget.style.background = 'var(--cms-card-bg-hover)'} onMouseOut={(e) => { if(activeCanvas?.bg !== key) e.currentTarget.style.background = 'transparent'; }}>
-                   {key === 'grid' ? <Grid3X3 size={20} /> : key === 'dots' ? <Circle size={6} fill="currentColor" /> : key === 'plain' ? <Square size={20} /> : <Layout size={20} />}
-                 </button>
-               ))}
-            </div>
+                <div style={{ display: 'flex', gap: '4px', background: 'var(--cms-bg)', padding: '4px', borderRadius: '12px', border: '1px solid var(--cms-border)', flexShrink: 0 }}>
+                  <button onClick={() => addNote('text')} style={{ background: 'transparent', border: 'none', color: 'var(--cms-accent)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title="Tambah Note" onMouseOver={(e) => e.currentTarget.style.background = 'rgba(59,130,246,0.1)'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}>
+                     <Plus size={20} strokeWidth={3} />
+                  </button>
+                  <button onClick={() => addNote('todo')} style={{ background: 'transparent', border: 'none', color: 'var(--cms-text-primary)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title="Tambah Todo" onMouseOver={(e) => e.currentTarget.style.background = 'var(--cms-card-bg-hover)'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}>
+                     <ListTodo size={20} />
+                  </button>
+                  <button onClick={() => addNote('link')} style={{ background: 'transparent', border: 'none', color: 'var(--cms-text-primary)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title="Tambah Tautan" onMouseOver={(e) => e.currentTarget.style.background = 'var(--cms-card-bg-hover)'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}>
+                     <LinkIcon size={20} />
+                  </button>
+                  <div style={{ position: 'relative' }}>
+                    <button onClick={() => setShowImageMenu(!showImageMenu)} style={{ background: 'transparent', border: 'none', color: 'var(--cms-text-primary)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title="Tambah Gambar" onMouseOver={(e) => e.currentTarget.style.background = 'var(--cms-card-bg-hover)'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}>
+                       {isUploading ? <Loader2 className="animate-spin" size={20} /> : <ImageIcon size={20} />}
+                    </button>
+                    {showImageMenu && (
+                        <div style={{ position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)', marginBottom: 8, background: 'var(--cms-card-bg)', borderRadius: 12, padding: 8, border: '1px solid var(--cms-border)', display: 'flex', flexDirection: 'column', gap: 4, boxShadow: '0 10px 25px rgba(0,0,0,0.2)', zIndex: 100 }}>
+                          <label style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 12px', cursor: 'pointer', borderRadius: 8, whiteSpace: 'nowrap', color: 'var(--cms-text)' }} className="cms-menu-item">
+                             <Upload size={16} /> <span>Upload PC</span>
+                             <input type="file" style={{ display: 'none' }} onChange={(e) => { setShowImageMenu(false); handleImageUpload(e); }} disabled={isUploading} />
+                          </label>
+                          <button onClick={() => { setShowImageMenu(false); setShowGalleryModal(true); }} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 12px', cursor: 'pointer', borderRadius: 8, border: 'none', background: 'transparent', color: 'var(--cms-text)', whiteSpace: 'nowrap', textAlign: 'left', width: '100%' }} className="cms-menu-item">
+                             <ImageIcon size={16} /> <span>Galeri Media</span>
+                          </button>
+                       </div>
+                    )}
+                  </div>
+                </div>
 
-            <div style={{ display: 'flex', gap: '4px', background: 'var(--cms-bg)', padding: '4px', borderRadius: '12px', border: '1px solid var(--cms-border)', flexShrink: 0 }}>
-              <button onClick={() => setActiveTool(activeTool === 'pan' ? 'select' : 'pan')} style={{ background: activeTool === 'pan' ? 'var(--cms-card-bg-hover)' : 'transparent', border: 'none', color: activeTool === 'pan' ? 'var(--cms-accent)' : 'var(--cms-text-primary)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title="Geser (Hand Tool)" onMouseOver={(e) => e.currentTarget.style.background = 'var(--cms-card-bg-hover)'} onMouseOut={(e) => { if(activeTool !== 'pan') e.currentTarget.style.background = 'transparent'; }}>
-                <Hand size={20} />
-              </button>
-            </div>
+                <div style={{ display: 'flex', gap: '4px', background: 'var(--cms-bg)', padding: '4px', borderRadius: '12px', border: '1px solid var(--cms-border)', flexShrink: 0 }}>
+                   {Object.keys(bgStyles).map(key => (
+                     <button key={key} onClick={() => updateActiveCanvas({ bg: key })} style={{ background: activeCanvas?.bg === key ? 'var(--cms-card-bg-hover)' : 'transparent', border: 'none', color: activeCanvas?.bg === key ? 'var(--cms-accent)' : 'var(--cms-text-muted)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title={`Ganti Background: ${key}`} onMouseOver={(e) => e.currentTarget.style.background = 'var(--cms-card-bg-hover)'} onMouseOut={(e) => { if(activeCanvas?.bg !== key) e.currentTarget.style.background = 'transparent'; }}>
+                       {key === 'grid' ? <Grid3X3 size={20} /> : key === 'dots' ? <Circle size={6} fill="currentColor" /> : key === 'plain' ? <Square size={20} /> : <Layout size={20} />}
+                     </button>
+                   ))}
+                </div>
 
-            <div style={{ display: 'flex', gap: '4px', background: 'var(--cms-bg)', padding: '4px', borderRadius: '12px', border: '1px solid var(--cms-border)', flexShrink: 0 }}>
-              <button onClick={handleExportPng} style={{ background: 'transparent', border: 'none', color: 'var(--cms-text-primary)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title="Export ke PNG" onMouseOver={(e) => e.currentTarget.style.background = 'var(--cms-card-bg-hover)'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}>
-                 <Download size={20} />
-              </button>
-              <button onClick={handleExportPdf} style={{ background: 'transparent', border: 'none', color: 'var(--cms-text-primary)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title="Export ke PDF" onMouseOver={(e) => e.currentTarget.style.background = 'var(--cms-card-bg-hover)'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}>
-                 <FileText size={20} />
-              </button>
-            </div>
+                <div style={{ display: 'flex', gap: '4px', background: 'var(--cms-bg)', padding: '4px', borderRadius: '12px', border: '1px solid var(--cms-border)', flexShrink: 0 }}>
+                  <button onClick={() => setActiveTool(activeTool === 'pan' ? 'select' : 'pan')} style={{ background: activeTool === 'pan' ? 'var(--cms-card-bg-hover)' : 'transparent', border: 'none', color: activeTool === 'pan' ? 'var(--cms-accent)' : 'var(--cms-text-primary)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title="Geser (Hand Tool)" onMouseOver={(e) => e.currentTarget.style.background = 'var(--cms-card-bg-hover)'} onMouseOut={(e) => { if(activeTool !== 'pan') e.currentTarget.style.background = 'transparent'; }}>
+                    <Hand size={20} />
+                  </button>
+                </div>
 
-            <div style={{ display: 'flex', gap: '4px', background: 'var(--cms-bg)', padding: '4px', borderRadius: '12px', border: '1px solid var(--cms-border)', flexShrink: 0 }}>
-               <button onClick={() => handleZoom(1.2)} style={{ background: 'transparent', border: 'none', color: 'var(--cms-text-primary)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title="Zoom In" onMouseOver={(e) => e.currentTarget.style.background = 'var(--cms-card-bg-hover)'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}><ZoomIn size={20} /></button>
-               <button onClick={() => handleZoom(0.8)} style={{ background: 'transparent', border: 'none', color: 'var(--cms-text-primary)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title="Zoom Out" onMouseOver={(e) => e.currentTarget.style.background = 'var(--cms-card-bg-hover)'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}><ZoomOut size={20} /></button>
-            </div>
+                <div style={{ display: 'flex', gap: '4px', background: 'var(--cms-bg)', padding: '4px', borderRadius: '12px', border: '1px solid var(--cms-border)', flexShrink: 0 }}>
+                  <button onClick={handleExportPng} style={{ background: 'transparent', border: 'none', color: 'var(--cms-text-primary)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title="Export ke PNG" onMouseOver={(e) => e.currentTarget.style.background = 'var(--cms-card-bg-hover)'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}>
+                     <Download size={20} />
+                  </button>
+                  <button onClick={handleExportPdf} style={{ background: 'transparent', border: 'none', color: 'var(--cms-text-primary)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title="Export ke PDF" onMouseOver={(e) => e.currentTarget.style.background = 'var(--cms-card-bg-hover)'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}>
+                     <FileText size={20} />
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', gap: '4px', background: 'var(--cms-bg)', padding: '4px', borderRadius: '12px', border: '1px solid var(--cms-border)', flexShrink: 0 }}>
+                   <button onClick={() => handleZoom(1.2)} style={{ background: 'transparent', border: 'none', color: 'var(--cms-text-primary)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title="Zoom In" onMouseOver={(e) => e.currentTarget.style.background = 'var(--cms-card-bg-hover)'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}><ZoomIn size={20} /></button>
+                   <button onClick={() => handleZoom(0.8)} style={{ background: 'transparent', border: 'none', color: 'var(--cms-text-primary)', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} title="Zoom Out" onMouseOver={(e) => e.currentTarget.style.background = 'var(--cms-card-bg-hover)'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}><ZoomOut size={20} /></button>
+                </div>
+              </>
+            )}
             
           </div>
         </div>
@@ -948,15 +990,19 @@ const WhiteboardModule: React.FC<WhiteboardProps> = ({
                   onMouseDown={(e) => e.stopPropagation()}
                   style={{ position: 'absolute', left: (fx+tx)/2 - 60, top: (fy+ty)/2 - 16, width: 120, zIndex: 9999 }}
                 >
-                  <div style={{ background: 'var(--cms-card-bg)', border: activeLine === line.id ? '1.5px solid var(--cms-accent)' : '1px solid var(--glass-border)', borderRadius: 8, padding: '4px 8px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-                    <input 
-                      value={line.text || ''} 
-                      onChange={(e) => updateActiveCanvas({ lines: activeCanvas.lines.map(l => l.id === line.id ? { ...l, text: e.target.value } : l) })} 
-                      placeholder={activeLine === line.id ? "Label..." : ""} 
-                      style={{ width: '100%', background: 'transparent', border: 'none', color: 'var(--cms-text)', fontSize: 11, fontWeight: 700, textAlign: 'center', outline: 'none' }} 
-                    />
+                  <div style={{ background: 'var(--cms-card-bg)', border: (!readOnly && activeLine === line.id) ? '1.5px solid var(--cms-accent)' : '1px solid var(--glass-border)', borderRadius: 8, padding: '4px 8px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+                    {readOnly ? (
+                      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--cms-text)', userSelect: 'text', textAlign: 'center' }}>{line.text}</span>
+                    ) : (
+                      <input 
+                        value={line.text || ''} 
+                        onChange={(e) => updateActiveCanvas({ lines: activeCanvas.lines.map(l => l.id === line.id ? { ...l, text: e.target.value } : l) })} 
+                        placeholder={activeLine === line.id ? "Label..." : ""} 
+                        style={{ width: '100%', background: 'transparent', border: 'none', color: 'var(--cms-text)', fontSize: 11, fontWeight: 700, textAlign: 'center', outline: 'none' }} 
+                      />
+                    )}
                   </div>
-                  {activeLine === line.id && (
+                  {!readOnly && activeLine === line.id && (
                     <div style={{ 
                       position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', marginTop: 8, 
                       background: 'var(--cms-card-bg)', border: '1px solid var(--glass-border)', 
@@ -1021,8 +1067,8 @@ const WhiteboardModule: React.FC<WhiteboardProps> = ({
               <div 
                 key={note.id} 
                 data-note-id={note.id}
-                onMouseEnter={() => setHoveredNoteId(note.id)}
-                onMouseLeave={() => setHoveredNoteId(prev => prev === note.id ? null : prev)}
+                onMouseEnter={() => !readOnly && setHoveredNoteId(note.id)}
+                onMouseLeave={() => !readOnly && setHoveredNoteId(prev => prev === note.id ? null : prev)}
                 style={{ 
                   position: 'absolute', 
                   left: note.x, 
@@ -1030,14 +1076,14 @@ const WhiteboardModule: React.FC<WhiteboardProps> = ({
                   transform: `rotate(${note.rotation}deg)`, 
                   width: note.width, 
                   zIndex: note.zIndex || 10, 
-                  cursor: activeNote?.id === note.id ? 'grabbing' : 'grab', 
-                  userSelect: 'none',
+                  cursor: readOnly ? 'default' : (activeNote?.id === note.id ? 'grabbing' : 'grab'), 
+                  userSelect: readOnly ? 'text' : 'none',
                   transition: activeNote?.id === note.id ? 'none' : 'transform 0.35s cubic-bezier(0.16, 1, 0.3, 1)'
                 }}
               >
                 <div 
-                  onMouseDown={(e) => handleMouseDown(e, note, 'translate')} 
-                  onTouchStart={(e) => handleTouchStart(e, note, 'translate')}
+                  onMouseDown={(e) => !readOnly && handleMouseDown(e, note, 'translate')} 
+                  onTouchStart={(e) => !readOnly && handleTouchStart(e, note, 'translate')}
                   style={{ 
                     background: note.type === 'image' ? 'transparent' : note.color.bg, 
                     color: note.color.text, 
@@ -1051,95 +1097,144 @@ const WhiteboardModule: React.FC<WhiteboardProps> = ({
                   }}
                 >
                    {note.type === 'text' ? (
-                     <textarea 
-                        style={{ width: '100%', background: 'transparent', border: 'none', color: 'inherit', resize: 'none', outline: 'none', fontSize: 16, fontWeight: 800, minHeight: 100, lineHeight: 1.5, height: 'auto', overflow: 'hidden', fontFamily: 'inherit', boxShadow: 'none', padding: 0, margin: 0, display: 'block' }} 
-                       value={note.content} 
-                       onChange={(e) => {
-                         updateActiveCanvas({ notes: activeCanvas.notes.map(n => n.id === note.id ? { ...n, content: e.target.value } : n) });
-                         e.target.style.height = 'auto';
-                         e.target.style.height = e.target.scrollHeight + 'px';
-                       }} 
-                       placeholder="Tulis ide kamu di sini..." 
-                     />
+                     readOnly ? (
+                       <div 
+                         style={{ 
+                           width: '100%', 
+                           color: 'inherit', 
+                           fontSize: 16, 
+                           fontWeight: 800, 
+                           minHeight: 60, 
+                           lineHeight: 1.5, 
+                           fontFamily: 'inherit', 
+                           padding: 0, 
+                           margin: 0, 
+                           whiteSpace: 'pre-wrap', 
+                           wordBreak: 'break-word',
+                           userSelect: 'text' 
+                         }}
+                       >
+                         {note.content || ''}
+                       </div>
+                     ) : (
+                       <textarea 
+                          style={{ width: '100%', background: 'transparent', border: 'none', color: 'inherit', resize: 'none', outline: 'none', fontSize: 16, fontWeight: 800, minHeight: 100, lineHeight: 1.5, height: 'auto', overflow: 'hidden', fontFamily: 'inherit', boxShadow: 'none', padding: 0, margin: 0, display: 'block' }} 
+                         value={note.content} 
+                         onChange={(e) => {
+                           updateActiveCanvas({ notes: activeCanvas.notes.map(n => n.id === note.id ? { ...n, content: e.target.value } : n) });
+                           e.target.style.height = 'auto';
+                           e.target.style.height = e.target.scrollHeight + 'px';
+                         }} 
+                         placeholder="Tulis ide kamu di sini..." 
+                       />
+                     )
                    ) : note.type === 'todo' ? (
-                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minHeight: 120, color: 'inherit' }}>
+                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minHeight: 60, color: 'inherit' }}>
                         {(Array.isArray(note.tasks) ? note.tasks : []).map((task, idx) => (
                           <div key={task.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '2px 0' }}>
-                             <button onClick={(e) => { e.stopPropagation(); updateActiveCanvas({ notes: activeCanvas.notes.map(n => n.id === note.id ? { ...n, tasks: n.tasks.map((t, i) => i === idx ? { ...t, completed: !t.completed } : t) } : n) }) }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, marginTop: 2, color: 'inherit', display: 'flex', opacity: task.completed ? 0.4 : 0.8 }}>
-                                {task.completed ? <CheckCircle2 size={18} /> : <Circle size={18} />}
-                             </button>
-                             <textarea 
-                                className="wb-textarea-clean"
-                                rows={1}
-                                autoFocus={task.id === lastAddedTaskId}
-                                onFocus={(e) => {
-                                  if(task.id === lastAddedTaskId) setLastAddedTaskId(null);
+                             {readOnly ? (
+                               <span style={{ display: 'flex', marginTop: 2, color: 'inherit', opacity: task.completed ? 0.4 : 0.8 }}>
+                                  {task.completed ? <CheckCircle2 size={18} /> : <Circle size={18} />}
+                               </span>
+                             ) : (
+                               <button onClick={(e) => { e.stopPropagation(); updateActiveCanvas({ notes: activeCanvas.notes.map(n => n.id === note.id ? { ...n, tasks: n.tasks.map((t, i) => i === idx ? { ...t, completed: !t.completed } : t) } : n) }) }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, marginTop: 2, color: 'inherit', display: 'flex', opacity: task.completed ? 0.4 : 0.8 }}>
+                                  {task.completed ? <CheckCircle2 size={18} /> : <Circle size={18} />}
+                               </button>
+                             )}
+                             {readOnly ? (
+                               <div style={{ 
+                                 width: '100%', 
+                                 color: 'inherit', 
+                                 fontSize: 15, 
+                                 fontWeight: 800, 
+                                 lineHeight: 1.4, 
+                                 textDecoration: task.completed ? 'line-through' : 'none', 
+                                 opacity: task.completed ? 0.4 : 1,
+                                 wordBreak: 'break-word',
+                                 userSelect: 'text'
+                               }}>
+                                 {task.text || ''}
+                               </div>
+                             ) : (
+                               <textarea 
+                                  className="wb-textarea-clean"
+                                  rows={1}
+                                  autoFocus={task.id === lastAddedTaskId}
+                                  onFocus={(e) => {
+                                    if(task.id === lastAddedTaskId) setLastAddedTaskId(null);
+                                    e.target.style.height = 'auto';
+                                    e.target.style.height = e.target.scrollHeight + 'px';
+                                  }}
+                                style={{ 
+                                    width: '100%', 
+                                    background: 'transparent', 
+                                    border: 'none', 
+                                    color: 'inherit', 
+                                    caretColor: 'currentColor',
+                                    resize: 'none', 
+                                    outline: 'none', 
+                                    fontSize: 15, 
+                                    fontWeight: 800, 
+                                    lineHeight: 1.4, 
+                                    height: 'auto', 
+                                    overflow: 'hidden', 
+                                    padding: 0, 
+                                    margin: 0, 
+                                    fontFamily: 'inherit', 
+                                    textDecoration: task.completed ? 'line-through' : 'none', 
+                                    opacity: task.completed ? 0.4 : 1, 
+                                    boxShadow: 'none',
+                                    display: 'block',
+                                    appearance: 'none',
+                                    WebkitAppearance: 'none'
+                                }} 
+                                value={task.text || ''} 
+                                onChange={(e) => {
+                                  updateActiveCanvas({ notes: activeCanvas.notes.map(n => n.id === note.id ? { ...n, tasks: n.tasks.map((t, i) => i === idx ? { ...t, text: e.target.value } : t) } : n) });
                                   e.target.style.height = 'auto';
                                   e.target.style.height = e.target.scrollHeight + 'px';
                                 }}
-                              style={{ 
-                                  width: '100%', 
-                                  background: 'transparent', 
-                                  border: 'none', 
-                                  color: 'inherit', 
-                                  caretColor: 'currentColor',
-                                  resize: 'none', 
-                                  outline: 'none', 
-                                  fontSize: 15, 
-                                  fontWeight: 800, 
-                                  lineHeight: 1.4, 
-                                  height: 'auto', 
-                                  overflow: 'hidden', 
-                                  padding: 0, 
-                                  margin: 0,
-                                  fontFamily: 'inherit', 
-                                  textDecoration: task.completed ? 'line-through' : 'none', 
-                                  opacity: task.completed ? 0.4 : 1, 
-                                  boxShadow: 'none',
-                                  display: 'block',
-                                  appearance: 'none',
-                                  WebkitAppearance: 'none'
-                              }} 
-                              value={task.text || ''} 
-                              onChange={(e) => {
-                                updateActiveCanvas({ notes: activeCanvas.notes.map(n => n.id === note.id ? { ...n, tasks: n.tasks.map((t, i) => i === idx ? { ...t, text: e.target.value } : t) } : n) });
-                                e.target.style.height = 'auto';
-                                e.target.style.height = e.target.scrollHeight + 'px';
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  const newId = Date.now();
-                                  const newTasks = [...note.tasks];
-                                  newTasks.splice(idx + 1, 0, { id: newId, text: '', completed: false });
-                                  setLastAddedTaskId(newId);
-                                  updateActiveCanvas({ notes: activeCanvas.notes.map(n => n.id === note.id ? { ...n, tasks: newTasks } : n) });
-                                } else if (e.key === 'Backspace' && task.text === '' && note.tasks.length > 1) {
-                                  e.preventDefault();
-                                  const newTasks = note.tasks.filter((_, i) => i !== idx);
-                                  updateActiveCanvas({ notes: activeCanvas.notes.map(n => n.id === note.id ? { ...n, tasks: newTasks } : n) });
-                                }
-                              }}
-                              placeholder="Tambah tugas..."
-                            />
-                         </div>
-                       ))}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    const newId = Date.now();
+                                    const newTasks = [...note.tasks];
+                                    newTasks.splice(idx + 1, 0, { id: newId, text: '', completed: false });
+                                    setLastAddedTaskId(newId);
+                                    updateActiveCanvas({ notes: activeCanvas.notes.map(n => n.id === note.id ? { ...n, tasks: newTasks } : n) });
+                                  } else if (e.key === 'Backspace' && task.text === '' && note.tasks.length > 1) {
+                                    e.preventDefault();
+                                    const newTasks = note.tasks.filter((_, i) => i !== idx);
+                                    updateActiveCanvas({ notes: activeCanvas.notes.map(n => n.id === note.id ? { ...n, tasks: newTasks } : n) });
+                                  }
+                                }}
+                                placeholder="Tambah tugas..."
+                              />
+                             )}
+                          </div>
+                        ))}
                      </div>
                    ) : note.type === 'link' ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 120, color: 'inherit' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 80, color: 'inherit' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: 0.7, fontSize: 12, fontWeight: 800 }}><LinkIcon size={16}/> {note.content ? 'WEB LINK' : 'NEW LINK'}</div>
                         
-                        <textarea 
-                          value={note.content || ''} 
-                          onChange={(e) => {
-                            updateActiveCanvas({ notes: activeCanvas.notes.map(n => n.id === note.id ? { ...n, content: e.target.value } : n) });
-                            e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px';
-                          }} 
-                          placeholder="Judul / Keterangan Link..." 
-                          style={{ width: '100%', background: 'transparent', border: 'none', color: 'inherit', resize: 'none', outline: 'none', fontSize: 18, fontWeight: 900, lineHeight: 1.3, padding: 0, margin: 0, overflow: 'hidden' }}
-                          onMouseDown={(e) => e.stopPropagation()}
-                          rows={1}
-                        />
+                        {readOnly ? (
+                          <div style={{ width: '100%', fontSize: 17, fontWeight: 900, lineHeight: 1.3, wordBreak: 'break-word', userSelect: 'text' }}>
+                            {note.content || 'Tautan Eksternal'}
+                          </div>
+                        ) : (
+                          <textarea 
+                            value={note.content || ''} 
+                            onChange={(e) => {
+                              updateActiveCanvas({ notes: activeCanvas.notes.map(n => n.id === note.id ? { ...n, content: e.target.value } : n) });
+                              e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px';
+                            }} 
+                            placeholder="Judul / Keterangan Link..." 
+                            style={{ width: '100%', background: 'transparent', border: 'none', color: 'inherit', resize: 'none', outline: 'none', fontSize: 18, fontWeight: 900, lineHeight: 1.3, padding: 0, margin: 0, overflow: 'hidden' }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            rows={1}
+                          />
+                        )}
 
                         {note.linkUrl ? (
                           <div style={{ display: 'flex', gap: 8, marginTop: 'auto' }}>
@@ -1152,7 +1247,7 @@ const WhiteboardModule: React.FC<WhiteboardProps> = ({
                             >
                               Buka Tautan <ExternalLink size={14} />
                             </a>
-                            {activeNote?.id === note.id && (
+                            {!readOnly && activeNote?.id === note.id && (
                               <button 
                                 onMouseDown={async (e) => {
                                   e.stopPropagation();
@@ -1169,18 +1264,20 @@ const WhiteboardModule: React.FC<WhiteboardProps> = ({
                             )}
                           </div>
                         ) : (
-                          <button 
-                            onMouseDown={async (e) => {
-                              e.stopPropagation();
-                              const url = await showPrompt("Masukkan Tautan Web (URL):", "");
-                              if (url !== null && url.trim() !== "") {
-                                updateActiveCanvas({ notes: activeCanvas.notes.map(n => n.id === note.id ? { ...n, linkUrl: url } : n) });
-                              }
-                            }}
-                            style={{ marginTop: 'auto', background: 'rgba(0,0,0,0.1)', color: 'inherit', padding: '10px 16px', borderRadius: 8, fontSize: 13, fontWeight: 800, border: '1px dashed rgba(0,0,0,0.2)', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6 }}
-                          >
-                            <LinkIcon size={14} /> Setel Tautan
-                          </button>
+                          !readOnly && (
+                            <button 
+                              onMouseDown={async (e) => {
+                                e.stopPropagation();
+                                const url = await showPrompt("Masukkan Tautan Web (URL):", "");
+                                if (url !== null && url.trim() !== "") {
+                                  updateActiveCanvas({ notes: activeCanvas.notes.map(n => n.id === note.id ? { ...n, linkUrl: url } : n) });
+                                }
+                              }}
+                              style={{ marginTop: 'auto', background: 'rgba(0,0,0,0.1)', color: 'inherit', padding: '10px 16px', borderRadius: 8, fontSize: 13, fontWeight: 800, border: '1px dashed rgba(0,0,0,0.2)', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6 }}
+                            >
+                              <LinkIcon size={14} /> Setel Tautan
+                            </button>
+                          )
                         )}
                       </div>
                    ) : (
@@ -1190,7 +1287,7 @@ const WhiteboardModule: React.FC<WhiteboardProps> = ({
                    )}
                 </div>
 
-                {activeNote?.id === note.id && !drawingLine && (
+                {!readOnly && activeNote?.id === note.id && !drawingLine && (
                   <>
                     <div onMouseDown={(e) => startDrawingLine(e, note, 'top')} onTouchStart={(e) => startDrawingLine(e, note, 'top')} style={{position:'absolute', top: -12, left: '50%', transform:'translateX(-50%)', width: 24, height: 24, background: 'var(--cms-accent)', borderRadius:'50%', cursor:'crosshair', display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', border:'2px solid var(--cms-card-bg)', zIndex:100, boxShadow: '0 4px 10px rgba(0,0,0,0.1)'}}><Plus size={14}/></div>
                     <div onMouseDown={(e) => startDrawingLine(e, note, 'bottom')} onTouchStart={(e) => startDrawingLine(e, note, 'bottom')} style={{position:'absolute', bottom: -12, left: '50%', transform:'translateX(-50%)', width: 24, height: 24, background: 'var(--cms-accent)', borderRadius:'50%', cursor:'crosshair', display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', border:'2px solid var(--cms-card-bg)', zIndex:100, boxShadow: '0 4px 10px rgba(0,0,0,0.1)'}}><Plus size={14}/></div>
@@ -1199,7 +1296,7 @@ const WhiteboardModule: React.FC<WhiteboardProps> = ({
                   </>
                 )}
 
-                {activeNote?.id === note.id && (
+                {!readOnly && activeNote?.id === note.id && (
                   <div
                     className="wb-note-toolbar"
                     onMouseDown={e => e.stopPropagation()}

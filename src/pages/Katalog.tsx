@@ -5,7 +5,7 @@ import {
   CheckCircle2, Ticket, Package, ShoppingCart, X, CreditCard, MessageCircle,
   SlidersHorizontal, Share2, Plus, Minus, Check, Heart, Trash2, ShoppingBag,
   Sparkles, Search, ShieldCheck, Zap, Layers, ChevronLeft, ChevronRight,
-  Maximize2, Minimize2
+  Maximize2, Minimize2, Clock, Briefcase, Cloud
 } from 'lucide-react';
 import { storage } from '../utils/storage';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
@@ -19,11 +19,21 @@ import { useScrollReveal } from '../hooks/useScrollReveal';
 import { useWebsiteTheme } from '../hooks/useWebsiteTheme';
 import { useLandingBodyFix } from '../hooks/useLandingBodyFix';
 import { useClientAuth } from '../context/ClientAuthContext';
-import { saveClientOrder } from '../services/clientAuth';
+import { saveClientOrder, isServiceProduct, creditAffiliateReferral } from '../services/clientAuth';
+import { googleSync } from '../utils/googleSync';
+import { createOrUpdateServiceOrder } from '../utils/serviceOrderSync';
 import PageHeroHeader from '../components/common/PageHeroHeader';
 import ProductDetailModal from '../components/katalog/ProductDetailModal';
 import { haptic } from '../utils/haptics';
 import { useBusinessProfile } from '../hooks/useBusinessProfile';
+import {
+  isProductFlashSaleActive,
+  getFlashSalePrice,
+  getFlashSaleDiscountPercent,
+  getFlashSaleTimeRemaining,
+  isPreOrderProduct,
+  getPreOrderQuotaProgress
+} from '../utils/flashSaleHelper';
 
 const genChatId = () => `chat-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
@@ -48,11 +58,56 @@ export default function Katalog() {
   const { showToast } = useToast();
   const containerRef = useRef<HTMLDivElement>(null);
   
-  const [products, setProducts] = useState<any[]>([]);
-  const [vouchers, setVouchers] = useState<any[]>([]);
-  const [cmsCategories, setCmsCategories] = useState<any[]>([]);
-  const [shopSettings, setShopSettings] = useState<any>({});
-  const [, setDataLoading] = useState(true);
+  const [products, setProducts] = useState<any[]>(() => {
+    try {
+      const raw = localStorage.getItem('porto_catalog_products');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed.filter((p: any) => p.isPublished);
+      }
+    } catch {}
+    return [];
+  });
+  const [vouchers, setVouchers] = useState<any[]>(() => {
+    try {
+      const raw = localStorage.getItem('porto_catalog_vouchers');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed.filter((v: any) => v.isActive);
+      }
+    } catch {}
+    return [];
+  });
+  const [cmsCategories, setCmsCategories] = useState<any[]>(() => {
+    try {
+      const raw = localStorage.getItem('porto_catalog_categories');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          return parsed.map((item: any) => {
+            if (typeof item === 'string') return item.trim();
+            if (item && typeof item === 'object') {
+              if (item.isActive === false) return '';
+              return (item.name || item.title || '').trim();
+            }
+            return '';
+          }).filter(Boolean);
+        }
+      }
+    } catch {}
+    return [];
+  });
+  const [shopSettings, setShopSettings] = useState<any>(() => {
+    try {
+      const raw = localStorage.getItem('porto_shop_settings') || localStorage.getItem('porto_settings');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return parsed.shopSettings || parsed;
+      }
+    } catch {}
+    return {};
+  });
+  const [, setDataLoading] = useState(false);
 
   // Sorting & search state
   const [sortBy, setSortBy] = useState<'newest' | 'price-asc' | 'price-desc' | 'name'>('newest');
@@ -92,8 +147,16 @@ export default function Katalog() {
     }
   });
 
-  const [showCartDrawer, setShowCartDrawer] = useState(false);
   const [showWishlistDrawer, setShowWishlistDrawer] = useState(false);
+
+  // Horizontal drag-to-scroll & navigation for Category Navigation Bar
+  const catScrollRef = useRef<HTMLDivElement>(null);
+  const [isCatDragging, setIsCatDragging] = useState(false);
+  const [catStartX, setCatStartX] = useState(0);
+  const [catStartScrollLeft, setCatStartScrollLeft] = useState(0);
+  const [catDragDistance, setCatDragDistance] = useState(0);
+  const [canScrollCatLeft, setCanScrollCatLeft] = useState(false);
+  const [canScrollCatRight, setCanScrollCatRight] = useState(false);
 
   // Force body/html/root scrollable (overrides global CMS fixed-body CSS)
   useLandingBodyFix();
@@ -114,7 +177,7 @@ export default function Katalog() {
 
   // Listen to cross-component drawer trigger events & URL params
   useEffect(() => {
-    const handleOpenCart = () => setShowCartDrawer(true);
+    const handleOpenCart = () => navigate('/keranjang');
     const handleOpenWishlist = () => setShowWishlistDrawer(true);
 
     window.addEventListener('porto_open_cart', handleOpenCart);
@@ -122,11 +185,7 @@ export default function Katalog() {
 
     const params = new URLSearchParams(location.search);
     if (params.get('openCart') === 'true') {
-      try {
-        const raw = localStorage.getItem('porto_client_cart');
-        if (raw) setCart(JSON.parse(raw));
-      } catch {}
-      setShowCartDrawer(true);
+      navigate('/keranjang');
     }
     const q = params.get('search') || params.get('q');
     if (q) setSearchQuery(q);
@@ -146,11 +205,11 @@ export default function Katalog() {
   const { client } = useClientAuth();
 
   const accentColor = (typeof localStorage !== 'undefined' ? localStorage.getItem('porto_accent_color') : null) || data?.theme?.accentColor || '#7c3aed';
-  const textColor = isDark ? '#f8fafc' : '#0f172a';
+  const textColor = isDark ? '#ffffff' : '#0f172a';
   const subTextColor = isDark ? '#94a3b8' : '#64748b';
-  const cardBg = isDark ? 'rgba(30, 41, 59, 0.7)' : '#ffffff';
-  const cardBorder = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const pageBg = isDark ? '#08080f' : '#ffffff';
+  const cardBg = isDark ? '#151824' : '#ffffff';
+  const cardBorder = isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(15, 23, 42, 0.08)';
+  const pageBg = isDark ? '#06070a' : '#eef2f6';
 
   // Detail Page State
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
@@ -166,11 +225,14 @@ export default function Katalog() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Synchronize category & product deep link from URL (/katalog/p/:id or /katalog/:category)
+  // Synchronize category & product deep link from URL (/katalog/p/:id or /katalog?product=:id or /katalog/:category)
   useEffect(() => {
     const parts = location.pathname.split('/').filter(Boolean);
+    const searchParams = new URLSearchParams(location.search);
+    const queryPId = searchParams.get('product') || searchParams.get('id') || searchParams.get('p');
+
     // Handle product deep links, e.g. /katalog/p/prod-123 or /katalog/item/prod-123
-    let pId: string | null = null;
+    let pId: string | null = queryPId ? decodeURIComponent(queryPId) : null;
     let cat = 'Semua';
 
     const pIdx = parts.indexOf('p');
@@ -196,7 +258,7 @@ export default function Katalog() {
         setSelectedProduct(found);
       }
     }
-  }, [location.pathname, products]);
+  }, [location.pathname, location.search, products]);
 
   const handleCategoryChange = (cat: string) => {
     setActiveCategory(cat);
@@ -228,7 +290,18 @@ export default function Katalog() {
   const [checkoutMode, setCheckoutMode] = useState<'direct' | 'cart'>('direct');
   const [showCheckout, setShowCheckout] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [checkoutForm, setCheckoutForm] = useState({ name: '', phone: '', email: '', address: '', notes: '', paymentMethodId: '' });
+  const [checkoutForm, setCheckoutForm] = useState({
+    name: '',
+    phone: '',
+    email: '',
+    address: '',
+    notes: '',
+    paymentMethodId: ''
+  });
+
+  // Flash Sale Expand / Collapse and Track Ref for Horizontal Carousel
+  const [isFlashSaleExpanded, setIsFlashSaleExpanded] = useState(false);
+  const flashSaleTrackRef = useRef<HTMLDivElement>(null);
 
   // 3-Digit Unique Verification Code for Cart Checkout
   const [cartUniqueCode, setCartUniqueCode] = useState(() => Math.floor(Math.random() * 899) + 100);
@@ -240,26 +313,50 @@ export default function Katalog() {
 
   // Flash Sale Live Countdown Timer
   const [flashTimeLeft, setFlashTimeLeft] = useState<{ hours: number; minutes: number; seconds: number } | null>(null);
+
+  const effectiveFlashEndTime = useMemo(() => {
+    if (shopSettings?.flashSale?.isActive && shopSettings?.flashSale?.endTime) {
+      if (new Date(shopSettings.flashSale.endTime).getTime() > Date.now()) {
+        return shopSettings.flashSale.endTime;
+      }
+    }
+    if (shopSettings?.flashSaleActive && shopSettings?.flashSaleEndTime) {
+      if (new Date(shopSettings.flashSaleEndTime).getTime() > Date.now()) {
+        return shopSettings.flashSaleEndTime;
+      }
+    }
+    const activeEnds = products
+      .filter((p: any) => isProductFlashSaleActive(p, shopSettings))
+      .map((p: any) => new Date(p.flashSale?.endTime || shopSettings?.flashSale?.endTime).getTime())
+      .filter((t: number) => !isNaN(t) && t > Date.now());
+    if (activeEnds.length > 0) {
+      const minEnd = Math.min(...activeEnds);
+      return new Date(minEnd).toISOString();
+    }
+    return null;
+  }, [shopSettings, products]);
+
   useEffect(() => {
-    if (!shopSettings?.flashSaleActive || !shopSettings?.flashSaleEndTime) {
+    if (!effectiveFlashEndTime) {
       setFlashTimeLeft(null);
       return;
     }
     const updateTimer = () => {
-      const diff = new Date(shopSettings.flashSaleEndTime).getTime() - Date.now();
-      if (diff <= 0) {
+      const remaining = getFlashSaleTimeRemaining(effectiveFlashEndTime);
+      if (!remaining) {
         setFlashTimeLeft(null);
       } else {
-        const hours = Math.floor(diff / (1000 * 60 * 60));
-        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-        setFlashTimeLeft({ hours, minutes, seconds });
+        setFlashTimeLeft({
+          hours: remaining.hours,
+          minutes: remaining.minutes,
+          seconds: remaining.seconds
+        });
       }
     };
     updateTimer();
     const timer = setInterval(updateTimer, 1000);
     return () => clearInterval(timer);
-  }, [shopSettings?.flashSaleActive, shopSettings?.flashSaleEndTime]);
+  }, [effectiveFlashEndTime]);
 
   // Auto-fill checkout form with logged-in Client data
   useEffect(() => {
@@ -267,18 +364,20 @@ export default function Katalog() {
       setCheckoutForm((prev) => ({
         ...prev,
         name: prev.name || client.name || '',
+        phone: prev.phone || client.phone || '',
+        email: prev.email || client.email || '',
       }));
     }
   }, [client, showCheckout]);
 
   // Auto-hide floating LiveChat launcher button when any modal/drawer is open
   useEffect(() => {
-    const isAnyModalActive = !!selectedProduct || showCartDrawer || showWishlistDrawer || showCheckout;
+    const isAnyModalActive = !!selectedProduct || showWishlistDrawer || showCheckout;
     window.dispatchEvent(new CustomEvent('porto_chat_visibility', { detail: { visible: !isAnyModalActive } }));
     return () => {
       window.dispatchEvent(new CustomEvent('porto_chat_visibility', { detail: { visible: true } }));
     };
-  }, [selectedProduct, showCartDrawer, showWishlistDrawer, showCheckout]);
+  }, [selectedProduct, showWishlistDrawer, showCheckout]);
 
   useEffect(() => {
     let loads = 0;
@@ -288,10 +387,24 @@ export default function Katalog() {
       setProducts((d || []).filter((p: any) => p.isPublished));
       checkLoaded();
     });
-    storage.getItem('porto_catalog_categories', []).then(d => {
-      setCmsCategories((d || []).filter((c: any) => c.isActive));
-      checkLoaded();
-    });
+
+    const loadCategories = () => {
+      storage.getItem('porto_catalog_categories', []).then(d => {
+        const raw = Array.isArray(d) ? d : [];
+        const parsed = raw.map((item: any) => {
+          if (typeof item === 'string') return item.trim();
+          if (item && typeof item === 'object') {
+            if (item.isActive === false) return '';
+            return (item.name || item.title || '').trim();
+          }
+          return '';
+        }).filter(Boolean);
+        setCmsCategories(parsed);
+        checkLoaded();
+      });
+    };
+    loadCategories();
+
     storage.getItem('porto_catalog_vouchers', []).then(d => {
       setVouchers((d || []).filter((v: any) => v.isActive));
       checkLoaded();
@@ -306,27 +419,193 @@ export default function Katalog() {
       });
       checkLoaded();
     });
+
+    // Real-time synchronization when admin updates Flash Sale, Categories, or Catalog
+    const handleFlashUpdate = () => {
+      storage.getItem('porto_catalog_products', []).then(d => {
+        setProducts((d || []).filter((p: any) => p.isPublished));
+      });
+      storage.getItem('porto_shop_settings', null).then(shopS => {
+        if (shopS) setShopSettings(shopS);
+      });
+    };
+    const handleCategoriesUpdate = (e: any) => {
+      if (Array.isArray(e.detail)) {
+        const parsed = e.detail.map((item: any) => {
+          if (typeof item === 'string') return item.trim();
+          if (item && typeof item === 'object') {
+            if (item.isActive === false) return '';
+            return (item.name || item.title || '').trim();
+          }
+          return '';
+        }).filter(Boolean);
+        setCmsCategories(parsed);
+      } else {
+        loadCategories();
+      }
+    };
+    const handleCatalogProductsUpdate = (e: any) => {
+      if (Array.isArray(e.detail)) {
+        setProducts(e.detail.filter((p: any) => p.isPublished));
+      }
+    };
+
+    window.addEventListener('porto_flash_sale_updated', handleFlashUpdate);
+    window.addEventListener('porto_categories_updated', handleCategoriesUpdate);
+    window.addEventListener('porto_catalog_updated', handleCatalogProductsUpdate);
+
+    return () => {
+      window.removeEventListener('porto_flash_sale_updated', handleFlashUpdate);
+      window.removeEventListener('porto_categories_updated', handleCategoriesUpdate);
+      window.removeEventListener('porto_catalog_updated', handleCatalogProductsUpdate);
+    };
   }, []);
 
-  const uniqueProductCategories = [...new Set(products.map((p: any) => p.category).filter(Boolean))];
-  const categories = ['Semua', ...new Set([...cmsCategories.map(c => c.name), ...uniqueProductCategories])];
+  // Active flash sale products (centralized & synchronized)
+  const flashSaleProducts = useMemo(() => {
+    return products.filter((p: any) => isProductFlashSaleActive(p, shopSettings));
+  }, [products, shopSettings]);
+
+  // Pre-Order products
+  const preOrderProducts = useMemo(() => {
+    return products.filter((p: any) => isPreOrderProduct(p));
+  }, [products]);
+
+  // Comprehensive Category List: Combines CMS Master Categories + All Product Categories
+  const categories = useMemo(() => {
+    const list = ['Semua'];
+    if (flashSaleProducts.length > 0) {
+      list.push('Flash Sale');
+    }
+    if (preOrderProducts.length > 0) {
+      list.push('Pre-Order');
+    }
+
+    const rawCategories: string[] = [
+      ...cmsCategories.map((c: any) => (typeof c === 'string' ? c : c?.name || '')),
+      ...products.map((p: any) => p.category || '').filter(Boolean)
+    ];
+
+    const seen = new Set<string>();
+    rawCategories.forEach(cat => {
+      const trimmed = cat.trim();
+      if (!trimmed) return;
+      const lower = trimmed.toLowerCase();
+      if (lower === 'semua' || lower === 'flash sale' || lower === 'pre-order') return;
+      if (!seen.has(lower)) {
+        seen.add(lower);
+        list.push(trimmed);
+      }
+    });
+
+    return list;
+  }, [flashSaleProducts.length, preOrderProducts.length, cmsCategories, products]);
+
+  // Scroll checking and drag-to-scroll handlers for the Category Navigation Bar
+  const checkCatScroll = () => {
+    const el = catScrollRef.current;
+    if (!el) return;
+    setCanScrollCatLeft(el.scrollLeft > 6);
+    setCanScrollCatRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 6);
+  };
+
+  useEffect(() => {
+    checkCatScroll();
+    const el = catScrollRef.current;
+    if (!el) return;
+    el.addEventListener('scroll', checkCatScroll, { passive: true });
+    window.addEventListener('resize', checkCatScroll);
+    return () => {
+      el.removeEventListener('scroll', checkCatScroll);
+      window.removeEventListener('resize', checkCatScroll);
+    };
+  }, [categories]);
+
+  const handleCatMouseDown = (e: React.MouseEvent) => {
+    const el = catScrollRef.current;
+    if (!el) return;
+    setIsCatDragging(true);
+    setCatStartX(e.pageX - el.offsetLeft);
+    setCatStartScrollLeft(el.scrollLeft);
+    setCatDragDistance(0);
+  };
+
+  const handleCatMouseMove = (e: React.MouseEvent) => {
+    if (!isCatDragging) return;
+    const el = catScrollRef.current;
+    if (!el) return;
+    e.preventDefault();
+    const x = e.pageX - el.offsetLeft;
+    const walk = (x - catStartX) * 1.5;
+    setCatDragDistance(Math.abs(walk));
+    el.scrollLeft = catStartScrollLeft - walk;
+    checkCatScroll();
+  };
+
+  const handleCatMouseUp = () => {
+    setIsCatDragging(false);
+    setTimeout(() => setCatDragDistance(0), 80);
+  };
+
+  const handleCatWheel = (e: React.WheelEvent) => {
+    const el = catScrollRef.current;
+    if (!el) return;
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && el.scrollWidth > el.clientWidth) {
+      el.scrollLeft += e.deltaY;
+      checkCatScroll();
+    }
+  };
+
+  const scrollCatTrack = (dir: 'left' | 'right') => {
+    const el = catScrollRef.current;
+    if (!el) return;
+    const amount = dir === 'left' ? -260 : 260;
+    el.scrollBy({ left: amount, behavior: 'smooth' });
+    setTimeout(checkCatScroll, 320);
+  };
+
+  // Smooth Edge Fade Mask for scroll cutoff
+  const catMask = useMemo(() => {
+    if (canScrollCatLeft && canScrollCatRight) {
+      return 'linear-gradient(to right, transparent 0%, black 36px, black calc(100% - 36px), transparent 100%)';
+    }
+    if (canScrollCatLeft) {
+      return 'linear-gradient(to right, transparent 0%, black 36px, black 100%)';
+    }
+    if (canScrollCatRight) {
+      return 'linear-gradient(to right, black 0%, black calc(100% - 36px), transparent 100%)';
+    }
+    return 'none';
+  }, [canScrollCatLeft, canScrollCatRight]);
 
   // Filter & Sort Products
   const filteredProducts = useMemo(() => {
     const list = products.filter((p: any) => {
-      const matchCategory = activeCategory === 'Semua' || (p.category || '').toLowerCase() === activeCategory.toLowerCase();
+      let matchCategory = false;
+      if (activeCategory === 'Semua') {
+        matchCategory = true;
+      } else if (activeCategory === 'Flash Sale') {
+        matchCategory = isProductFlashSaleActive(p, shopSettings);
+      } else if (activeCategory === 'Pre-Order') {
+        matchCategory = isPreOrderProduct(p);
+      } else {
+        matchCategory = (p.category || '').toLowerCase() === activeCategory.toLowerCase();
+      }
       const q = searchQuery.trim().toLowerCase();
       const matchSearch = !q || p.name.toLowerCase().includes(q) || (p.description || '').toLowerCase().includes(q) || (p.sku || '').toLowerCase().includes(q);
       return matchCategory && matchSearch;
     });
 
     return [...list].sort((a, b) => {
-      if (sortBy === 'price-asc') return (a.price || 0) - (b.price || 0);
-      if (sortBy === 'price-desc') return (b.price || 0) - (a.price || 0);
+      const getPPrice = (item: any) => {
+        return getFlashSalePrice(item, shopSettings);
+      };
+      if (sortBy === 'price-asc') return getPPrice(a) - getPPrice(b);
+      if (sortBy === 'price-desc') return getPPrice(b) - getPPrice(a);
       if (sortBy === 'name') return (a.name || '').localeCompare(b.name || '');
       return 0; // default order / newest
     });
-  }, [products, activeCategory, searchQuery, sortBy]);
+  }, [products, shopSettings, activeCategory, searchQuery, sortBy]);
 
   // Wishlist Toggle
   const toggleWishlist = (productId: string, e?: React.MouseEvent) => {
@@ -347,8 +626,11 @@ export default function Katalog() {
   // Cart Operations
   const addToCart = (product: any, variant: any = null, qty: number = 1) => {
     haptic.medium();
-    const unitPrice = variant && variant.price > 0 ? variant.price : product.price;
+    const isFlashActive = isProductFlashSaleActive(product, shopSettings);
+    const effectiveBasePrice = isFlashActive ? getFlashSalePrice(product, shopSettings) : product.price;
+    const unitPrice = variant && variant.price > 0 ? variant.price : effectiveBasePrice;
     const cartItemId = `${product.id}_${variant?.id || 'main'}`;
+    const isPO = isPreOrderProduct(product);
 
     setCart(prev => {
       const existingIdx = prev.findIndex(item => item.id === cartItemId);
@@ -363,18 +645,29 @@ export default function Katalog() {
             id: cartItemId,
             productId: product.id,
             name: product.name,
-            image: product.gallery?.[0] || '',
+            image: product.gallery?.[0] || product.image || '',
+            category: product.category,
+            type: product.type,
             price: unitPrice,
-            originalPrice: product.originalPrice,
+            originalPrice: isFlashActive ? (product.flashSale?.originalPrice || product.originalPrice || product.price) : product.originalPrice,
             variantId: variant?.id || null,
             variantName: variant?.name || null,
+            downloadUrl: product.downloadUrl || '',
+            fileFormat: product.fileFormat || 'ZIP',
+            fileSize: product.fileSize || '',
+            instantDeliveryMessage: product.instantDeliveryMessage || '',
+            isDigitalAsset: product.type === 'Digital' || !!product.downloadUrl,
+            isPreOrder: isPO,
+            preOrderBatch: product.preOrderBatch || 'BATCH 1',
+            preOrderEstimate: product.preOrderEstimate || '',
+            preOrderDpAllowed: product.preOrderDpAllowed !== false,
             quantity: qty
           }
         ];
       }
     });
 
-    showToast('Dimasukkan ke Keranjang 🛒', `${product.name} (${qty}x) telah masuk keranjang.`, 'success');
+    showToast('Dimasukkan ke Keranjang 🛒', `${product.name} telah masuk ke keranjang belanja.`, 'success');
   };
 
   const updateCartQty = (itemId: string, delta: number) => {
@@ -477,7 +770,13 @@ export default function Katalog() {
   };
 
   // Submit Order (Supports both direct 1-item checkout and multi-item cart checkout)
-  const submitOrder = async (basePriceToPay: number, itemsToOrder: any[], uniqueCodeNum: number = 0) => {
+  const submitOrder = async (
+    basePriceToPay: number, 
+    itemsToOrder: any[], 
+    uniqueCodeNum: number = 0,
+    paymentSchemeParam: 'dp' | 'full' = 'full',
+    serviceBriefParam: any = null
+  ) => {
     if (!checkoutForm.name || !checkoutForm.phone) {
       showToast('Data Belum Lengkap', 'Mohon isi Nama Lengkap dan Nomor WhatsApp.', 'error');
       return;
@@ -490,12 +789,57 @@ export default function Katalog() {
     try {
       const code = uniqueCodeNum > 0 ? uniqueCodeNum : (Math.floor(Math.random() * 899) + 100);
       const trxId = `TRX-${Date.now().toString().slice(-6)}`;
-      const finalTotal = basePriceToPay + code;
       
+      const hasPO = itemsToOrder.some(item => isPreOrderProduct(item) || item.isPreOrder);
+      const hasService = itemsToOrder.some(item => isServiceProduct(item));
+      const effectiveOrderType: 'jasa' | 'beli_putus' | 'preorder' = hasPO ? 'preorder' : (hasService ? 'jasa' : 'beli_putus');
+      const effectiveScheme: 'dp' | 'full' = ((hasService || hasPO) && paymentSchemeParam === 'dp') ? 'dp' : 'full';
+      const dpVal = effectiveScheme === 'dp' ? Math.round(basePriceToPay * 0.5) : 0;
+      const remainingVal = effectiveScheme === 'dp' ? (basePriceToPay - dpVal) : 0;
+      const amountToTransfer = effectiveScheme === 'dp' ? (dpVal + code) : (basePriceToPay + code);
+
+      const terminList = effectiveScheme === 'dp' ? (
+        hasPO ? [
+          {
+            termNumber: 1,
+            name: 'DP 50% Booking Pre-Order (PO Merch)',
+            amount: dpVal,
+            isPaid: false,
+            dueDate: new Date().toISOString().slice(0, 10)
+          },
+          {
+            termNumber: 2,
+            name: 'Pelunasan 50% Sebelum Pengiriman Merch',
+            amount: remainingVal,
+            isPaid: false,
+            dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+          }
+        ] : [
+          {
+            termNumber: 1,
+            name: 'DP 50% (Kick-off Proyek)',
+            amount: dpVal,
+            isPaid: false,
+            dueDate: new Date().toISOString().slice(0, 10)
+          },
+          {
+            termNumber: 2,
+            name: 'Pelunasan 50% (Serah Terima Akhir)',
+            amount: remainingVal,
+            isPaid: false,
+            dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+          }
+        ]
+      ) : [];
+
       const newTrx = {
         id: trxId,
         uniqueCode: code,
         date: new Date().toISOString().slice(0, 10),
+        orderType: effectiveOrderType,
+        paymentScheme: effectiveScheme,
+        dpAmount: dpVal,
+        remainingAmount: remainingVal,
         customer: { 
           id: `CUS-${Date.now()}`, 
           name: checkoutForm.name, 
@@ -516,7 +860,10 @@ export default function Katalog() {
             fileFormat: item.fileFormat || matchedProd?.fileFormat || 'ZIP',
             fileSize: item.fileSize || matchedProd?.fileSize || '',
             instantDeliveryMessage: item.instantDeliveryMessage || matchedProd?.instantDeliveryMessage || '',
-            isDigitalAsset: item.isDigitalAsset || matchedProd?.type === 'Digital' || !!matchedProd?.downloadUrl
+            isDigitalAsset: item.isDigitalAsset || matchedProd?.type === 'Digital' || !!matchedProd?.downloadUrl,
+            isPreOrder: Boolean(item.isPreOrder || isPreOrderProduct(matchedProd)),
+            preOrderBatch: item.preOrderBatch || matchedProd?.preOrderBatch || '',
+            preOrderEstimate: item.preOrderEstimate || matchedProd?.preOrderEstimate || ''
           };
         }),
         discount: appliedVoucher ? { 
@@ -527,57 +874,181 @@ export default function Katalog() {
         shipping: 0,
         tax: { enabled: false, percent: 11 },
         paymentStatus: 'belum',
-        dpAmount: 0,
-        notes: checkoutForm.notes || checkoutForm.address || '-',
-        termin: [],
+        notes: (hasService && serviceBriefParam?.briefDescription) ? serviceBriefParam.briefDescription : (checkoutForm.notes || checkoutForm.address || '-'),
+        briefMode: hasService ? serviceBriefParam?.briefMode : undefined,
+        googleDocUrl: hasService ? serviceBriefParam?.googleDocUrl : undefined,
+        deadline: hasService ? serviceBriefParam?.effectiveDeadline : undefined,
+        addons: hasService ? (serviceBriefParam?.selectedAddons || []) : undefined,
+        addonsTotal: hasService ? (serviceBriefParam?.addonsTotal || 0) : undefined,
+        termin: terminList,
         paymentMethod: checkoutForm.paymentMethodId === 'qris_toko' 
           ? { id: 'qris_toko', bankName: 'QRIS Instan (Bebas Biaya)', accountNumber: 'Scan Barcode QRIS', accountName: shopSettings?.qrisMerchantName || 'Merchant QRIS' }
           : (checkoutForm.paymentMethodId ? data?.shopSettings?.paymentMethods?.find((p: any) => p.id === checkoutForm.paymentMethodId) : null),
         mou: { enabled: false, title: '', content: '', date: new Date().toISOString().slice(0, 10) },
         attachment: '',
-        grandTotal: finalTotal,
+        grandTotal: amountToTransfer,
+        basePriceTotal: basePriceToPay,
         source: 'website'
       };
 
       const existingTrx = await storage.getItem('porto_transactions', []);
       await storage.setItem('porto_transactions', [newTrx, ...existingTrx]);
 
-      const existingCus = await storage.getItem('porto_trx_customers', []);
-      if (!existingCus.find((c: any) => c.phone === checkoutForm.phone)) {
-         await storage.setItem('porto_trx_customers', [newTrx.customer, ...existingCus]);
+      // 1a. Background Google Sheets sync to "Transaksi & Pesanan"
+      googleSync.syncTransactions([newTrx, ...existingTrx], null).catch((err: any) => 
+        console.warn('[Katalog] Background Sheets sync warning:', err)
+      );
+
+      // 1b. Auto-deduct inventory stock & update pre-order/flash-sale quotas
+      try {
+        const catProducts = await storage.getItem<any[]>('porto_catalog_products', []);
+        const catList = await storage.getItem<any[]>('porto_catalog', []);
+        let stockChanged = false;
+
+        const deductStockList = (list: any[]) => {
+          return (list || []).map(p => {
+            const match = itemsToOrder.find((ci: any) => (ci.productId || ci.id) === p.id || (ci.name && p.name && ci.name.trim().toLowerCase() === p.name.trim().toLowerCase()));
+            if (match) {
+              const qtyNum = Number(match.quantity || match.qty || 1);
+              let updated = { ...p };
+              if (typeof p.stock === 'number') {
+                stockChanged = true;
+                updated.stock = Math.max(0, p.stock - qtyNum);
+              }
+              if (match.isPreOrder || p.isPreOrder) {
+                updated.preOrderSold = (Number(p.preOrderSold) || 0) + qtyNum;
+                stockChanged = true;
+              }
+              if (p.flashSale) {
+                updated.flashSale = {
+                  ...p.flashSale,
+                  sold: (Number(p.flashSale.sold) || 0) + qtyNum,
+                  stockLeft: typeof p.flashSale.stockLeft === 'number' ? Math.max(0, p.flashSale.stockLeft - qtyNum) : p.flashSale.stockLeft
+                };
+                stockChanged = true;
+              }
+              return updated;
+            }
+            return p;
+          });
+        };
+
+        if (catProducts && catProducts.length > 0) {
+          const nextCatProds = deductStockList(catProducts);
+          await storage.setItem('porto_catalog_products', nextCatProds);
+        }
+        if (catList && catList.length > 0) {
+          const nextCats = deductStockList(catList);
+          await storage.setItem('porto_catalog', nextCats);
+        }
+        if (stockChanged) {
+          window.dispatchEvent(new CustomEvent('porto_catalog_products_updated'));
+          window.dispatchEvent(new CustomEvent('porto_catalog_updated'));
+        }
+      } catch (e) {
+        console.warn('[Katalog] Stock deduction warning:', e);
       }
 
-      // If client is logged in, also record each item in Client Orders history
-      if (client) {
-        for (const itm of itemsToOrder) {
-          const matchedProd = products.find((p: any) => p.id === (itm.productId || item.id));
-          saveClientOrder({
-            clientId: client.id,
-            clientName: checkoutForm.name,
-            clientPhone: checkoutForm.phone,
-            clientEmail: checkoutForm.email || client.email,
-            productName: itm.name,
-            productId: itm.productId || itm.id,
-            variantName: itm.variantName || '',
-            price: itm.price,
-            quantity: itm.quantity || itm.qty || 1,
-            total: itm.price * (itm.quantity || itm.qty || 1),
-            status: 'Pending',
-            paymentMethod: checkoutForm.paymentMethodId === 'qris_toko' ? 'QRIS Instan' : (newTrx.paymentMethod?.bankName || 'WhatsApp Checkout'),
-            notes: checkoutForm.address || '',
-            downloadUrl: itm.downloadUrl || matchedProd?.downloadUrl || '',
-            fileFormat: itm.fileFormat || matchedProd?.fileFormat || 'ZIP',
-            fileSize: itm.fileSize || matchedProd?.fileSize || '',
-            instantDeliveryMessage: itm.instantDeliveryMessage || matchedProd?.instantDeliveryMessage || '',
-            isDigitalAsset: itm.isDigitalAsset || matchedProd?.type === 'Digital' || !!matchedProd?.downloadUrl
-          }).catch((e) => console.warn('Save client order error:', e));
+      // 1c. Auto-credit affiliate referral commission if referral code is stored
+      const storedRefCode = typeof window !== 'undefined' ? (localStorage.getItem('porto_referral_code') || '') : '';
+      if (storedRefCode) {
+        creditAffiliateReferral(storedRefCode, basePriceToPay, trxId, checkoutForm.name)
+          .then(res => {
+            if (res.success) {
+              console.log(`[Affiliate] Komisi ${res.commission} berhasil dicatat untuk mitra ${res.partnerName}`);
+            }
+          })
+          .catch(e => console.warn('[Katalog] Referral credit warning:', e));
+      }
+
+      // Auto-save buyer into Customer Directory (porto_trx_customers)
+      try {
+        const existingCus = await storage.getItem<any[]>('porto_trx_customers', []);
+        const cleanPhone = (checkoutForm.phone || '').trim();
+        const foundIdx = existingCus.findIndex((c: any) => 
+          (cleanPhone && c.phone === cleanPhone) || 
+          (c.name && c.name.toLowerCase() === checkoutForm.name.trim().toLowerCase())
+        );
+        if (foundIdx === -1) {
+          await storage.setItem('porto_trx_customers', [newTrx.customer, ...existingCus], true);
+        } else {
+          existingCus[foundIdx] = { ...existingCus[foundIdx], ...newTrx.customer };
+          await storage.setItem('porto_trx_customers', [...existingCus], true);
         }
+        try { localStorage.removeItem('porto_last_checkout_buyer'); } catch {}
+      } catch (e) {
+        console.warn('Customer auto-sync warning:', e);
+      }
+
+      // If service product, automatically sync project with status: pending_acc (waiting for admin ACC)
+      if (hasService) {
+        const firstSvc = itemsToOrder.find((i: any) => isServiceProduct(i));
+        createOrUpdateServiceOrder({
+          id: trxId,
+          customerType: client?.membershipTier || 'client',
+          customer: newTrx.customer,
+          serviceCategory: firstSvc?.category || 'Jasa',
+          serviceTitle: firstSvc?.name || 'Layanan Jasa',
+          briefMode: serviceBriefParam?.briefMode || 'text',
+          googleDocUrl: serviceBriefParam?.googleDocUrl || '',
+          briefDescription: serviceBriefParam?.briefDescription || checkoutForm.address || '',
+          deadline: serviceBriefParam?.effectiveDeadline || '',
+          price: basePriceToPay,
+          grandTotal: amountToTransfer,
+          paymentScheme: effectiveScheme,
+          dpAmount: dpVal,
+          remainingAmount: remainingVal,
+          paymentStatus: effectiveScheme === 'dp' ? 'dp' : 'belum',
+          requiresAcc: true, // Only enters active Kanban board after admin ACC
+          notes: checkoutForm.address || ''
+        }).catch(err => console.warn('Service project sync error:', err));
+      }
+
+      // Notify systems
+      window.dispatchEvent(new CustomEvent('porto_transactions_updated'));
+      window.dispatchEvent(new CustomEvent('porto_trx_customers_updated'));
+
+      // Save into Client Orders history (both logged-in clients and guest lookups)
+      const clientUid = client?.id || newTrx.customer.id;
+      for (const itm of itemsToOrder) {
+        const matchedProd = products.find((p: any) => p.id === (itm.productId || itm.id));
+        saveClientOrder({
+          clientId: clientUid,
+          clientName: checkoutForm.name,
+          clientPhone: checkoutForm.phone,
+          clientEmail: checkoutForm.email || client?.email,
+          productName: itm.name,
+          productId: itm.productId || itm.id,
+          variantName: itm.variantName || '',
+          price: itm.price,
+          quantity: itm.quantity || itm.qty || 1,
+          total: itm.price * (itm.quantity || itm.qty || 1),
+          status: 'Pending',
+          orderId: trxId,
+          milestoneStep: effectiveScheme === 'dp' ? 2 : 1,
+          trackingNumber: '',
+          orderType: effectiveOrderType,
+          preOrderBatch: itm.preOrderBatch || matchedProd?.preOrderBatch || '',
+          preOrderEstimate: itm.preOrderEstimate || matchedProd?.preOrderEstimate || '',
+          paymentScheme: effectiveScheme,
+          dpAmount: dpVal,
+          remainingAmount: remainingVal,
+          paymentStatus: effectiveScheme === 'dp' ? 'dp' : 'belum',
+          paymentMethod: checkoutForm.paymentMethodId === 'qris_toko' ? 'QRIS Instan' : (newTrx.paymentMethod?.bankName || 'WhatsApp Checkout'),
+          notes: checkoutForm.address || '',
+          downloadUrl: itm.downloadUrl || matchedProd?.downloadUrl || '',
+          fileFormat: itm.fileFormat || matchedProd?.fileFormat || 'ZIP',
+          fileSize: itm.fileSize || matchedProd?.fileSize || '',
+          instantDeliveryMessage: itm.instantDeliveryMessage || matchedProd?.instantDeliveryMessage || '',
+          isDigitalAsset: itm.isDigitalAsset || matchedProd?.type === 'Digital' || !!matchedProd?.downloadUrl
+        }).catch((e) => console.warn('Save client order error:', e));
       }
 
       // Format WhatsApp message detail
-      const detailPesanan = itemsToOrder.map(item => 
-        `• ${item.name}${item.variantName ? ` (${item.variantName})` : ''} (${item.quantity || item.qty || 1}x) - ${formatRp(item.price * (item.quantity || item.qty || 1))}`
-      ).join('\n');
+      const detailPesanan = itemsToOrder.map(item => {
+        const isPoItem = item.isPreOrder || isPreOrderProduct(item);
+        return `• ${item.name}${item.variantName ? ` (${item.variantName})` : ''} (${item.quantity || item.qty || 1}x) - ${formatRp(item.price * (item.quantity || item.qty || 1))}${isPoItem ? ` [PO: ${item.preOrderBatch || 'BATCH 1'}]` : ''}`;
+      }).join('\n');
 
       const paymentList = (data?.shopSettings?.paymentMethods?.length > 0 ? data.shopSettings.paymentMethods : (businessProfile?.bankAccounts || []));
       const qrisMerchantName = shopSettings?.qrisMerchantName || businessProfile?.qris?.merchantName || businessProfile?.brandName || 'SUMR.DAY STUDIO';
@@ -591,32 +1062,49 @@ export default function Katalog() {
       const rawWa = (businessProfile?.whatsapp || shopSettings?.whatsappNumber || data?.shopSettings?.whatsappNumber || data?.footer?.whatsappNumber || '6281234567890').toString().replace(/[^0-9]/g, '');
       const cleanWa = rawWa.startsWith('0') ? '62' + rawWa.slice(1) : rawWa;
 
-      const template = `Halo sumr.day team! ☀️ Saya telah melakukan pemesanan dari katalog:
+      const template = `Halo sumr.day team! Saya telah melakukan pemesanan dari katalog:
 
-🛒 *NOMOR PESANAN:* ${trxId}
-👤 *Nama Pemesan:* ${checkoutForm.name}
-📱 *No. WhatsApp:* ${checkoutForm.phone}
-${checkoutForm.address ? `📍 *Catatan / Alamat:* ${checkoutForm.address}\n` : ''}
-📦 *Detail Pesanan:*
+*NOMOR PESANAN:* ${trxId}
+*Nama Pemesan:* ${checkoutForm.name}
+*No. WhatsApp:* ${checkoutForm.phone}
+${checkoutForm.address ? `*Catatan / Alamat:* ${checkoutForm.address}\n` : ''}
+*Detail Pesanan:*
 ${detailPesanan}
 
+*SKEMA PEMBAYARAN:* ${effectiveOrderType === 'preorder' ? (effectiveScheme === 'dp' ? 'DP 50% Booking PO' : 'Lunas 100% Pre-Order') : (effectiveScheme === 'dp' ? 'DP 50% Kick-off' : 'Lunas 100%')}
+${effectiveScheme === 'dp' 
+  ? `*Nilai Total ${effectiveOrderType === 'preorder' ? 'Pesanan Merch' : 'Proyek'}:* ${formatRp(basePriceToPay)}\n*Nominal DP 50% Sekarang:* ${formatRp(dpVal)}\n*Sisa Pelunasan (50%):* ${formatRp(remainingVal)} (${effectiveOrderType === 'preorder' ? 'Sebelum pengiriman' : 'Saat serah terima'})` 
+  : `*Nilai Total Belanja:* ${formatRp(basePriceToPay)}`}
+
 🔢 *Kode Unik Verifikasi:* +Rp ${code}
-💰 *TOTAL TRANSFER:* ${formatRp(finalTotal)} *(Wajib persis hingga 3 digit terakhir)*
+💰 *TOTAL TRANSFER ${effectiveScheme === 'dp' ? 'DP SEKARANG' : ''}:* ${formatRp(amountToTransfer)} *(Wajib persis hingga 3 digit terakhir)*
 💳 *Metode Pembayaran:* ${selectedPayment}
 
 📎 *Bukti Pembayaran:* (Foto struk / bukti transfer terlampir di bawah ini)
 
-Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas digital saya akan otomatis aktif di menu Akun Saya (/akun). Terima kasih!`;
+${effectiveOrderType === 'preorder' 
+  ? 'Pesanan Pre-Order saya mohon dicatat ya min. Status kuota dan pengiriman akan saya pantau di menu Riwayat (/keranjang?tab=history). Terima kasih!' 
+  : (effectiveScheme === 'dp' 
+      ? 'Mohon diverifikasi pembayaran DP ini untuk memulai pengerjaan proyek. Status proyek dapat dipantau di menu Keranjang & Riwayat (/keranjang?tab=history). Terima kasih!' 
+      : 'Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas digital saya akan otomatis aktif di menu Akun Saya (/akun) & menu Riwayat (/keranjang?tab=history). Terima kasih!')}`;
 
       const waUrl = `https://wa.me/${cleanWa}?text=${encodeURIComponent(template)}`;
       window.open(waUrl, '_blank');
       
       showToast('Pesanan Berhasil!', 'Mengarahkan ke WhatsApp admin...', 'success');
       
-      // If was checking out from cart, clear cart
+      // Reset checkout form and cart
+      setCheckoutForm({
+        name: '',
+        phone: '',
+        email: '',
+        address: '',
+        notes: '',
+        paymentMethodId: ''
+      });
       if (checkoutMode === 'cart') {
         setCart([]);
-        setShowCartDrawer(false);
+        try { localStorage.removeItem('porto_client_cart'); } catch {}
       }
       setShowCheckout(false);
       setSelectedProduct(null);
@@ -661,20 +1149,22 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
         accentColor={accentColor}
       />
 
-      <main style={{ flex: 1, width: '100%', maxWidth: 1240, margin: '0 auto', padding: isMobile ? '90px 16px 100px' : '120px 24px 100px', boxSizing: 'border-box' }}>
+      <main style={{ flex: 1, width: '100%', maxWidth: 1240, margin: '0 auto', padding: isMobile ? '90px 16px 100px' : '112px clamp(16px, 3.5vw, 24px) 100px', boxSizing: 'border-box' }}>
         
         {/* Page Hero Header with Live Search & Dynamic Stats */}
         <PageHeroHeader
+          isDark={isDark}
+          bgPattern={(data?.pagesHeader as any)?.catalog?.bgPattern || 'grid'}
           badgeIcon={<ShoppingBag size={14} />}
-          badgeText={data?.pagesHeader?.catalog?.badge || 'Katalog Resmi & Solusi Digital'}
-          title={data?.pagesHeader?.catalog?.title || 'Koleksi Produk & Layanan Eksklusif'}
-          highlightText={data?.pagesHeader?.catalog?.highlight || 'Layanan Eksklusif'}
+          badgeText={data?.pagesHeader?.catalog?.badge || 'PRODUK & ASET DIGITAL'}
+          title={data?.pagesHeader?.catalog?.title || 'Koleksi Produk & Layanan'}
+          highlightText={data?.pagesHeader?.catalog?.highlight || 'Produk Digital'}
           description={data?.pagesHeader?.catalog?.description || 'Dapatkan solusi desain berkualitas tinggi, aset digital siap pakai, serta layanan kustom profesional untuk mengembangkan bisnis Anda.'}
           accentColor={accentColor}
           textColor={textColor}
           subTextColor={subTextColor}
           stats={[
-            { icon: <ShoppingBag size={15} />, value: products.length, label: 'Total Produk' },
+            { icon: <ShoppingBag size={15} />, value: products.length, label: 'Total Aset' },
             { icon: <Layers size={15} />, value: Math.max(1, categories.length - 1), label: 'Kategori' },
             { icon: <ArrowUpRight size={15} />, value: filteredProducts.length, label: 'Tersedia' }
           ]}
@@ -707,11 +1197,9 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
               }}
               onFocus={(e) => {
                 e.currentTarget.style.borderColor = accentColor;
-                e.currentTarget.style.boxShadow = `0 0 0 4px ${accentColor}1a`;
               }}
               onBlur={(e) => {
                 e.currentTarget.style.borderColor = cardBorder;
-                e.currentTarget.style.boxShadow = 'none';
               }}
             />
             {searchQuery && (
@@ -761,20 +1249,18 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
                 gap: 8,
                 padding: '11px 20px',
                 borderRadius: 100,
-                background: isDark ? 'rgba(30, 41, 59, 0.95)' : '#ffffff',
-                border: '1.5px solid rgba(239, 68, 68, 0.35)',
-                boxShadow: isDark ? '0 12px 30px rgba(0,0,0,0.5)' : '0 10px 25px rgba(239, 68, 68, 0.15)',
+                background: isDark ? '#14161f' : '#ffffff',
+                border: '1.5px solid rgba(239, 68, 68, 0.4)',
+                boxShadow: 'none',
                 color: '#ef4444',
                 fontFamily: "'Outfit', sans-serif",
                 fontSize: 13,
                 fontWeight: 700,
                 cursor: 'pointer',
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
-                transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+                transition: 'transform 0.15s ease',
               }}
-              onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.05) translateY(-2px)'}
-              onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+              onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+              onMouseLeave={e => e.currentTarget.style.transform = 'none'}
             >
               <Heart size={16} fill="#ef4444" />
               <span>Favorit ({wishlist.length})</span>
@@ -784,23 +1270,22 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
           {/* Cart Floating Pill */}
           {totalCartCount > 0 && (
             <button
-              onClick={() => setShowCartDrawer(true)}
+              onClick={() => navigate('/keranjang')}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 10,
                 padding: '11px 22px',
                 borderRadius: 100,
-                background: `linear-gradient(135deg, ${accentColor} 0%, #9333ea 100%)`,
+                background: accentColor,
                 border: 'none',
-                boxShadow: `0 12px 32px ${accentColor}50`,
+                boxShadow: 'none',
                 color: '#ffffff',
                 fontFamily: "'Outfit', sans-serif",
                 fontSize: 13.5,
                 fontWeight: 800,
                 cursor: 'pointer',
-                transition: 'all 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
-                animation: 'cmsPopIn 0.45s cubic-bezier(0.16, 1, 0.3, 1)'
+                transition: 'transform 0.15s ease',
               }}
               onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
               onMouseLeave={e => e.currentTarget.style.transform = 'none'}
@@ -819,7 +1304,7 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
           <div 
             data-reveal="true" 
             style={{ 
-              borderRadius: 28, 
+              borderRadius: 24, 
               background: isDark ? `linear-gradient(135deg, ${accentColor}20 0%, #0c0d14 100%)` : `linear-gradient(135deg, ${accentColor}12 0%, #f4f6fb 100%)`,
               padding: isMobile ? '28px 20px' : '40px 44px',
               marginBottom: isMobile ? 32 : 48,
@@ -831,7 +1316,7 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
               position: 'relative',
               overflow: 'hidden',
               border: `1.5px solid ${isDark ? `${accentColor}30` : cardBorder}`,
-              boxShadow: isDark ? '0 16px 40px rgba(0,0,0,0.4)' : '0 12px 32px rgba(0,0,0,0.04)'
+              boxShadow: 'none'
             }}
           >
             <div style={{ flex: '1 1 340px', zIndex: 2 }}>
@@ -849,7 +1334,7 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
             </div>
             {shopSettings.heroBannerImage && (
               <div style={{ flex: '1 1 280px', display: 'flex', justifyContent: 'center', zIndex: 2 }}>
-                <img src={shopSettings.heroBannerImage} alt="" style={{ width: '100%', height: 'auto', minHeight: 180, maxHeight: 300, objectFit: 'cover', borderRadius: 20, boxShadow: '0 16px 36px rgba(0,0,0,0.2)' }} />
+                <img src={shopSettings.heroBannerImage} alt="" style={{ width: '100%', height: 'auto', minHeight: 180, maxHeight: 300, objectFit: 'cover', borderRadius: 16, boxShadow: 'none' }} />
               </div>
             )}
           </div>
@@ -871,10 +1356,10 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
                     key={c.id} 
                     onClick={() => handleCategoryChange(c.name)} 
                     style={{ 
-                      gridColumn: `span ${span}`, borderRadius: 24, overflow: 'hidden', position: 'relative', 
+                      gridColumn: `span ${span}`, borderRadius: 22, overflow: 'hidden', position: 'relative', 
                       cursor: 'pointer', background: cardBg, border: `1px solid ${cardBorder}`, display: 'flex', flexDirection: 'column', height: '100%',
                       transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-                      boxShadow: '0 8px 24px rgba(0,0,0,0.04)'
+                      boxShadow: 'none'
                     }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.transform = 'translateY(-4px)';
@@ -908,100 +1393,409 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
           </div>
         )}
 
-        {/* Flash Sale Urgency Countdown Banner */}
-        {shopSettings?.flashSaleActive && flashTimeLeft && (
-          <div 
+        {/* BARIS KHUSUS FLASH SALE (Swipeable Carousel + Luaskan Toggle) */}
+        {flashSaleProducts.length > 0 && (
+          <div
             data-reveal="true"
             style={{
-              marginBottom: 30,
-              padding: isMobile ? '16px 16px' : '20px 26px',
+              marginBottom: 36,
+              padding: isMobile ? '18px 14px' : '24px 26px',
               borderRadius: 24,
-              background: isDark 
-                ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.16) 0%, rgba(124, 58, 237, 0.18) 100%)' 
-                : 'linear-gradient(135deg, #fff1f2 0%, #f5f3ff 100%)',
+              background: isDark
+                ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.14) 0%, rgba(15, 16, 25, 0.95) 50%, rgba(124, 58, 237, 0.12) 100%)'
+                : 'linear-gradient(135deg, #fff1f2 0%, #ffffff 50%, #f5f3ff 100%)',
               border: '1.5px solid rgba(239, 68, 68, 0.35)',
+              boxShadow: 'none',
+              position: 'relative',
+              overflow: 'hidden'
+            }}
+          >
+            {/* Header: Title, Countdown Timer, Controls */}
+            <div style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              gap: 16,
               flexWrap: 'wrap',
-              boxShadow: '0 12px 30px rgba(239, 68, 68, 0.12)'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-              <div style={{
-                width: 44,
-                height: 44,
-                borderRadius: 14,
-                background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-                color: '#ffffff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 6px 18px rgba(239, 68, 68, 0.4)',
-                flexShrink: 0
-              }}>
-                <Zap size={22} fill="#ffffff" />
-              </div>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: 'clamp(15px, 2vw, 18px)', fontWeight: 900, color: textColor }}>
-                    {shopSettings.flashSaleTitle || 'Flash Sale Spesial Hari Ini!'}
-                  </span>
-                  {shopSettings.flashSaleDiscount > 0 && (
-                    <span style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: '#ef4444', padding: '2px 8px', borderRadius: 100, fontFamily: "'Outfit', sans-serif" }}>
-                      HEMAT {shopSettings.flashSaleDiscount}%
-                    </span>
-                  )}
+              gap: 14,
+              marginBottom: 16,
+              paddingBottom: 14,
+              borderBottom: `1px solid ${isDark ? 'rgba(239, 68, 68, 0.2)' : 'rgba(239, 68, 68, 0.15)'}`
+            }}>
+              {/* Title & Badge */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{
+                  width: 42,
+                  height: 42,
+                  borderRadius: 12,
+                  background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 6px 16px rgba(239, 68, 68, 0.45)',
+                  flexShrink: 0
+                }}>
+                  <Zap size={22} fill="#ffffff" />
                 </div>
-                <p style={{ margin: '2px 0 0', fontSize: 12.5, color: subTextColor, fontFamily: "'Inter', sans-serif" }}>
-                  Penawaran terbatas, manfaatkan promo sebelum hitungan mundur berakhir!
-                </p>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <h3 style={{ margin: 0, fontFamily: "'Outfit', sans-serif", fontSize: 'clamp(17px, 2.2vw, 22px)', fontWeight: 900, color: textColor, letterSpacing: '-0.3px' }}>
+                      {shopSettings?.flashSaleTitle || shopSettings?.flashSale?.title || 'FLASH SALE SPESIAL'}
+                    </h3>
+                    <span style={{ fontSize: 10.5, fontWeight: 900, color: '#fff', background: '#ef4444', padding: '3px 9px', borderRadius: 100, fontFamily: "'Outfit', sans-serif", letterSpacing: '0.04em' }}>
+                      Pusat Promo Toko
+                    </span>
+                  </div>
+                  <p style={{ margin: '3px 0 0', fontSize: 12, color: subTextColor, fontFamily: "'Inter', sans-serif" }}>
+                    Geser untuk melihat penawaran kilat • Diskon terbatas hingga waktu habis
+                  </p>
+                </div>
+              </div>
+
+              {/* Timer & Controls */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                {flashTimeLeft && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: isDark ? 'rgba(0,0,0,0.4)' : '#ffffff', padding: '6px 10px', borderRadius: 14, border: `1px solid ${cardBorder}` }}>
+                    <Clock size={14} color="#ef4444" />
+                    <span style={{ fontSize: 11, fontWeight: 800, color: subTextColor, textTransform: 'uppercase' }}>Berakhir:</span>
+                    {[
+                      { val: String(flashTimeLeft.hours).padStart(2, '0'), label: 'j' },
+                      { val: String(flashTimeLeft.minutes).padStart(2, '0'), label: 'm' },
+                      { val: String(flashTimeLeft.seconds).padStart(2, '0'), label: 'd' }
+                    ].map((item, idx) => (
+                      <React.Fragment key={idx}>
+                        <div style={{
+                          padding: '2px 6px',
+                          borderRadius: 6,
+                          background: isDark ? '#1a101f' : '#fee2e2',
+                          fontFamily: "'Outfit', sans-serif",
+                          fontSize: 13,
+                          fontWeight: 900,
+                          color: '#ef4444'
+                        }}>
+                          {item.val}{item.label}
+                        </div>
+                        {idx < 2 && <span style={{ fontWeight: 900, color: '#ef4444', fontSize: 12 }}>:</span>}
+                      </React.Fragment>
+                    ))}
+                  </div>
+                )}
+
+                {/* Carousel Left/Right scroll controls (only when not expanded) */}
+                {!isFlashSaleExpanded && flashSaleProducts.length > 2 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <button
+                      onClick={() => {
+                        haptic.light();
+                        flashSaleTrackRef.current?.scrollBy({ left: -320, behavior: 'smooth' });
+                      }}
+                      style={{
+                        width: 34,
+                        height: 34,
+                        borderRadius: '50%',
+                        border: `1.5px solid ${cardBorder}`,
+                        background: cardBg,
+                        color: textColor,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                      title="Geser ke kiri"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    <button
+                      onClick={() => {
+                        haptic.light();
+                        flashSaleTrackRef.current?.scrollBy({ left: 320, behavior: 'smooth' });
+                      }}
+                      style={{
+                        width: 34,
+                        height: 34,
+                        borderRadius: '50%',
+                        border: `1.5px solid ${cardBorder}`,
+                        background: cardBg,
+                        color: textColor,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                      title="Geser ke kanan"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                )}
+
+                {/* Luaskan / Perkecil Toggle Button */}
+                <button
+                  onClick={() => {
+                    haptic.medium();
+                    setIsFlashSaleExpanded(!isFlashSaleExpanded);
+                  }}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '8px 14px',
+                    borderRadius: 100,
+                    border: '1.5px solid rgba(239, 68, 68, 0.4)',
+                    background: isFlashSaleExpanded ? '#ef4444' : (isDark ? 'rgba(239, 68, 68, 0.12)' : '#fee2e2'),
+                    color: isFlashSaleExpanded ? '#ffffff' : '#ef4444',
+                    fontFamily: "'Outfit', sans-serif",
+                    fontSize: 12.5,
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)'
+                  }}
+                  title={isFlashSaleExpanded ? 'Kembalikan ke mode baris geser' : 'Tampilkan semua produk flash sale secara penuh'}
+                >
+                  {isFlashSaleExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                  <span>{isFlashSaleExpanded ? 'Perkecil Baris' : 'Luaskan Flash Sale'}</span>
+                </button>
               </div>
             </div>
 
-            {/* Live Countdown Clocks */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              {[
-                { val: String(flashTimeLeft.hours).padStart(2, '0'), label: 'JAM' },
-                { val: String(flashTimeLeft.minutes).padStart(2, '0'), label: 'MENIT' },
-                { val: String(flashTimeLeft.seconds).padStart(2, '0'), label: 'DETIK' }
-              ].map((item, idx) => (
-                <React.Fragment key={idx}>
-                  <div style={{
-                    minWidth: 44,
-                    padding: '6px 8px',
-                    borderRadius: 12,
-                    background: isDark ? '#0f1019' : '#ffffff',
-                    border: `1px solid ${cardBorder}`,
-                    textAlign: 'center',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.06)'
-                  }}>
-                    <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 16, fontWeight: 900, color: '#ef4444', lineHeight: 1 }}>
-                      {item.val}
+            {/* Flash Sale Product Items Track / Grid */}
+            <div
+              ref={flashSaleTrackRef}
+              style={
+                isFlashSaleExpanded
+                  ? {
+                      display: 'grid',
+                      gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fill, minmax(260px, 1fr))',
+                      gap: isMobile ? 12 : 18,
+                      width: '100%'
+                    }
+                  : {
+                      display: 'flex',
+                      gap: 16,
+                      overflowX: 'auto',
+                      paddingBottom: 10,
+                      scrollbarWidth: 'none',
+                      WebkitOverflowScrolling: 'touch',
+                      scrollSnapType: 'x mandatory'
+                    }
+              }
+            >
+              {flashSaleProducts.map((p: any) => {
+                const salePrice = getFlashSalePrice(p, shopSettings);
+                const originalPrice = p.flashSale?.originalPrice || p.originalPrice || p.price;
+                const disc = getFlashSaleDiscountPercent(p, shopSettings);
+                const soldQuota = p.flashSale?.stockSold || p.flashSale?.quotaSold || 4;
+                const totalQuota = p.flashSale?.stockQuota || p.flashSale?.quotaTotal || 10;
+                const progressPct = Math.min(100, Math.round((soldQuota / totalQuota) * 100));
+
+                return (
+                  <div
+                    key={`fs-row-${p.id}`}
+                    onClick={() => openProductDetail(p)}
+                    style={{
+                      flex: isFlashSaleExpanded ? 'initial' : (isMobile ? '0 0 240px' : '0 0 280px'),
+                      scrollSnapAlign: 'start',
+                      background: cardBg,
+                      borderRadius: 20,
+                      border: '1.5px solid rgba(239, 68, 68, 0.35)',
+                      overflow: 'hidden',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      boxShadow: isDark ? '0 8px 24px rgba(0,0,0,0.4)' : '0 6px 20px rgba(239, 68, 68, 0.08)',
+                      transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+                      position: 'relative'
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.transform = 'translateY(-4px)';
+                      e.currentTarget.style.borderColor = '#ef4444';
+                      e.currentTarget.style.boxShadow = '0 14px 32px rgba(239, 68, 68, 0.25)';
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.35)';
+                      e.currentTarget.style.boxShadow = isDark ? '0 8px 24px rgba(0,0,0,0.4)' : '0 6px 20px rgba(239, 68, 68, 0.08)';
+                    }}
+                  >
+                    {/* Image & Discount Badge */}
+                    <div style={{ position: 'relative', width: '100%', aspectRatio: '16/10', background: isDark ? '#090a12' : '#f8fafc', overflow: 'hidden' }}>
+                      {p.gallery?.[0] || p.image ? (
+                        <img
+                          src={p.gallery?.[0] || p.image}
+                          alt={p.name}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.4s ease' }}
+                        />
+                      ) : (
+                        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: subTextColor, fontSize: 12 }}>
+                          {p.name}
+                        </div>
+                      )}
+                      <div style={{
+                        position: 'absolute',
+                        top: 10,
+                        left: 10,
+                        background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                        color: '#ffffff',
+                        fontSize: 10,
+                        fontWeight: 900,
+                        padding: '3px 8px',
+                        borderRadius: 100,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 3,
+                        boxShadow: '0 4px 10px rgba(239, 68, 68, 0.4)'
+                      }}>
+                        <Zap size={11} fill="#fff" /> -{disc}%
+                      </div>
                     </div>
-                    <div style={{ fontSize: 8.5, fontWeight: 800, color: subTextColor, marginTop: 3, letterSpacing: '0.04em' }}>
-                      {item.label}
+
+                    {/* Content */}
+                    <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', flex: 1, gap: 8 }}>
+                      <span style={{ fontSize: 10, fontWeight: 800, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                        {p.category || 'Flash Sale'}
+                      </span>
+                      <h4 style={{ margin: 0, fontFamily: "'Outfit', sans-serif", fontSize: 14, fontWeight: 800, color: textColor, lineHeight: 1.3, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                        {p.name}
+                      </h4>
+
+                      {/* Quota Progress Bar */}
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, fontWeight: 800, color: subTextColor, marginBottom: 4 }}>
+                          <span>🔥 Terjual {soldQuota} pcs</span>
+                          <span style={{ color: '#ef4444' }}>Sisa {Math.max(0, totalQuota - soldQuota)} pcs</span>
+                        </div>
+                        <div style={{ width: '100%', height: 5, borderRadius: 100, background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+                          <div style={{ width: `${progressPct}%`, height: '100%', background: 'linear-gradient(90deg, #f59e0b 0%, #ef4444 100%)', borderRadius: 100 }} />
+                        </div>
+                      </div>
+
+                      {/* Price & Action */}
+                      <div style={{ marginTop: 'auto', paddingTop: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                        <div>
+                          <span style={{ fontSize: 11, color: subTextColor, textDecoration: 'line-through', display: 'block' }}>
+                            {formatRp(originalPrice)}
+                          </span>
+                          <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: 15, fontWeight: 900, color: '#ef4444' }}>
+                            {formatRp(salePrice)}
+                          </span>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openProductDetail(p);
+                          }}
+                          style={{
+                            padding: '6px 12px',
+                            borderRadius: 100,
+                            background: '#ef4444',
+                            border: 'none',
+                            color: '#ffffff',
+                            fontFamily: "'Outfit', sans-serif",
+                            fontSize: 11.5,
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            boxShadow: '0 4px 12px rgba(239, 68, 68, 0.35)',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          Beli <ArrowUpRight size={12} />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  {idx < 2 && <span style={{ fontWeight: 900, color: '#ef4444', fontSize: 14 }}>:</span>}
-                </React.Fragment>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
 
         {/* Category Filter Pills Navigation Bar */}
-        <div data-reveal="true" style={{ marginBottom: 28 }}>
-          <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6, scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
+        <div data-reveal="true" style={{ marginBottom: 28, display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Left Arrow Button */}
+          {canScrollCatLeft && (
+            <button
+              type="button"
+              onClick={() => scrollCatTrack('left')}
+              aria-label="Geser ke kiri"
+              style={{
+                flexShrink: 0,
+                width: 34,
+                height: 34,
+                borderRadius: '50%',
+                border: `1.5px solid ${cardBorder}`,
+                background: isDark ? 'rgba(15, 23, 42, 0.9)' : '#ffffff',
+                color: textColor,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                boxShadow: 'none',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = accentColor;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = cardBorder;
+              }}
+            >
+              <ChevronLeft size={16} />
+            </button>
+          )}
+
+          {/* Scrollable & Draggable Single-Row Track */}
+          <div
+            ref={catScrollRef}
+            onMouseDown={handleCatMouseDown}
+            onMouseMove={handleCatMouseMove}
+            onMouseUp={handleCatMouseUp}
+            onMouseLeave={handleCatMouseUp}
+            onWheel={handleCatWheel}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              display: 'flex',
+              flexWrap: 'nowrap',
+              alignItems: 'center',
+              gap: 8,
+              overflowX: 'auto',
+              overflowY: 'hidden',
+              paddingBottom: 4,
+              paddingTop: 4,
+              scrollbarWidth: 'none',
+              WebkitOverflowScrolling: 'touch',
+              cursor: isCatDragging ? 'grabbing' : 'grab',
+              userSelect: 'none',
+              maskImage: catMask,
+              WebkitMaskImage: catMask,
+              transition: 'mask-image 0.25s ease, -webkit-mask-image 0.25s ease'
+            }}
+          >
             {categories.map((cat) => {
               const isActive = activeCategory === cat;
-              const count = cat === 'Semua' ? products.length : products.filter((p: any) => (p.category || '').toLowerCase() === cat.toLowerCase()).length;
+              const count = cat === 'Semua'
+                ? products.length
+                : cat === 'Flash Sale'
+                ? flashSaleProducts.length
+                : cat === 'Pre-Order'
+                ? preOrderProducts.length
+                : products.filter((p: any) => (p.category || '').toLowerCase() === cat.toLowerCase()).length;
+
               return (
                 <button
                   key={cat}
-                  onClick={() => handleCategoryChange(cat)}
+                  type="button"
+                  onClick={() => {
+                    if (catDragDistance > 6) return;
+                    handleCategoryChange(cat);
+                  }}
                   style={{
+                    flexShrink: 0,
                     padding: '8px 18px', 
                     borderRadius: 100, 
                     border: `1.5px solid ${isActive ? accentColor : cardBorder}`,
@@ -1010,28 +1804,33 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
                     fontFamily: "'Outfit', sans-serif", 
                     fontSize: 13, 
                     fontWeight: isActive ? 800 : 600, 
-                    cursor: 'pointer', 
+                    cursor: isCatDragging ? 'grabbing' : 'pointer', 
                     whiteSpace: 'nowrap',
-                    transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-                    display: 'flex',
+                    transition: isCatDragging ? 'none' : 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+                    display: 'inline-flex',
                     alignItems: 'center',
                     gap: 8,
-                    boxShadow: isActive ? `0 6px 18px ${accentColor}35` : 'none'
+                    boxShadow: 'none'
                   }}
                   onMouseEnter={(e) => {
-                    if (!isActive) {
+                    if (!isActive && !isCatDragging) {
                       e.currentTarget.style.color = textColor;
                       e.currentTarget.style.borderColor = `${accentColor}50`;
                     }
                   }}
                   onMouseLeave={(e) => {
-                    if (!isActive) {
+                    if (!isActive && !isCatDragging) {
                       e.currentTarget.style.color = subTextColor;
                       e.currentTarget.style.borderColor = cardBorder;
                     }
                   }}
                 >
-                  <span>{cat === 'Semua' ? '✦ Semua Produk' : cat}</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    {cat === 'Semua' && <Layers size={13} />}
+                    {cat === 'Flash Sale' && <Zap size={13} fill={isActive ? '#ffffff' : '#ef4444'} color={isActive ? '#ffffff' : '#ef4444'} />}
+                    {cat === 'Pre-Order' && <Clock size={13} color={isActive ? '#ffffff' : '#f59e0b'} />}
+                    {cat === 'Semua' ? 'Semua Produk' : cat}
+                  </span>
                   <span style={{
                     fontSize: 11,
                     padding: '1px 7px',
@@ -1046,6 +1845,38 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
               );
             })}
           </div>
+
+          {/* Right Arrow Button */}
+          {canScrollCatRight && (
+            <button
+              type="button"
+              onClick={() => scrollCatTrack('right')}
+              aria-label="Geser ke kanan"
+              style={{
+                flexShrink: 0,
+                width: 34,
+                height: 34,
+                borderRadius: '50%',
+                border: `1.5px solid ${cardBorder}`,
+                background: isDark ? 'rgba(15, 23, 42, 0.9)' : '#ffffff',
+                color: textColor,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                boxShadow: 'none',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = accentColor;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = cardBorder;
+              }}
+            >
+              <ChevronRight size={16} />
+            </button>
+          )}
         </div>
 
         {/* Product Grid Header Controls: Title + Sorting Switcher */}
@@ -1150,7 +1981,7 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
 
             {/* Quick Header Cart Button */}
             <button
-              onClick={() => setShowCartDrawer(true)}
+              onClick={() => navigate('/keranjang')}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -1166,10 +1997,33 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
                 cursor: 'pointer',
                 boxShadow: totalCartCount > 0 ? `0 4px 14px ${accentColor}40` : 'none'
               }}
-              title="Buka Keranjang Belanja"
+              title="Buka Halaman Keranjang Belanja"
             >
               <ShoppingCart size={14} />
               <span>{totalCartCount}</span>
+            </button>
+
+            {/* Riwayat & Pelacak Pesanan Quick Button */}
+            <button
+              onClick={() => navigate('/keranjang?tab=history')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '7px 14px',
+                borderRadius: 100,
+                border: `1px solid ${cardBorder}`,
+                background: cardBg,
+                color: textColor,
+                fontFamily: "'Outfit', sans-serif",
+                fontSize: 12.5,
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+              title="Riwayat Pesanan & Pelacak Proyek"
+            >
+              <Clock size={14} />
+              <span>Riwayat</span>
             </button>
           </div>
         </div>
@@ -1180,7 +2034,7 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
             padding: '70px 20px',
             textAlign: 'center',
             background: cardBg,
-            borderRadius: 28,
+            borderRadius: 22,
             border: `1.5px dashed ${cardBorder}`,
             display: 'flex',
             flexDirection: 'column',
@@ -1223,8 +2077,13 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
             width: '100%' 
           }}>
             {filteredProducts.map((p: any, idx: number) => {
-              const hasDiscount = p.originalPrice > p.price;
-              const discountPercent = hasDiscount ? Math.round(((p.originalPrice - p.price) / p.originalPrice) * 100) : 0;
+              const isFlashActive = Boolean(p.flashSale?.isActive && new Date(p.flashSale.endTime).getTime() > Date.now());
+              const effectivePrice = (isFlashActive && p.flashSale.salePrice > 0) ? p.flashSale.salePrice : p.price;
+              const effectiveOriginalPrice = isFlashActive ? (p.flashSale.originalPrice || p.price) : p.originalPrice;
+              const hasDiscount = isFlashActive || effectiveOriginalPrice > effectivePrice;
+              const discountPercent = isFlashActive 
+                ? (p.flashSale.discountPercent || Math.round(((effectiveOriginalPrice - effectivePrice) / effectiveOriginalPrice) * 100))
+                : (hasDiscount ? Math.round(((p.originalPrice - p.price) / p.originalPrice) * 100) : 0);
               const isFavorited = wishlist.includes(p.id);
 
               return (
@@ -1233,27 +2092,20 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
                   data-reveal="true"
                   className={`reveal-delay-${(idx % 4) + 1} ${idx > 8 ? 'content-visibility-auto' : ''}`}
                   onClick={() => openProductDetail(p)} 
+                  data-card-3d="true"
+                  className="katalog-card"
                   style={{ 
                     background: cardBg, 
-                    borderRadius: isMobile ? 18 : 24, 
+                    borderRadius: 22, 
+                    padding: 12,
                     overflow: 'hidden', 
-                    border: `1px solid ${cardBorder}`, 
+                    border: isFlashActive ? '1.5px solid rgba(239, 68, 68, 0.45)' : `1px solid ${cardBorder}`, 
                     cursor: 'pointer', 
-                    transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)', 
+                    transition: 'transform 0.45s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease', 
                     display: 'flex', 
                     flexDirection: 'column', 
-                    boxShadow: isDark ? '0 8px 24px rgba(0,0,0,0.3)' : '0 6px 20px rgba(0,0,0,0.03)',
+                    boxShadow: 'none',
                     position: 'relative'
-                  }}
-                  onMouseEnter={(e) => { 
-                    e.currentTarget.style.transform = 'translateY(-5px)'; 
-                    e.currentTarget.style.boxShadow = isDark ? '0 20px 48px rgba(0,0,0,0.6)' : '0 20px 40px rgba(0,0,0,0.08)'; 
-                    e.currentTarget.style.borderColor = `${accentColor}40`;
-                  }}
-                  onMouseLeave={(e) => { 
-                    e.currentTarget.style.transform = 'translateY(0)'; 
-                    e.currentTarget.style.boxShadow = isDark ? '0 8px 24px rgba(0,0,0,0.3)' : '0 6px 20px rgba(0,0,0,0.03)'; 
-                    e.currentTarget.style.borderColor = cardBorder;
                   }}
                 >
                   {/* Product Image Frame */}
@@ -1261,8 +2113,8 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
                     width: '100%', 
                     aspectRatio: '1/1', 
                     backgroundColor: isDark ? '#090a12' : '#f8fafc', 
+                    borderRadius: 16,
                     position: 'relative', 
-                    padding: isMobile ? 8 : 12, 
                     boxSizing: 'border-box', 
                     overflow: 'hidden' 
                   }}>
@@ -1277,10 +2129,7 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
                           height: '100%', 
                           objectFit: 'cover', 
                           borderRadius: isMobile ? 12 : 16, 
-                          transition: 'transform 0.5s ease' 
                         }} 
-                        onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.05)'}
-                        onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
                       />
                     ) : (
                       <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: subTextColor, fontFamily: "'Inter', sans-serif", fontSize: 12, borderRadius: isMobile ? 12 : 16, background: isDark ? '#13141f' : '#edf0f6' }}>
@@ -1318,8 +2167,29 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
                       <Heart size={isMobile ? 14 : 15} fill={isFavorited ? "#ffffff" : "none"} strokeWidth={2.2} />
                     </button>
 
-                    {/* Discount Badge */}
-                    {hasDiscount && (
+                    {/* Discount / Flash Sale Badge */}
+                    {isFlashActive ? (
+                      <div style={{
+                        position: 'absolute',
+                        top: isMobile ? 14 : 18,
+                        left: isMobile ? 14 : 18,
+                        background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                        color: '#ffffff',
+                        fontSize: isMobile ? 9 : 10,
+                        fontWeight: 900,
+                        padding: isMobile ? '3px 8px' : '4px 10px',
+                        borderRadius: 100,
+                        fontFamily: "'Outfit', sans-serif",
+                        letterSpacing: '0.04em',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        boxShadow: '0 4px 14px rgba(239, 68, 68, 0.45)',
+                        zIndex: 2
+                      }}>
+                        <Zap size={11} fill="#ffffff" /> FLASH SALE -{discountPercent}%
+                      </div>
+                    ) : hasDiscount && (
                       <div style={{
                         position: 'absolute',
                         top: isMobile ? 14 : 18,
@@ -1339,7 +2209,47 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
                       </div>
                     )}
 
-                    {(p.type === 'Digital' || p.downloadUrl || p.isDigitalAsset) && (
+                    {isPreOrderProduct(p) ? (
+                      <div style={{
+                        position: 'absolute',
+                        bottom: isMobile ? 12 : 16,
+                        left: isMobile ? 12 : 16,
+                        background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                        color: '#ffffff',
+                        fontSize: isMobile ? 8.5 : 9.5,
+                        fontWeight: 900,
+                        padding: '3px 8px',
+                        borderRadius: 100,
+                        fontFamily: "'Outfit', sans-serif",
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        boxShadow: '0 4px 12px rgba(245, 158, 11, 0.45)',
+                        zIndex: 2
+                      }}>
+                        <Clock size={11} /> Pre-Order
+                      </div>
+                    ) : isServiceProduct(p) ? (
+                      <div style={{
+                        position: 'absolute',
+                        bottom: isMobile ? 12 : 16,
+                        left: isMobile ? 12 : 16,
+                        background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+                        color: '#ffffff',
+                        fontSize: isMobile ? 8.5 : 9.5,
+                        fontWeight: 900,
+                        padding: '3px 8px',
+                        borderRadius: 100,
+                        fontFamily: "'Outfit', sans-serif",
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        boxShadow: '0 4px 12px rgba(59, 130, 246, 0.45)',
+                        zIndex: 2
+                      }}>
+                        <Briefcase size={11} /> Jasa
+                      </div>
+                    ) : (p.type === 'Digital' || p.downloadUrl || p.isDigitalAsset) ? (
                       <div style={{
                         position: 'absolute',
                         bottom: isMobile ? 12 : 16,
@@ -1357,11 +2267,9 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
                         boxShadow: '0 4px 12px rgba(16, 185, 129, 0.45)',
                         zIndex: 2
                       }}>
-                        <Zap size={11} fill="#fff" /> INSTANT DOWNLOAD
+                        <Cloud size={11} /> Digital
                       </div>
-                    )}
-
-                    {(p.type === 'Add-on' || p.isAddon) && (
+                    ) : (p.type === 'Add-on' || p.isAddon) ? (
                       <div style={{
                         position: 'absolute',
                         bottom: isMobile ? 12 : 16,
@@ -1379,7 +2287,27 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
                         boxShadow: '0 4px 12px rgba(99, 102, 241, 0.45)',
                         zIndex: 2
                       }}>
-                        <Sparkles size={11} fill="#fff" /> ADD-ON EKSTRA
+                        <Sparkles size={11} fill="#fff" /> Add-On
+                      </div>
+                    ) : (
+                      <div style={{
+                        position: 'absolute',
+                        bottom: isMobile ? 12 : 16,
+                        left: isMobile ? 12 : 16,
+                        background: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)',
+                        color: '#ffffff',
+                        fontSize: isMobile ? 8.5 : 9.5,
+                        fontWeight: 900,
+                        padding: '3px 8px',
+                        borderRadius: 100,
+                        fontFamily: "'Outfit', sans-serif",
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        boxShadow: '0 4px 12px rgba(14, 165, 233, 0.45)',
+                        zIndex: 2
+                      }}>
+                        <Package size={11} /> Ready Stock
                       </div>
                     )}
                   </div>
@@ -1396,7 +2324,7 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
                     <div style={{ 
                       fontSize: isMobile ? 10 : 11, 
                       fontWeight: 800, 
-                      color: accentColor, 
+                      color: isFlashActive ? '#ef4444' : accentColor, 
                       textTransform: 'uppercase', 
                       letterSpacing: '0.06em', 
                       fontFamily: "'Outfit', sans-serif", 
@@ -1423,6 +2351,31 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
                       {p.name}
                     </h3>
 
+                    {/* Pre-Order Quota Progress (if PO) */}
+                    {isPreOrderProduct(p) && (
+                      <div style={{
+                        marginBottom: 10,
+                        padding: '8px 10px',
+                        borderRadius: 12,
+                        background: isDark ? 'rgba(245, 158, 11, 0.12)' : 'rgba(245, 158, 11, 0.08)',
+                        border: '1px solid rgba(245, 158, 11, 0.25)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 4
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontWeight: 800, color: '#f59e0b' }}>
+                          <span>📦 Kuota PO:</span>
+                          <span>{p.preOrderSold || 0} / {p.preOrderQuota || 50} pcs</span>
+                        </div>
+                        <div style={{ width: '100%', height: 4, borderRadius: 100, background: 'rgba(245, 158, 11, 0.2)', overflow: 'hidden' }}>
+                          <div style={{ width: `${Math.min(100, Math.round(((p.preOrderSold || 0) / (p.preOrderQuota || 50)) * 100))}%`, height: '100%', background: 'linear-gradient(90deg, #f59e0b 0%, #d97706 100%)', borderRadius: 100 }} />
+                        </div>
+                        {p.preOrderEstimate && (
+                          <span style={{ fontSize: 10, color: subTextColor }}>🚚 Est. Kirim: {p.preOrderEstimate}</span>
+                        )}
+                      </div>
+                    )}
+
                     {/* Price Section */}
                     <div style={{ 
                       display: 'flex', 
@@ -1435,14 +2388,18 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
                         fontFamily: "'Outfit', sans-serif", 
                         fontSize: isMobile ? 15 : 19, 
                         fontWeight: 900, 
-                        color: accentColor, 
+                        color: isFlashActive ? '#ef4444' : accentColor, 
                         letterSpacing: '-0.3px',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
-                        maxWidth: '100%'
+                        maxWidth: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4
                       }}>
-                        {formatRp(p.price)}
+                        {isFlashActive && <Zap size={15} fill="#ef4444" />}
+                        {formatRp(effectivePrice)}
                       </span>
                       {hasDiscount && (
                         <span style={{ 
@@ -1455,7 +2412,7 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
                           whiteSpace: 'nowrap',
                           maxWidth: '100%'
                         }}>
-                          {formatRp(p.originalPrice)}
+                          {formatRp(effectiveOriginalPrice)}
                         </span>
                       )}
                     </div>
@@ -1505,7 +2462,7 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
                           flex: 1, 
                           height: isMobile ? 34 : 38, 
                           borderRadius: 100, 
-                          background: accentColor, 
+                          background: isPreOrderProduct(p) ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' : accentColor, 
                           color: '#fff', 
                           border: 'none', 
                           fontFamily: "'Outfit', sans-serif", 
@@ -1516,7 +2473,7 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
                           alignItems: 'center',
                           justifyContent: 'center',
                           gap: 4,
-                          boxShadow: `0 4px 14px ${accentColor}35`,
+                          boxShadow: `0 4px 14px ${isPreOrderProduct(p) ? 'rgba(245, 158, 11, 0.4)' : `${accentColor}35`}`,
                           transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
                           minWidth: 0,
                           padding: '0 8px'
@@ -1524,7 +2481,13 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
                         onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
                         onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
                       >
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Detail</span> 
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          {isPreOrderProduct(p) 
+                            ? (isProductFlashSaleActive(p) ? <><Zap size={12} /> PO Flash</> : <><Clock size={12} /> Pre-Order</>) 
+                            : (isServiceProduct(p) 
+                                ? (isProductFlashSaleActive(p) ? <><Zap size={12} /> Flash Jasa</> : <><Briefcase size={12} /> Pesan Jasa</>) 
+                                : (isProductFlashSaleActive(p) ? <><Zap size={12} /> Flash Beli</> : <><Package size={12} /> Beli</>))}
+                        </span> 
                         <ArrowUpRight size={13} style={{ flexShrink: 0 }} />
                       </button>
                     </div>
@@ -1538,120 +2501,10 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
 
       <LPFooter isDark={isDark} accentColor={accentColor} data={data.footer} />
 
-      {/* --- CART DRAWER MODAL --- */}
-      {showCartDrawer && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 99990, display: 'flex', justifyContent: 'flex-end' }}>
-          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }} onClick={() => setShowCartDrawer(false)} />
-          <div style={{
-            position: 'relative',
-            width: '100%',
-            maxWidth: 440,
-            height: '100dvh',
-            background: isDark ? '#0c0d14' : '#ffffff',
-            borderLeft: `1.5px solid ${cardBorder}`,
-            display: 'flex',
-            flexDirection: 'column',
-            boxShadow: '-12px 0 40px rgba(0,0,0,0.4)',
-            animation: 'cmsFadeIn 0.25s ease'
-          }}>
-            {/* Cart Header */}
-            <div style={{ padding: '20px 24px', borderBottom: `1px solid ${cardBorder}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: cardBg }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <ShoppingCart size={20} color={accentColor} />
-                <h3 style={{ margin: 0, fontFamily: "'Outfit', sans-serif", fontSize: 18, fontWeight: 800, color: textColor }}>Keranjang Belanja</h3>
-                <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 100, background: accentColor, color: '#fff', fontWeight: 800 }}>
-                  {totalCartCount} item
-                </span>
-              </div>
-              <button onClick={() => setShowCartDrawer(false)} style={{ background: 'transparent', border: 'none', color: subTextColor, cursor: 'pointer', padding: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Cart Items List */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {cart.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '70px 20px' }}>
-                  <ShoppingCart size={48} style={{ opacity: 0.2, margin: '0 auto 16px', color: accentColor }} />
-                  <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 17, fontWeight: 800, color: textColor }}>Keranjang Anda Kosong</div>
-                  <p style={{ fontSize: 13, color: subTextColor, marginTop: 6, lineHeight: 1.5 }}>Pilih produk dari katalog kami untuk mulai melakukan pemesanan.</p>
-                </div>
-              ) : (
-                cart.map(item => (
-                  <div key={item.id} style={{ display: 'flex', gap: 12, background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc', padding: 12, borderRadius: 18, border: `1px solid ${cardBorder}`, alignItems: 'center' }}>
-                    <img src={item.image || 'https://placehold.co/100x100?text=Produk'} alt="" style={{ width: 56, height: 56, borderRadius: 14, objectFit: 'cover', flexShrink: 0 }} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 14, fontWeight: 700, color: textColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {item.name}
-                      </div>
-                      {item.variantName && (
-                        <div style={{ fontSize: 11, color: subTextColor, marginTop: 1 }}>Varian: {item.variantName}</div>
-                      )}
-                      <div style={{ fontSize: 13, fontWeight: 800, color: accentColor, marginTop: 3 }}>
-                        {formatRp(item.price)}
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <button onClick={() => updateCartQty(item.id, -1)} style={{ width: 26, height: 26, borderRadius: '50%', border: `1px solid ${cardBorder}`, background: cardBg, color: textColor, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Minus size={12} />
-                      </button>
-                      <span style={{ fontSize: 13, fontWeight: 800, minWidth: 16, textAlign: 'center' }}>{item.quantity}</span>
-                      <button onClick={() => updateCartQty(item.id, 1)} style={{ width: 26, height: 26, borderRadius: '50%', border: `1px solid ${cardBorder}`, background: cardBg, color: textColor, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Plus size={12} />
-                      </button>
-                      <button onClick={() => removeFromCart(item.id)} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 4, marginLeft: 4 }}>
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            {/* Cart Footer / Checkout Button */}
-            {cart.length > 0 && (
-              <div style={{ padding: '20px 24px', borderTop: `1px solid ${cardBorder}`, background: cardBg, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 13, color: subTextColor, fontWeight: 600 }}>Total Subtotal:</span>
-                  <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: 20, fontWeight: 900, color: accentColor }}>{formatRp(cartSubtotal)}</span>
-                </div>
-
-                <button
-                  onClick={() => {
-                    setCheckoutMode('cart');
-                    setShowCheckout(true);
-                  }}
-                  style={{
-                    width: '100%',
-                    height: 48,
-                    borderRadius: 100,
-                    border: 'none',
-                    background: accentColor,
-                    color: '#ffffff',
-                    fontFamily: "'Outfit', sans-serif",
-                    fontSize: 14,
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 8,
-                    boxShadow: `0 8px 24px ${accentColor}40`
-                  }}
-                >
-                  <ShoppingCart size={16} /> Lanjut ke Checkout ({formatRp(cartSubtotal)})
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* --- WISHLIST DRAWER MODAL --- */}
       {showWishlistDrawer && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 99990, display: 'flex', justifyContent: 'flex-end' }}>
-          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }} onClick={() => setShowWishlistDrawer(false)} />
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'none', WebkitBackdropFilter: 'none' }} onClick={() => setShowWishlistDrawer(false)} />
           <div style={{
             position: 'relative',
             width: '100%',
@@ -1707,7 +2560,7 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
                           onClick={() => {
                             addToCart(prod, null, 1);
                             setShowWishlistDrawer(false);
-                            setShowCartDrawer(true);
+                            navigate('/keranjang');
                           }}
                           style={{
                             padding: '6px 14px',
@@ -1851,137 +2704,6 @@ Mohon diperiksa di mutasi banknya ya min. Setelah status di-acc Lunas, berkas di
             qrisMerchantName: shopSettings?.qrisMerchantName || businessProfile?.qris?.merchantName || businessProfile?.brandName || ''
           }}
         />
-      )}
-
-      {/* --- CART MULTI-ITEM CHECKOUT MODAL --- */}
-      {showCheckout && checkoutMode === 'cart' && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999, padding: isMobile ? 0 : 20 }}>
-          <div style={{ background: cardBg, width: '100%', maxWidth: 480, height: isMobile ? '100dvh' : 'auto', maxHeight: isMobile ? '100dvh' : '90vh', overflowY: 'auto', borderRadius: isMobile ? 0 : 28, padding: isMobile ? '24px 18px' : 32, position: 'relative', boxShadow: '0 30px 70px rgba(0,0,0,0.4)', border: `1.5px solid ${cardBorder}`, animation: 'cmsPopIn 0.45s cubic-bezier(0.16, 1, 0.3, 1)' }}>
-            <button onClick={() => setShowCheckout(false)} style={{ position: 'absolute', top: 22, right: 22, background: 'transparent', border: 'none', color: subTextColor, cursor: 'pointer', padding: 4 }}>
-              <X size={20} />
-            </button>
-            
-            <h3 style={{ fontFamily: "'Outfit', sans-serif", fontSize: 22, fontWeight: 900, margin: '0 0 18px', color: textColor }}>
-              Checkout Keranjang ({totalCartCount} Item)
-            </h3>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: subTextColor, marginBottom: 6, fontFamily: "'Outfit', sans-serif" }}>Nama Lengkap *</label>
-                <input value={checkoutForm.name} onChange={e => setCheckoutForm({...checkoutForm, name: e.target.value})} style={{ width: '100%', height: 44, padding: '0 14px', borderRadius: 14, border: `1px solid ${cardBorder}`, background: isDark ? '#090a12' : '#f9fafb', color: textColor, fontSize: 13.5, outline: 'none', fontFamily: "'Inter', sans-serif" }} placeholder="Cth: Budi Santoso" />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: subTextColor, marginBottom: 6, fontFamily: "'Outfit', sans-serif" }}>Nomor WhatsApp *</label>
-                <input value={checkoutForm.phone} onChange={e => setCheckoutForm({...checkoutForm, phone: e.target.value})} style={{ width: '100%', height: 44, padding: '0 14px', borderRadius: 14, border: `1px solid ${cardBorder}`, background: isDark ? '#090a12' : '#f9fafb', color: textColor, fontSize: 13.5, outline: 'none', fontFamily: "'Inter', sans-serif" }} placeholder="Cth: 08123456789" />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: subTextColor, marginBottom: 6, fontFamily: "'Outfit', sans-serif" }}>Alamat / Catatan Pengiriman</label>
-                <textarea value={checkoutForm.address} onChange={e => setCheckoutForm({...checkoutForm, address: e.target.value})} style={{ width: '100%', height: 70, padding: '10px 14px', borderRadius: 14, border: `1px solid ${cardBorder}`, background: isDark ? '#090a12' : '#f9fafb', color: textColor, fontSize: 13.5, outline: 'none', resize: 'none', fontFamily: "'Inter', sans-serif" }} placeholder="Alamat lengkap pengiriman atau catatan..." />
-              </div>
-
-              {(() => {
-                const paymentList = (data?.shopSettings?.paymentMethods?.length > 0 ? data.shopSettings.paymentMethods : (businessProfile?.bankAccounts || []));
-                const qrisUrl = shopSettings?.qrisImageUrl || data?.shopSettings?.qrisImageUrl || businessProfile?.qris?.imageUrl || '';
-                const qrisMerchant = shopSettings?.qrisMerchantName || businessProfile?.qris?.merchantName || businessProfile?.brandName || 'SUMR.DAY STUDIO';
-                if (paymentList.length === 0 && !qrisUrl) return null;
-
-                return (
-                  <div>
-                    <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: subTextColor, marginBottom: 6, fontFamily: "'Outfit', sans-serif" }}>Metode Pembayaran *</label>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {qrisUrl && (
-                        <label style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '12px 14px', borderRadius: 14, border: `1.5px solid ${checkoutForm.paymentMethodId === 'qris_toko' ? accentColor : cardBorder}`, background: isDark ? '#090a12' : '#f9fafb', cursor: 'pointer' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <input 
-                              type="radio" 
-                              name="paymentMethodCart" 
-                              value="qris_toko" 
-                              checked={checkoutForm.paymentMethodId === 'qris_toko'} 
-                              onChange={() => setCheckoutForm({...checkoutForm, paymentMethodId: 'qris_toko'})}
-                              style={{ width: 16, height: 16, accentColor: accentColor }}
-                            />
-                            <div style={{ flex: 1 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span style={{ fontSize: 13, fontWeight: 800, color: textColor, fontFamily: "'Outfit', sans-serif" }}>QRIS Instan (Bebas Biaya Admin)</span>
-                                <span style={{ fontSize: 10, background: '#10b98120', color: '#10b981', fontWeight: 800, padding: '2px 6px', borderRadius: 6 }}>0% Fee</span>
-                              </div>
-                              <div style={{ fontSize: 11, color: subTextColor, fontFamily: "'Inter', sans-serif" }}>{qrisMerchant}</div>
-                            </div>
-                          </div>
-                          {checkoutForm.paymentMethodId === 'qris_toko' && (
-                            <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#ffffff', padding: 14, borderRadius: 12, border: `1px solid ${cardBorder}` }}>
-                              <img src={qrisUrl} alt="QRIS Toko" style={{ maxWidth: 200, width: '100%', height: 'auto', borderRadius: 8 }} />
-                              <span style={{ fontSize: 11, color: '#475569', fontWeight: 600, marginTop: 8, textAlign: 'center' }}>
-                                Scan barcode QRIS di atas untuk membayar langsung tanpa biaya MDR.
-                              </span>
-                            </div>
-                          )}
-                        </label>
-                      )}
-                      {paymentList.map((pm: any) => (
-                        <label key={pm.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 14, border: `1.5px solid ${checkoutForm.paymentMethodId === pm.id ? accentColor : cardBorder}`, background: isDark ? '#090a12' : '#f9fafb', cursor: 'pointer' }}>
-                          <input 
-                            type="radio" 
-                            name="paymentMethodCart" 
-                            value={pm.id} 
-                            checked={checkoutForm.paymentMethodId === pm.id} 
-                            onChange={() => setCheckoutForm({...checkoutForm, paymentMethodId: pm.id})}
-                            style={{ width: 16, height: 16, accentColor: accentColor }}
-                          />
-                          <div>
-                            <div style={{ fontSize: 13, fontWeight: 800, color: textColor, fontFamily: "'Outfit', sans-serif" }}>{pm.bankName} - {pm.accountNumber}</div>
-                            <div style={{ fontSize: 11, color: subTextColor, fontFamily: "'Inter', sans-serif" }}>A.n {pm.accountName}</div>
-                          </div>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Items Summary */}
-              <div style={{ background: isDark ? '#090a12' : '#f9fafb', padding: 16, borderRadius: 18, border: `1px solid ${cardBorder}`, maxHeight: 150, overflowY: 'auto' }}>
-                <div style={{ fontSize: 12, fontWeight: 800, color: subTextColor, marginBottom: 8, fontFamily: "'Outfit', sans-serif" }}>Daftar Item ({totalCartCount}):</div>
-                {cart.map(item => (
-                  <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, marginBottom: 5, fontFamily: "'Inter', sans-serif" }}>
-                    <span style={{ color: textColor }}>{item.name} x{item.quantity}</span>
-                    <span style={{ fontWeight: 700 }}>{formatRp(item.price * item.quantity)}</span>
-                  </div>
-                ))}
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 12.5, color: '#10b981', fontWeight: 700, fontFamily: "'Inter', sans-serif" }}>
-                  <span>Kode Unik Verifikasi:</span>
-                  <span>+{formatRp(cartUniqueCode)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 8, marginTop: 6, borderTop: `1px solid ${cardBorder}`, fontSize: 16, fontWeight: 900, color: textColor, fontFamily: "'Outfit', sans-serif" }}>
-                  <span>Total Bayar:</span>
-                  <span style={{ color: accentColor }}>{formatRp(cartSubtotal + cartUniqueCode)}</span>
-                </div>
-                <div style={{ fontSize: 11, color: subTextColor, marginTop: 4, fontStyle: 'italic', textAlign: 'right' }}>
-                  *Mohon transfer persis nominal di atas untuk kemudahan verifikasi mutasi bank.
-                </div>
-              </div>
-
-              <button 
-                onClick={() => submitOrder(cartSubtotal, cart, cartUniqueCode)} 
-                disabled={isSubmitting || !checkoutForm.name || !checkoutForm.phone || ((data?.shopSettings?.paymentMethods?.length > 0 || shopSettings?.qrisImageUrl) && !checkoutForm.paymentMethodId)}
-                style={{ 
-                  width: '100%', height: 50, borderRadius: 100, border: 'none', 
-                  background: (isSubmitting || !checkoutForm.name || !checkoutForm.phone || ((data?.shopSettings?.paymentMethods?.length > 0 || shopSettings?.qrisImageUrl) && !checkoutForm.paymentMethodId)) ? 'rgba(150,150,150,0.3)' : accentColor, 
-                  color: '#fff', fontSize: 14.5, fontWeight: 800, 
-                  cursor: (isSubmitting || !checkoutForm.name || !checkoutForm.phone || ((data?.shopSettings?.paymentMethods?.length > 0 || shopSettings?.qrisImageUrl) && !checkoutForm.paymentMethodId)) ? 'not-allowed' : 'pointer', 
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: "'Outfit', sans-serif",
-                  marginTop: 4,
-                  boxShadow: `0 8px 24px ${accentColor}40`
-                }}>
-                {isSubmitting ? 'Memproses Pesanan...' : (
-                  <>
-                    <ShoppingCart size={17} /> Kirim Pesanan Keranjang via WhatsApp
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );

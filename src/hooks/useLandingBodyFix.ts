@@ -3,21 +3,25 @@ import { useEffect } from 'react';
 /**
  * useLandingBodyFix
  *
- * Injects a <style> tag into <head> that forces html/body/#root to be
- * scrollable on landing/client pages. A dynamically-injected stylesheet
- * is the ONLY reliable way to override `!important` rules already in the
- * page stylesheet, because inline styles set via JS cannot target `html` or
- * use pseudo-selectors, and class-based overrides lose the specificity battle
- * against stacked `!important` rules.
+ * Ensures html/body/#root is smoothly scrollable on landing/client pages,
+ * while hiding the browser's native/chunky right-edge scrollbars so ONLY
+ * the sleek floating scroll radar pill acts as the page navigation.
  *
- * Removes the tag on component unmount so admin pages are unaffected.
+ * Smooth mouse wheel, touch scroll, and keyboard navigation remain fully intact.
  */
 export function useLandingBodyFix() {
   useEffect(() => {
     const styleId = 'lp-body-scroll-fix';
-    if (!document.getElementById(styleId)) {
-      const style = document.createElement('style');
-      style.id = styleId;
+    const isClientRoute = typeof window !== 'undefined' && !window.location.pathname.startsWith('/admin');
+
+    if (isClientRoute) {
+      let style = document.getElementById(styleId) as HTMLStyleElement | null;
+      if (!style) {
+        style = document.createElement('style');
+        style.id = styleId;
+        document.head.appendChild(style);
+      }
+      
       style.textContent = `
         html, body {
           position: static !important;
@@ -27,20 +31,45 @@ export function useLandingBodyFix() {
           min-height: 100vh !important;
           max-height: none !important;
           display: block !important;
+          touch-action: pan-y !important;
+          -webkit-overflow-scrolling: touch !important;
+          scroll-behavior: smooth !important;
+          /* Sembunyikan scrollbar bawaan browser (Firefox & IE) */
+          scrollbar-width: none !important;
+          -ms-overflow-style: none !important;
         }
+
         #root {
           display: block !important;
           overflow: visible !important;
           height: auto !important;
           min-height: 100vh !important;
+          touch-action: pan-y !important;
+        }
+
+        /* ── SEMBUNYIKAN SCROLLBAR BAWAAN BROWSER (CHROME, SAFARI, EDGE) ── */
+        /* Menghilangkan scrollbar ganda/dobel sehingga hanya pill radar melayang yang tampil */
+        html::-webkit-scrollbar,
+        body::-webkit-scrollbar,
+        #root::-webkit-scrollbar {
+          display: none !important;
+          width: 0 !important;
+          height: 0 !important;
+          background: transparent !important;
         }
       `;
-      document.head.appendChild(style);
+    } else {
+      const el = document.getElementById(styleId);
+      if (el) el.remove();
     }
 
     return () => {
-      const el = document.getElementById(styleId);
-      if (el) el.remove();
+      // Only remove if navigating to admin routes to prevent stylesheet thrashing between client pages
+      if (typeof window !== 'undefined' && window.location.pathname.startsWith('/admin')) {
+        const el = document.getElementById(styleId);
+        if (el) el.remove();
+      }
     };
   }, []);
 }
+

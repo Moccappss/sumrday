@@ -5,6 +5,7 @@ import { ChevronUp, ChevronDown, Trash2, Upload, Link2, Play, Bookmark, Plus, X,
 import { storage } from '../../utils/storage';
 import DOMPurify from 'dompurify';
 import BiodataWidget from '../public/BiodataWidget';
+import Model3DViewer from '../common/Model3DViewer';
 import { useScrollReveal } from '../../hooks/useScrollReveal';
 
 import { extractYouTubeId, ensureAbsoluteUrl, getOptimizedUrl, hexToRgba, buildStickerFilter } from '../renderer/utils';
@@ -723,6 +724,15 @@ const MediaBlock = React.memo(({
               <textarea placeholder="Pesan Anda" style={{ width: '100%', padding: '12px 16px', border: '1px solid var(--glass-border)', borderRadius: 8, fontSize: 14, minHeight: 100, background: 'var(--cms-input-bg)', color: 'var(--cms-text)', resize: 'vertical' }} readOnly />
               <button style={{ width: '100%', padding: '14px', background: block.submitColor || 'var(--cms-accent, #7c3aed)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>{block.submitText || 'Kirim Pesan'}</button>
             </div>
+          ) : block.mediaType === '3d' ? (
+            <div style={{ width: '100%', height: block.height || 450, position: 'relative' }}>
+              <Model3DViewer 
+                src={block.url} 
+                height={block.height || 450} 
+                allowLocalUpload={false} 
+                title={block.name || 'Model 3D'} 
+              />
+            </div>
           ) : block.mediaType === 'biodata' ? (
             <div style={{ pointerEvents: 'none', userSelect: 'none' }}>
               <BiodataWidget settings={{ biodata: globalSettings?.biodata }} block={block} />
@@ -1267,6 +1277,7 @@ const LivePreview = ({ page, globalSettings, blocks, selectedBlockId, onSelectBl
         {/* Live Bottom Navigation in Editor Preview */}
         {!page?.hideBottomNav && !page?.hideNavbars && !currentFrames?.hideNavbars && (
           <div 
+            className="cms-preview-bottom-nav"
             style={{ 
               position: 'absolute', 
               bottom: 0, 
@@ -1276,6 +1287,7 @@ const LivePreview = ({ page, globalSettings, blocks, selectedBlockId, onSelectBl
               pointerEvents: 'none' 
             }}
           >
+            <style>{`@media (max-width: 767px) { .cms-preview-bottom-nav { display: none !important; } }`}</style>
             <div style={{ pointerEvents: 'auto' }}>
               <BottomNav
                 onContactClick={() => {}}

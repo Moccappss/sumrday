@@ -79,7 +79,10 @@ export const applyGlobalThemeSettings = (s: AppSettings, currentPage: PageSettin
   document.documentElement.style.setProperty('--glass-blur', `${s.glassBlur ?? 12}px`);
   document.documentElement.style.setProperty('--font-base-size', `${s.baseFontSize || 16}px`);
   
-  document.documentElement.setAttribute('data-font-pairing', s.fontPairing || 'inter');
+  const nextPairing = s.fontPairing || 'jakarta';
+  if (document.documentElement.getAttribute('data-font-pairing') !== nextPairing) {
+    document.documentElement.setAttribute('data-font-pairing', nextPairing);
+  }
   document.documentElement.setAttribute('data-btn-style', s.buttonStyle || 'filled');
   document.documentElement.setAttribute('data-card-style', s.cardStyle || 'glass');
   document.documentElement.setAttribute('data-hover-effect', s.hoverEffect || 'lift');
@@ -103,22 +106,35 @@ export const applyGlobalThemeSettings = (s: AppSettings, currentPage: PageSettin
   applyPageStyles(s);
 
   /* ── Dynamic Branding Injection ── */
-  
-  // 1. Title Sync
-  const newTitle = s.siteTitle || s.cmsName || 'sumr.day | Creative Digital Studio';
+  const getMainWebCached = () => {
+    try {
+      const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('porto_main_website') : null;
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return null;
+  };
+  const mainWeb = getMainWebCached();
+  const brandName = s.cmsName || mainWeb?.navbar?.logoText || 'sumr.day';
+  const isAdmin = typeof window !== 'undefined' && window.location.pathname.startsWith('/admin');
+
+  // 1. Title Sync (Tab Browser Admin vs Tab Browser Public)
+  const newTitle = isAdmin
+    ? `${brandName} Studio | Admin Control Center`
+    : (s.siteTitle || mainWeb?.seo?.metaTitle || `${brandName} | Creative Digital Studio`);
   if (document.title !== newTitle) {
     document.title = newTitle;
   }
 
-  // 2. Favicon & Apple Icon Sync
-  if (s.cmsLogo) {
+  // 2. Favicon & Apple Icon Sync (Synchronized with CMS, Navbar Logo, and PWA)
+  const effectiveLogo = s.cmsLogo || mainWeb?.navbar?.logoImage || mainWeb?.seo?.faviconUrl || '/logo.png';
+  if (effectiveLogo) {
     let favicon = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
     if (!favicon) {
       favicon = document.createElement('link');
       favicon.rel = 'icon';
       document.head.appendChild(favicon);
     }
-    favicon.href = s.cmsLogo;
+    favicon.href = effectiveLogo;
     
     let appleIcon = document.querySelector("link[rel='apple-touch-icon']") as HTMLLinkElement;
     if (!appleIcon) {
@@ -126,26 +142,12 @@ export const applyGlobalThemeSettings = (s: AppSettings, currentPage: PageSettin
       appleIcon.rel = 'apple-touch-icon';
       document.head.appendChild(appleIcon);
     }
-    appleIcon.href = s.cmsLogo;
+    appleIcon.href = effectiveLogo;
 
-    // 3. Dynamic PWA Manifest Injection
+    // 3. Dynamic PWA Manifest Isolation (Client vs Admin)
     try {
-      const manifest = {
-        name: s.cmsName || "sumr.day OS",
-        short_name: s.cmsName || "sumr.day OS",
-        start_url: "/",
-        display: "standalone",
-        background_color: "#1c1c24",
-        theme_color: s.accentColor || "#f59e0b",
-        icons: [
-          { src: s.cmsLogo, sizes: "192x192", type: "image/png", purpose: "any maskable" },
-          { src: s.cmsLogo, sizes: "512x512", type: "image/png", purpose: "any maskable" }
-        ]
-      };
-      
-      const stringManifest = JSON.stringify(manifest);
-      const blob = new Blob([stringManifest], {type: 'application/json'});
-      const manifestURL = URL.createObjectURL(blob);
+      const isAdmin = typeof window !== 'undefined' && window.location.pathname.startsWith('/admin');
+      const targetManifest = isAdmin ? '/manifest-admin.json' : '/manifest-client.json';
       
       let manifestLink = document.querySelector("link[rel='manifest']") as HTMLLinkElement;
       if (!manifestLink) {
@@ -153,9 +155,16 @@ export const applyGlobalThemeSettings = (s: AppSettings, currentPage: PageSettin
         manifestLink.rel = 'manifest';
         document.head.appendChild(manifestLink);
       }
-      manifestLink.href = manifestURL;
+      if (manifestLink.getAttribute('href') !== targetManifest) {
+        manifestLink.href = targetManifest;
+      }
+
+      const appleTitleMeta = document.querySelector("meta[name='apple-mobile-web-app-title']") as HTMLMetaElement;
+      if (appleTitleMeta) {
+        appleTitleMeta.content = isAdmin ? `${brandName} OS` : brandName;
+      }
     } catch (e) {
-      console.warn("Failed to generate dynamic manifest", e);
+      console.warn("Failed to synchronize manifest", e);
     }
   }
 };
@@ -225,6 +234,13 @@ export const useSystemTheme = () => {
           document.body.style.color = isDark ? '#f8fafc' : '#0f172a';
         }
       }
+
+      // Synchronize dynamic branding (tab title, favicon, and PWA manifest)
+      try {
+        const rawSettings = localStorage.getItem('porto_settings');
+        const currentSettings = rawSettings ? JSON.parse(rawSettings) : {};
+        applyGlobalThemeSettings(currentSettings, undefined);
+      } catch {}
     };
 
     syncTheme();
@@ -232,12 +248,14 @@ export const useSystemTheme = () => {
     window.addEventListener('storage', syncTheme);
     window.addEventListener('cms_theme_changed', syncTheme);
     window.addEventListener('website_theme_changed', syncTheme);
+    window.addEventListener('porto_logo_updated', syncTheme);
 
     return () => {
       window.removeEventListener('popstate', syncTheme);
       window.removeEventListener('storage', syncTheme);
       window.removeEventListener('cms_theme_changed', syncTheme);
       window.removeEventListener('website_theme_changed', syncTheme);
+      window.removeEventListener('porto_logo_updated', syncTheme);
     };
   }, []);
 };

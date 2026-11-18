@@ -1,3 +1,4 @@
+import { soundEffects } from '../utils/soundEffects';
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { Check, AlertCircle, Info, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 
@@ -276,11 +277,16 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const showToast = useCallback((title: string, message?: string, type: ToastType = 'success', duration = 3200) => {
     const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     
-    // Light haptic feedback if available
+    // Sound & Haptic response
     try {
-      if (typeof navigator !== 'undefined' && navigator.vibrate) {
-        navigator.vibrate(type === 'error' ? [40, 60, 40] : 25);
+      if (type === 'error') {
+        soundEffects.play('error');
+      } else if (type === 'warning' || type === 'info') {
+        soundEffects.play('pop');
+      } else {
+        soundEffects.play('success');
       }
+      soundEffects.vibrate(type === 'error' ? [40, 60, 40] : 25);
     } catch (_) {}
 
     setToasts((prev) => [...prev.slice(-1), { id, title, message, type, duration }]);

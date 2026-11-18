@@ -4,7 +4,8 @@ import {
   Image as ImageIcon, Video, Upload, Sparkles, CheckCircle2, 
   Clock, X, MessageSquare, Heart, Share2, Search, Filter,
   ArrowUpRight, AlertCircle, RefreshCw, Send, Check,
-  BarChart2, Scale, Sliders
+  BarChart2, Scale, Sliders, Layers, Package, FileText, Megaphone,
+  ShoppingBag, FolderGit2, Zap
 } from 'lucide-react';
 import { storage } from '../../../utils/storage';
 import { uploadToCloudinary } from '../../../utils/cloudinary';
@@ -13,6 +14,7 @@ import { SocialUpdate, DEFAULT_SOCIAL_UPDATES, UpdateSticker } from '../../../ty
 import MediaGalleryModal from '../MediaGalleryModal';
 import PillDatePicker from '../../common/PillDatePicker';
 import UpdateStickerModal from './UpdateStickerModal';
+import ConnectContentModal from './ConnectContentModal';
 
 interface UpdatesFeedManagerProps {
   notify?: (msg: string, type?: string) => void;
@@ -28,9 +30,14 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
   
   // Composer & Edit State
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [title, setTitle] = useState('');
+  const [category, setCategory] = useState<'asset' | 'product' | 'article' | 'announcement' | 'general'>('asset');
   const [content, setContent] = useState('');
   const [projectTag, setProjectTag] = useState('');
   const [projectUrl, setProjectUrl] = useState('');
+  const [ctaLabel, setCtaLabel] = useState('');
+  const [price, setPrice] = useState('');
+  const [badge, setBadge] = useState('');
   const [customDate, setCustomDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [mediaUrls, setMediaUrls] = useState<string[]>([]);
   const [mediaType, setMediaType] = useState<'image' | 'video' | 'mixed'>('image');
@@ -38,6 +45,7 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
   const [isPublished, setIsPublished] = useState(true);
   const [sticker, setSticker] = useState<UpdateSticker | null>(null);
   const [isStickerModalOpen, setIsStickerModalOpen] = useState(false);
+  const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [mediaUrlInput, setMediaUrlInput] = useState('');
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -107,6 +115,7 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
     setUpdates(newList);
     await storage.setItem('porto_social_updates', newList);
     window.dispatchEvent(new CustomEvent('porto_updates_updated', { detail: newList }));
+    window.dispatchEvent(new CustomEvent('porto_social_updates_changed', { detail: newList }));
     // Auto-sync ke Google Sheets di latar belakang jika URL Google Script sudah dikonfigurasi
     try {
       googleSync.syncSocialUpdates(newList).catch(() => {});
@@ -164,9 +173,14 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
 
   const resetForm = () => {
     setEditingId(null);
+    setTitle('');
+    setCategory('asset');
     setContent('');
     setProjectTag('');
     setProjectUrl('');
+    setCtaLabel('');
+    setPrice('');
+    setBadge('');
     setCustomDate(new Date().toISOString().split('T')[0]);
     setMediaUrls([]);
     setMediaType('image');
@@ -178,9 +192,14 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
 
   const handleStartEdit = (item: SocialUpdate) => {
     setEditingId(item.id);
+    setTitle(item.title || '');
+    setCategory((item.category as any) || 'asset');
     setContent(item.content);
     setProjectTag(item.projectTag || '');
     setProjectUrl(item.projectUrl || '');
+    setCtaLabel(item.ctaLabel || '');
+    setPrice(item.price || '');
+    setBadge(item.badge || '');
     setCustomDate(item.customDate || new Date().toISOString().split('T')[0]);
     setMediaUrls(item.mediaUrls || []);
     setMediaType(item.mediaType || 'image');
@@ -193,7 +212,7 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
 
   const handleSavePost = async () => {
     if (!content.trim()) {
-      notify?.('Harap tulis cerita atau progres aktivitas Anda!', 'error');
+      notify?.('Harap tuliskan konten atau rincian rilis Anda.', 'error');
       return;
     }
 
@@ -203,9 +222,14 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
         if (u.id === editingId) {
           return {
             ...u,
+            title: title.trim() || undefined,
+            category,
             content: content.trim(),
             projectTag: projectTag.trim() || undefined,
             projectUrl: projectUrl.trim() || undefined,
+            ctaLabel: ctaLabel.trim() || undefined,
+            price: price.trim() || undefined,
+            badge: badge.trim() || undefined,
             customDate: customDate || new Date().toISOString().split('T')[0],
             mediaUrls,
             mediaType,
@@ -218,15 +242,20 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
       });
 
       await saveUpdates(updated);
-      notify?.('Tersimpan rapi! Cerita sudah diperbarui ✨', 'success');
+      notify?.('Data rilis berhasil diperbarui.', 'success');
       resetForm();
     } else {
       // Create new
       const newPost: SocialUpdate = {
         id: `upd-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        title: title.trim() || undefined,
+        category,
         content: content.trim(),
         projectTag: projectTag.trim() || undefined,
         projectUrl: projectUrl.trim() || undefined,
+        ctaLabel: ctaLabel.trim() || undefined,
+        price: price.trim() || undefined,
+        badge: badge.trim() || undefined,
         customDate: customDate || new Date().toISOString().split('T')[0],
         createdAt: new Date().toISOString(),
         mediaUrls,
@@ -244,7 +273,7 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
 
       const updated = [newPost, ...updates];
       await saveUpdates(updated);
-      notify?.('Update baru berhasil mengudara! Vibe-nya makin dapet ✨☀️', 'success');
+      notify?.('Rilis baru berhasil dipublikasikan.', 'success');
       resetForm();
     }
   };
@@ -254,7 +283,7 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
       const filtered = updates.filter(u => u.id !== id);
       await saveUpdates(filtered);
       if (editingId === id) resetForm();
-      notify?.('Update berhasil dilepas dari linimasa 🍃', 'info');
+      notify?.('Rilis berhasil dihapus dari linimasa.', 'info');
     };
 
     if (confirm) {
@@ -304,9 +333,10 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
       }
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
+        const matchesTitle = (u.title || '').toLowerCase().includes(q);
         const matchesContent = u.content.toLowerCase().includes(q);
         const matchesTag = (u.projectTag || '').toLowerCase().includes(q);
-        return matchesContent || matchesTag;
+        return matchesTitle || matchesContent || matchesTag;
       }
       return true;
     })
@@ -333,8 +363,84 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
     }
   };
 
+  const getStickerDetails = (st: UpdateSticker) => {
+    switch (st.type) {
+      case 'poll':
+        return { label: 'Poling', title: st.question, icon: BarChart2, color: '#0284c7' };
+      case 'this_or_that':
+        return { label: 'This or That', title: st.question, icon: Scale, color: '#ec4899' };
+      case 'slider_rate':
+        return { label: 'Rate Geser', title: st.question, icon: Sliders, color: '#f59e0b' };
+      case 'qna':
+        return { label: 'Tanya Jawab', title: st.prompt, icon: MessageSquare, color: '#8b5cf6' };
+      case 'product_card':
+        return { 
+          label: 'Produk Store', 
+          title: `${st.title} • ${typeof st.price === 'number' ? `Rp ${st.price.toLocaleString('id-ID')}` : st.price}`, 
+          icon: ShoppingBag, 
+          color: '#10b981' 
+        };
+      case 'flash_sale':
+        return { 
+          label: 'Flash Sale', 
+          title: `${st.title} • Diskon ${st.discountPercent || 50}% (${typeof st.salePrice === 'number' ? `Rp ${st.salePrice.toLocaleString('id-ID')}` : st.salePrice})`, 
+          icon: Zap, 
+          color: '#ef4444' 
+        };
+      case 'portfolio_card':
+        return { 
+          label: 'Karya Portofolio', 
+          title: `${st.title} (${st.category || 'Karya'})`, 
+          icon: FolderGit2, 
+          color: '#6366f1' 
+        };
+      case 'article_card':
+        return { 
+          label: 'Artikel Blog', 
+          title: `${st.title} (${st.category || 'Artikel'})`, 
+          icon: FileText, 
+          color: '#f59e0b' 
+        };
+      default:
+        return { label: 'Stiker', title: 'Stiker Terlampir', icon: Sparkles, color: '#f59e0b' };
+    }
+  };
+
+  const handleConnectContent = (data: {
+    title?: string;
+    projectTag?: string;
+    category?: 'asset' | 'product' | 'article' | 'announcement' | 'general';
+    ctaLabel?: string;
+    projectUrl?: string;
+    price?: string;
+    mediaUrl?: string;
+    sticker?: UpdateSticker;
+  }) => {
+    if (data.title) setTitle(data.title);
+    if (data.projectTag) setProjectTag(data.projectTag);
+    if (data.category) setCategory(data.category);
+    if (data.ctaLabel) setCtaLabel(data.ctaLabel);
+    if (data.projectUrl) setProjectUrl(data.projectUrl);
+    if (data.price) setPrice(data.price);
+    if (data.mediaUrl && !mediaUrls.includes(data.mediaUrl)) {
+      setMediaUrls(prev => [data.mediaUrl!, ...prev]);
+    }
+    if (data.sticker) {
+      setSticker(data.sticker);
+    }
+    if (!content.trim() && data.title) {
+      if (data.category === 'product') {
+        setContent(`Temukan rilis produk pilihan terbaru kami: ${data.title}. Siap dipesan melalui katalog online.`);
+      } else if (data.category === 'asset') {
+        setContent(`Studi kasus dan dokumentasi visual proyek terbaru: ${data.title}. Eksplorasi detail proses kreatif kami.`);
+      } else if (data.category === 'article') {
+        setContent(`Wawasan baru terbit di blog studio: ${data.title}. Pelajari strategi dan teknis selengkapnya.`);
+      }
+    }
+  };
+
   return (
-    <div style={{ maxWidth: 840, margin: '0 auto', padding: '16px 14px 60px', display: 'flex', flexDirection: 'column', gap: 24 }}>
+    <div style={{ maxWidth: 1240, width: '100%', margin: '0 auto', padding: '16px 14px 60px', display: 'flex', flexDirection: 'column', gap: 24, boxSizing: 'border-box' }}>
       
       {/* ── HEADER BANNER ── */}
       <div style={{
@@ -360,21 +466,23 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
             alignItems: 'center',
             justifyContent: 'center',
             boxShadow: '0 8px 20px rgba(245, 158, 11, 0.35)',
-            fontSize: 20
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
           }}>
-            ☀️
+            <Sparkles size={20} color="#fff" />
           </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <h2 style={{ margin: 0, fontSize: 18, fontWeight: 900, color: 'var(--cms-text)' }}>
-                Jurnal & Utas Cerita
+                Linimasa Rilis
               </h2>
               <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 100, background: 'rgba(245, 158, 11, 0.18)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
-                sumr.day feed
+                Terjadwal
               </span>
             </div>
             <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--cms-text-muted)' }}>
-              Bagikan progres karya, cerita seru, dan wawasan kreatif khas sumr.day studio ☀️
+              Linimasa update beranda.
             </p>
           </div>
         </div>
@@ -408,10 +516,10 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
             title="Sinkronkan seluruh linimasa update & utas ke Google Sheets & Drive"
           >
             <RefreshCw size={13} className={isSyncing ? 'cms-spin' : ''} />
-            <span>{isSyncing ? 'Menyinkronkan...' : 'Sinkron ke Sheets'}</span>
+            <span>{isSyncing ? 'Menyinkronkan...' : 'Sinkron'}</span>
           </button>
           <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--cms-text-muted)' }}>
-            {updates.length} Cerita Tersimpan
+            {updates.length} Cerita
           </span>
         </div>
       </div>
@@ -443,7 +551,7 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
                 </span>
                 <span style={{ fontSize: 11, color: 'var(--cms-text-muted)' }}>•</span>
                 <span style={{ fontSize: 11.5, fontWeight: 700, color: '#10b981' }}>
-                  Tayang di Beranda
+                  Tayang
                 </span>
               </div>
               <span style={{ fontSize: 11.5, color: 'var(--cms-text-muted)' }}>
@@ -455,7 +563,7 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
           {editingId && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 11.5, fontWeight: 800, padding: '3px 10px', borderRadius: 100, background: 'rgba(99, 102, 241, 0.12)', color: '#6366f1' }}>
-                Mode Mengedit Postingan
+                Edit Postingan
               </span>
               <button
                 type="button"
@@ -477,18 +585,86 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
           )}
         </div>
 
+        {/* Category Selector Buttons (Clean 1-2 words) */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <label style={{ fontSize: 12, fontWeight: 800, color: 'var(--cms-text)', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Layers size={13} color="var(--cms-accent, #6366f1)" />
+            <span>Kategori Rilis</span>
+          </label>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'nowrap', overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: 2, WebkitOverflowScrolling: 'touch' }}>
+            {[
+              { id: 'asset', label: 'Aset', icon: Layers, color: '#0284c7' },
+              { id: 'product', label: 'Produk', icon: Package, color: '#10b981' },
+              { id: 'article', label: 'Artikel', icon: FileText, color: '#f59e0b' },
+              { id: 'announcement', label: 'Info', icon: Megaphone, color: '#a855f7' },
+              { id: 'general', label: 'Umum', icon: Tag, color: '#64748b' }
+            ].map(cat => {
+              const isSelected = category === cat.id;
+              const Icon = cat.icon;
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setCategory(cat.id as any)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    padding: '6px 11px',
+                    borderRadius: 10,
+                    border: isSelected ? `1.5px solid ${cat.color}` : '1px solid var(--cms-border, rgba(255,255,255,0.12))',
+                    background: isSelected ? `${cat.color}20` : 'var(--cms-input-bg, var(--cms-card-bg))',
+                    color: isSelected ? cat.color : 'var(--cms-text-muted)',
+                    fontSize: 11.5,
+                    fontWeight: isSelected ? 800 : 600,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <Icon size={13} color={isSelected ? cat.color : 'currentColor'} />
+                  <span>{cat.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Title Input (Judul Rilis) */}
+        <div>
+          <input
+            type="text"
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            placeholder="Judul Rilis..."
+            style={{
+              width: '100%',
+              padding: '10px 14px',
+              borderRadius: 12,
+              border: '1.5px solid var(--cms-border, rgba(255,255,255,0.15))',
+              background: 'var(--cms-input-bg, var(--cms-card-bg))',
+              color: 'var(--cms-text)',
+              fontSize: 14,
+              fontWeight: 750,
+              outline: 'none',
+              boxSizing: 'border-box'
+            }}
+          />
+        </div>
+
         {/* Text Area Content */}
         <textarea
           value={content}
           onChange={e => setContent(e.target.value)}
-          placeholder="Tuliskan cerita progres proyek, wawasan desain, atau update produktif yang ingin dilihat klien & HR..."
+          placeholder="Tulis pembaruan..."
           style={{
             width: '100%',
             minHeight: 120,
             background: 'transparent',
             border: 'none',
             outline: 'none',
-            fontSize: 14.5,
+            fontSize: 14,
             lineHeight: 1.6,
             color: 'var(--cms-text)',
             resize: 'vertical',
@@ -546,79 +722,83 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
         )}
 
         {/* ── ATTACHED STICKER PREVIEW ── */}
-        {sticker && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '10px 14px',
-            borderRadius: 14,
-            background: 'rgba(245, 158, 11, 0.1)',
-            border: '1.5px solid rgba(245, 158, 11, 0.3)',
-            gap: 10
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{
-                width: 32,
-                height: 32,
-                borderRadius: '50%',
-                background: 'rgba(245, 158, 11, 0.2)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#f59e0b',
-                flexShrink: 0
-              }}>
-                {sticker.type === 'poll' ? <BarChart2 size={16} /> : sticker.type === 'this_or_that' ? <Scale size={16} /> : sticker.type === 'slider_rate' ? <Sliders size={16} /> : <MessageSquare size={16} />}
-              </div>
-              <div>
-                <div style={{ fontSize: 12.5, fontWeight: 850, color: '#f59e0b' }}>
-                  Stiker Terpasang: {sticker.type === 'poll' ? 'Poling' : sticker.type === 'this_or_that' ? 'This or That' : sticker.type === 'slider_rate' ? 'Rate Geser' : 'Tanya Jawab (QnA)'}
-                </div>
-                <div style={{ fontSize: 11.5, color: 'var(--cms-text-muted)', maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {'question' in sticker ? sticker.question : sticker.prompt}
-                </div>
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <button
-                type="button"
-                onClick={() => setIsStickerModalOpen(true)}
-                style={{
-                  padding: '5px 12px',
-                  borderRadius: 100,
-                  border: '1px solid rgba(245, 158, 11, 0.35)',
-                  background: 'rgba(245, 158, 11, 0.18)',
-                  color: '#f59e0b',
-                  fontSize: 11.5,
-                  fontWeight: 750,
-                  cursor: 'pointer'
-                }}
-              >
-                Ubah Stiker
-              </button>
-              <button
-                type="button"
-                onClick={() => setSticker(null)}
-                style={{
-                  padding: '5px 8px',
-                  borderRadius: 100,
-                  border: '1px solid rgba(239, 68, 68, 0.25)',
-                  background: 'rgba(239, 68, 68, 0.08)',
-                  color: '#ef4444',
-                  fontSize: 11,
-                  cursor: 'pointer',
+        {sticker && (() => {
+          const meta = getStickerDetails(sticker);
+          const IconComp = meta.icon;
+          return (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '10px 14px',
+              borderRadius: 14,
+              background: `${meta.color}15`,
+              border: `1.5px solid ${meta.color}35`,
+              gap: 10
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: '50%',
+                  background: `${meta.color}25`,
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-                title="Hapus Stiker"
-              >
-                <X size={13} />
-              </button>
+                  justifyContent: 'center',
+                  color: meta.color,
+                  flexShrink: 0
+                }}>
+                  <IconComp size={17} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 12.5, fontWeight: 850, color: meta.color }}>
+                    Stiker Terpasang: {meta.label}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--cms-text-muted)', maxWidth: 380, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {meta.title}
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <button
+                  type="button"
+                  onClick={() => setIsStickerModalOpen(true)}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: 100,
+                    border: `1px solid ${meta.color}35`,
+                    background: `${meta.color}18`,
+                    color: meta.color,
+                    fontSize: 11.5,
+                    fontWeight: 750,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Ubah Stiker
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSticker(null)}
+                  style={{
+                    padding: '5px 8px',
+                    borderRadius: 100,
+                    border: '1px solid rgba(239, 68, 68, 0.25)',
+                    background: 'rgba(239, 68, 68, 0.08)',
+                    color: '#ef4444',
+                    fontSize: 11,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                  title="Hapus Stiker"
+                >
+                  <X size={13} />
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* ── METADATA BAR (BACKDATING & PROJECT TAG) ── */}
         <div style={{
@@ -635,14 +815,14 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
             <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6 }}>
               <Calendar size={13} color="#10b981" />
               <label style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--cms-text)' }}>
-                Tanggal Aktivitas (Bisa Backdated)
+                Tanggal Rilis
               </label>
             </div>
             
             <PillDatePicker
               value={customDate}
               onChange={setCustomDate}
-              placeholder="Pilih Tanggal Aktivitas"
+              placeholder="Pilih Tanggal"
               accentColor="#10b981"
             />
 
@@ -680,17 +860,42 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
 
           {/* Project Tag & URL (Pill Rounded Inputs) */}
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6 }}>
-              <Tag size={13} color="#6366f1" />
-              <label style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--cms-text)' }}>
-                Nama Proyek / Topik (Opsional)
-              </label>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <Tag size={13} color="#6366f1" />
+                <label style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--cms-text)' }}>
+                  Tautan Aksi
+                </label>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsConnectModalOpen(true)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '3px 10px',
+                  borderRadius: 100,
+                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(16, 185, 129, 0.15) 100%)',
+                  border: '1px solid rgba(99, 102, 241, 0.35)',
+                  color: 'var(--cms-accent, #6366f1)',
+                  fontSize: 11,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+                title="Pilih langsung dari Katalog Store, Portofolio Karya, atau Artikel Blog"
+              >
+                <Link2 size={12} />
+                <span>Hubungkan Konten</span>
+              </button>
             </div>
             <input
               type="text"
               value={projectTag}
               onChange={e => setProjectTag(e.target.value)}
-              placeholder="Contoh: Agenze CMS, UI Rebrand..."
+              placeholder="Tag / Topik..."
               className="cms-pill"
               style={{
                 width: '100%',
@@ -699,31 +904,71 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
                 border: '1.5px solid var(--cms-border, rgba(255,255,255,0.15))',
                 background: 'var(--cms-input-bg, var(--cms-card-bg))',
                 color: 'var(--cms-text)',
-                fontSize: 12.5,
+                fontSize: 12,
                 fontWeight: 650,
                 outline: 'none',
                 boxSizing: 'border-box',
                 marginBottom: 6
               }}
             />
-            <input
-              type="text"
-              value={projectUrl}
-              onChange={e => setProjectUrl(e.target.value)}
-              placeholder="Tautan proyek/demo (opsional)..."
-              className="cms-pill"
-              style={{
-                width: '100%',
-                padding: '6px 14px',
-                borderRadius: 9999,
-                border: '1px solid var(--cms-border, rgba(255,255,255,0.1))',
-                background: 'var(--cms-input-bg, var(--cms-card-bg))',
-                color: 'var(--cms-text)',
-                fontSize: 11.5,
-                outline: 'none',
-                boxSizing: 'border-box'
-              }}
-            />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+              <input
+                type="text"
+                value={ctaLabel}
+                onChange={e => setCtaLabel(e.target.value)}
+                placeholder="Teks Tombol..."
+                className="cms-pill"
+                style={{
+                  width: '100%',
+                  padding: '6px 12px',
+                  borderRadius: 9999,
+                  border: '1px solid var(--cms-border, rgba(255,255,255,0.1))',
+                  background: 'var(--cms-input-bg, var(--cms-card-bg))',
+                  color: 'var(--cms-text)',
+                  fontSize: 11,
+                  outline: 'none',
+                  boxSizing: 'border-box'
+                }}
+              />
+              <input
+                type="text"
+                value={projectUrl}
+                onChange={e => setProjectUrl(e.target.value)}
+                placeholder="Link Tujuan..."
+                className="cms-pill"
+                style={{
+                  width: '100%',
+                  padding: '6px 12px',
+                  borderRadius: 9999,
+                  border: '1px solid var(--cms-border, rgba(255,255,255,0.1))',
+                  background: 'var(--cms-input-bg, var(--cms-card-bg))',
+                  color: 'var(--cms-text)',
+                  fontSize: 11,
+                  outline: 'none',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+            <div style={{ marginTop: 6 }}>
+              <input
+                type="text"
+                value={price}
+                onChange={e => setPrice(e.target.value)}
+                placeholder="Badge Status..."
+                className="cms-pill"
+                style={{
+                  width: '100%',
+                  padding: '6px 12px',
+                  borderRadius: 9999,
+                  border: '1px solid var(--cms-border, rgba(255,255,255,0.1))',
+                  background: 'var(--cms-input-bg, var(--cms-card-bg))',
+                  color: 'var(--cms-text)',
+                  fontSize: 11,
+                  outline: 'none',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
           </div>
         </div>
 
@@ -869,6 +1114,30 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
               <span>Link URL</span>
             </button>
 
+            {/* Quick Content Connector Button */}
+            <button
+              type="button"
+              onClick={() => setIsConnectModalOpen(true)}
+              className="cms-pill cms-pill-btn"
+              style={{
+                padding: '7px 14px',
+                borderRadius: 9999,
+                border: '1.5px solid rgba(99, 102, 241, 0.4)',
+                background: 'rgba(99, 102, 241, 0.12)',
+                color: 'var(--cms-accent, #6366f1)',
+                fontSize: 12,
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5
+              }}
+              title="Hubungkan produk katalog, portofolio, atau artikel blog secara instan"
+            >
+              <Link2 size={13} color="#6366f1" />
+              <span>Hubungkan Konten</span>
+            </button>
+
             {/* Interactive Sticker Button */}
             <button
               type="button"
@@ -890,7 +1159,7 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
               title="Pasang Stiker Interaktif (Poling, A vs B, Rate Geser, QnA)"
             >
               <Sparkles size={13} color="#f59e0b" />
-              <span>{sticker ? 'Kelola Stiker ✨' : 'Stiker'}</span>
+              <span>{sticker ? 'Ubah Stiker' : 'Stiker'}</span>
             </button>
 
             {/* Pin Toggle */}
@@ -962,7 +1231,7 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
             }}
           >
             <Send size={14} />
-            <span>{editingId ? 'Simpan Perubahan' : 'Bagikan Update'}</span>
+            <span>{editingId ? 'Simpan' : 'Bagikan'}</span>
           </button>
         </div>
       </div>
@@ -995,7 +1264,7 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
               cursor: 'pointer'
             }}
           >
-            Semua Tahun
+            Semua
           </button>
           {availableYears.map(yr => (
             <button
@@ -1025,7 +1294,7 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
             type="text"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Cari kata kunci atau tag proyek..."
+            placeholder="Cari rilis..."
             style={{
               width: '100%',
               padding: '6px 12px 6px 30px',
@@ -1124,7 +1393,7 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
                           fontSize: 10.5,
                           fontWeight: 800
                         }}>
-                          {item.isPublished ? 'Tayang di Beranda' : 'Draft'}
+                          {item.isPublished ? 'Tayang' : 'Draft'}
                         </span>
                       </div>
 
@@ -1136,7 +1405,7 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: isBackdated ? '#f59e0b' : 'var(--cms-text-muted)', fontSize: 11.5, fontWeight: 700 }}>
                           <Calendar size={11} />
                           <span>{formatDateDisplay(item.customDate)}</span>
-                          {isBackdated && <span>(Arsip Linimasa)</span>}
+                          {isBackdated && <span>(Arsip)</span>}
                         </div>
                       </div>
                     </div>
@@ -1159,7 +1428,7 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
                         justifyContent: 'center',
                         cursor: 'pointer'
                       }}
-                      title={item.isPinned ? 'Lepas Sematan' : 'Sematkan ke atas'}
+                      title={item.isPinned ? 'Lepas' : 'Sematkan'}
                     >
                       <Pin size={13} />
                     </button>
@@ -1179,7 +1448,7 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
                         justifyContent: 'center',
                         cursor: 'pointer'
                       }}
-                      title={item.isPublished ? 'Sembunyikan dari Beranda' : 'Tayangkan di Beranda'}
+                      title={item.isPublished ? 'Sembunyikan' : 'Tayangkan'}
                     >
                       {item.isPublished ? <Eye size={13} /> : <EyeOff size={13} />}
                     </button>
@@ -1199,7 +1468,7 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
                         justifyContent: 'center',
                         cursor: 'pointer'
                       }}
-                      title="Edit Postingan"
+                      title="Edit"
                     >
                       <Edit3 size={13} />
                     </button>
@@ -1219,7 +1488,7 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
                         justifyContent: 'center',
                         cursor: 'pointer'
                       }}
-                      title="Hapus Postingan"
+                      title="Hapus"
                     >
                       <Trash2 size={13} />
                     </button>
@@ -1308,38 +1577,46 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
                 )}
 
                 {/* Attached Sticker Summary Badge */}
-                {item.sticker && (
-                  <div style={{
-                    padding: '8px 12px',
-                    borderRadius: 12,
-                    background: 'rgba(245, 158, 11, 0.08)',
-                    border: '1px solid rgba(245, 158, 11, 0.25)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 8,
-                    flexWrap: 'wrap'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', color: '#f59e0b' }}>
-                        {item.sticker.type === 'poll' ? <BarChart2 size={14} /> : item.sticker.type === 'this_or_that' ? <Scale size={14} /> : item.sticker.type === 'slider_rate' ? <Sliders size={14} /> : <MessageSquare size={14} />}
-                      </span>
-                      <span style={{ fontWeight: 850, color: '#f59e0b' }}>
-                        {item.sticker.type === 'poll' ? 'Poling' : item.sticker.type === 'this_or_that' ? 'This or That' : item.sticker.type === 'slider_rate' ? 'Rate Geser' : 'Tanya Jawab'}
-                      </span>
-                      <span style={{ color: 'var(--cms-text-muted)' }}>
-                        — {'question' in item.sticker ? item.sticker.question : item.sticker.prompt}
-                      </span>
-                    </div>
+                {item.sticker && (() => {
+                  const meta = getStickerDetails(item.sticker);
+                  const IconComp = meta.icon;
+                  return (
+                    <div style={{
+                      padding: '8px 12px',
+                      borderRadius: 12,
+                      background: `${meta.color}12`,
+                      border: `1px solid ${meta.color}35`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 8,
+                      flexWrap: 'wrap'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12 }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', color: meta.color }}>
+                          <IconComp size={14} />
+                        </span>
+                        <span style={{ fontWeight: 850, color: meta.color }}>
+                          {meta.label}
+                        </span>
+                        <span style={{ color: 'var(--cms-text-muted)', maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          — {meta.title}
+                        </span>
+                      </div>
 
-                    <div style={{ fontSize: 11.5, fontWeight: 800, color: '#f59e0b' }}>
-                      {item.sticker.type === 'poll' && `${item.sticker.options.reduce((acc, o) => acc + (o.votes || 0), 0)} voter`}
-                      {item.sticker.type === 'this_or_that' && `${(item.sticker.optionA.votes || 0) + (item.sticker.optionB.votes || 0)} voter`}
-                      {item.sticker.type === 'slider_rate' && `Rata-rata: ${item.sticker.averageScore || 0}% (${item.sticker.ratingsCount || 0} voter)`}
-                      {item.sticker.type === 'qna' && `${item.sticker.responses?.length || 0} respon`}
+                      <div style={{ fontSize: 11.5, fontWeight: 800, color: meta.color }}>
+                        {item.sticker.type === 'poll' && `${item.sticker.options.reduce((acc, o) => acc + (o.votes || 0), 0)} voter`}
+                        {item.sticker.type === 'this_or_that' && `${(item.sticker.optionA.votes || 0) + (item.sticker.optionB.votes || 0)} voter`}
+                        {item.sticker.type === 'slider_rate' && `Rata-rata: ${item.sticker.averageScore || 0}% (${item.sticker.ratingsCount || 0} voter)`}
+                        {item.sticker.type === 'qna' && `${item.sticker.responses?.length || 0} respon`}
+                        {item.sticker.type === 'product_card' && (item.sticker.originalPrice ? `Coret: Rp ${Number(item.sticker.originalPrice).toLocaleString('id-ID')}` : 'Store')}
+                        {item.sticker.type === 'flash_sale' && `Promo -${item.sticker.discountPercent || 50}%`}
+                        {item.sticker.type === 'portfolio_card' && (item.sticker.category || 'Portofolio')}
+                        {item.sticker.type === 'article_card' && (item.sticker.readTime || 'Artikel')}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* Card Footer: Social stats info */}
                 <div style={{
@@ -1354,7 +1631,7 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                       <Heart size={13} color="#f43f5e" fill="#f43f5e" />
-                      {item.likesCount || 0} Apresiasi
+                      {item.likesCount || 0} Suka
                     </span>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                       <Share2 size={12} />
@@ -1382,7 +1659,7 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
             setIsGalleryOpen(false);
             notify?.('Media dari galeri ditambahkan!', 'success');
           }}
-          targetLabel="Lampirkan ke Utas Status"
+          targetLabel="Lampirkan"
         />
       )}
 
@@ -1395,11 +1672,19 @@ export const UpdatesFeedManager: React.FC<UpdatesFeedManagerProps> = ({ notify, 
           setSticker(newSticker);
           setIsStickerModalOpen(false);
           if (newSticker) {
-            notify?.('✓ Stiker interaktif siap mengudara bersama postingan! ✨', 'success');
+            notify?.('Stiker interaktif siap disertakan bersama rilis.', 'success');
           } else {
             notify?.('Stiker dilepas dari postingan.', 'info');
           }
         }}
+      />
+
+      {/* Quick Content Connector Modal */}
+      <ConnectContentModal
+        isOpen={isConnectModalOpen}
+        onClose={() => setIsConnectModalOpen(false)}
+        onConnect={handleConnectContent}
+        notify={notify}
       />
     </div>
   );

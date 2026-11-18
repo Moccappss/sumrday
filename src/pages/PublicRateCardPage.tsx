@@ -18,21 +18,39 @@ import SEOHelmet from '../components/SEOHelmet';
 import { useLandingData } from '../components/landing/useLandingData';
 import LPNavbar from '../components/landing/LPNavbar';
 import LPFooter from '../components/landing/LPFooter';
+import PageHeroHeader from '../components/common/PageHeroHeader';
 import { useWebsiteTheme } from '../hooks/useWebsiteTheme';
 import { useLandingBodyFix } from '../hooks/useLandingBodyFix';
 import { useScrollReveal } from '../hooks/useScrollReveal';
+import { haptic } from '../utils/haptics';
+import StudioInquiryModal from '../components/common/StudioInquiryModal';
 
 type Currency = 'IDR' | 'USD' | 'SGD';
 
 export const PublicRateCardPage: React.FC = () => {
   const navigate = useNavigate();
-  const [packages, setPackages] = useState<RateCardPackage[]>([]);
-  const [businessProfile, setBusinessProfile] = useState<any>({});
+  const [packages, setPackages] = useState<RateCardPackage[]>(() => {
+    try {
+      const raw = localStorage.getItem('porto_rate_cards');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed.filter((p: any) => p.isActive !== false);
+      }
+    } catch {}
+    return [];
+  });
+  const [businessProfile, setBusinessProfile] = useState<any>(() => {
+    try {
+      const raw = localStorage.getItem('porto_business_profile');
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return {};
+  });
   const [faqs, setFaqs] = useState<ClientFaqItem[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [copied, setCopied] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => packages.length === 0);
 
   // Dynamic Add-ons & Category Colors
   const [addons, setAddons] = useState<AddonItem[]>(DEFAULT_ADDONS);
@@ -43,6 +61,11 @@ export const PublicRateCardPage: React.FC = () => {
 
   // Detail Modal popup
   const [detailPackage, setDetailPackage] = useState<RateCardPackage | null>(null);
+  const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    setSelectedAddonIds([]);
+  }, [detailPackage]);
 
   // Table controls
   const [tableSearch, setTableSearch] = useState('');
@@ -265,14 +288,75 @@ export const PublicRateCardPage: React.FC = () => {
     window.print();
   };
 
-  const handleConsultWhatsApp = (pkg: RateCardPackage) => {
+  const handleConsultWhatsApp = (pkg: RateCardPackage, customAddons?: AddonItem[]) => {
     const cleanPhone = phone.replace(/\D/g, '');
     const targetPhone = cleanPhone.startsWith('0') ? '62' + cleanPhone.slice(1) : cleanPhone;
-    const msg = `Halo ${studioName},\nSaya tertarik dengan paket "${pkg.title}" (${formatCurrency(pkg.price)}) di Rate Card.\nBisa minta info lebih detail ketersediaan slotnya? Terima kasih!`;
+    const chosen = customAddons !== undefined ? customAddons : addons.filter(a => selectedAddonIds.includes(a.id));
+    const addonsSum = chosen.reduce((acc, a) => acc + (a.priceIdr || 0), 0);
+    const totalAmount = pkg.price + addonsSum;
+
+    let addonText = '';
+    if (chosen.length > 0) {
+      addonText = `\n➕ Add-on Tambahan:\n` + chosen.map(a => `• ${a.name} (${formatCurrency(a.priceIdr, 'IDR')})`).join('\n');
+    }
+
+    const deliverablesText = (pkg.deliverables || []).map(d => `• ${d}`).join('\n');
+
+    const msg = `Halo ${studioName},\nSaya ingin konsultasi & pemesanan paket layanan:\n\n` +
+      `🏷️ Paket: *${pkg.title}*\n` +
+      `💰 Harga Paket: *${formatCurrency(pkg.price, 'IDR')}* (${pkg.billingPeriod || 'per proyek'})\n` +
+      `⏱️ Estimasi: *${pkg.durationDays ? `${pkg.durationDays} hari kerja` : 'Fleksibel'}*` +
+      addonText +
+      `\n\n💵 Total Investasi: *${formatCurrency(totalAmount, 'IDR')}*\n` +
+      `📋 Deliverables:\n${deliverablesText}\n\n` +
+      `Apakah slot pengerjaan masih tersedia? Mohon petunjuk langkah selanjutnya ya. Terima kasih!`;
+
     const waUrl = targetPhone 
       ? `https://wa.me/${targetPhone}?text=${encodeURIComponent(msg)}`
       : `https://wa.me/?text=${encodeURIComponent(msg)}`;
     window.open(waUrl, '_blank');
+  };
+
+  const handleOrderPackage = (pkg: RateCardPackage, customAddons?: AddonItem[]) => {
+    try {
+      const chosen = customAddons !== undefined ? customAddons : addons.filter(a => selectedAddonIds.includes(a.id));
+      const addonsSum = chosen.reduce((acc, a) => acc + (a.priceIdr || 0), 0);
+      const totalAmount = pkg.price + addonsSum;
+
+      const raw = localStorage.getItem('porto_client_cart');
+      const currentCart = raw ? JSON.parse(raw) : [];
+      const cartItemId = `ratecard_${pkg.id}_${Date.now()}`;
+
+      const newCartItem = {
+        id: cartItemId,
+        productId: `ratecard_${pkg.id}`,
+        name: chosen.length > 0 
+          ? `${pkg.title} (+ ${chosen.map(a => a.name).join(', ')})`
+          : pkg.title,
+        price: totalAmount,
+        originalPrice: totalAmount,
+        quantity: 1,
+        category: pkg.category || 'Paket Layanan',
+        type: 'Jasa',
+        durationDays: pkg.durationDays || 7,
+        deliverables: [
+          ...(pkg.deliverables || []),
+          ...chosen.map(a => `Add-on: ${a.name}`)
+        ],
+        serviceDpAllowed: true,
+        billingPeriod: pkg.billingPeriod || 'proyek',
+        isDigitalAsset: false,
+        selectedAddons: chosen
+      };
+
+      currentCart.push(newCartItem);
+      localStorage.setItem('porto_client_cart', JSON.stringify(currentCart));
+      window.dispatchEvent(new Event('porto_cart_updated'));
+      setDetailPackage(null);
+      navigate('/keranjang');
+    } catch {
+      navigate('/keranjang');
+    }
   };
 
   return (
@@ -283,8 +367,8 @@ export const PublicRateCardPage: React.FC = () => {
         minHeight: '100vh',
         display: 'flex',
         flexDirection: 'column',
-        background: isDark ? '#08080f' : '#ffffff',
-        color: isDark ? '#f8fafc' : '#0f172a',
+        background: isDark ? '#06070a' : '#eef2f6',
+        color: isDark ? '#ffffff' : '#0f172a',
         fontFamily: "'Outfit', 'Plus Jakarta Sans', sans-serif",
         transition: 'background-color 0.3s cubic-bezier(0.16, 1, 0.3, 1), color 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
       }}
@@ -308,114 +392,101 @@ export const PublicRateCardPage: React.FC = () => {
       <main style={{
         flex: 1,
         width: '100%',
-        maxWidth: 1200,
+        maxWidth: 1240,
         margin: '0 auto',
-        padding: isMobile ? '80px 16px 20px' : '100px 24px 20px',
+        padding: isMobile ? '80px 16px 20px' : '100px clamp(16px, 3.5vw, 24px) 20px',
         boxSizing: 'border-box'
       }}>
 
-        {/* ── HERO BANNER ── */}
-        <div 
-          data-reveal="true"
-          data-reveal-type="fade"
-          style={{
-            maxWidth: 1100,
-            margin: '0 auto',
-            padding: '30px 20px 20px',
-            textAlign: 'center',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center'
-          }}
-        >
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 8,
-            background: `rgba(${accentRgb}, 0.12)`,
-            border: `1px solid rgba(${accentRgb}, 0.28)`,
-            color: accentColor,
-            padding: '6px 16px',
-            borderRadius: 100,
-            fontSize: 12.5,
-            fontWeight: 800,
-            letterSpacing: '0.04em',
-            textTransform: 'uppercase',
-            marginBottom: 16
-          }}>
-            <Receipt size={14} />
-            <span>Rate Card & Paket Layanan</span>
-          </div>
+        {/* ── UNIFIED HERO POSTER SECTION ── */}
+        <PageHeroHeader
+          isDark={isDark}
+          accentColor={accentColor}
+          bgPattern={(landingData?.pagesHeader as any)?.pricing?.bgPattern || 'grid'}
+          badgeIcon={<Receipt size={14} />}
+          badgeText={landingData?.pagesHeader?.pricing?.badge || 'Rate Card & Paket Layanan'}
+          title={landingData?.pagesHeader?.pricing?.title || 'Investasi Terukur untuk Hasil Maksimal'}
+          highlightText={landingData?.pagesHeader?.pricing?.highlight || 'Hasil Maksimal'}
+          description={landingData?.pagesHeader?.pricing?.description || 'Pilih paket layanan yang sesuai dengan kebutuhan studio atau bisnis Anda. Semua paket mencakup revisi terukur dan jaminan kualitas profesional.'}
+          stats={[
+            { icon: <ShoppingBag size={14} />, value: packages.length, label: 'Total Paket' },
+            { icon: <Sparkles size={14} />, value: featuredPackages.length, label: 'Unggulan' },
+            { icon: <Folder size={14} />, value: Math.max(1, categories.length - 1), label: 'Kategori' }
+          ]}
+          actionButtons={
+            <>
+              <button
+                onClick={() => navigate('/katalog')}
+                className="no-print"
+                style={{
+                  padding: '10px 22px',
+                  borderRadius: 100,
+                  border: 'none',
+                  background: accentColor,
+                  color: '#ffffff',
+                  fontSize: 13.5,
+                  fontWeight: 850,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  boxShadow: 'none',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <ShoppingBag size={16} />
+                <span>Buka Katalog Toko</span>
+              </button>
 
-          <h1 style={{
-            margin: 0,
-            fontSize: 'clamp(28px, 5vw, 44px)',
-            fontWeight: 900,
-            fontFamily: "'Outfit', sans-serif",
-            letterSpacing: '-0.02em',
-            lineHeight: 1.2
-          }}>
-            Investasi Terukur untuk Hasil Maksimal
-          </h1>
+              <button
+                onClick={() => {
+                  haptic.light();
+                  window.dispatchEvent(new CustomEvent('porto_open_inquiry_modal', { detail: { serviceType: 'Brand Identity & Logo Suite' } }));
+                }}
+                className="no-print"
+                style={{
+                  padding: '10px 22px',
+                  borderRadius: 100,
+                  border: `1px solid ${accentColor}`,
+                  background: `rgba(${accentRgb}, 0.08)`,
+                  color: accentColor,
+                  fontSize: 13.5,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <FileText size={16} />
+                <span>Konsultasi & Brief Kustom</span>
+              </button>
 
-          <p style={{
-            margin: '14px 0 24px',
-            fontSize: 15,
-            color: isDark ? '#94a3b8' : '#64748b',
-            maxWidth: 580,
-            lineHeight: 1.6
-          }}>
-            Pilih paket layanan yang sesuai dengan kebutuhan studio atau bisnis Anda. Semua paket mencakup revisi terukur dan jaminan kualitas profesional.
-          </p>
-
-          {/* Action Buttons: Buka Katalog Toko & Bagikan */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
-            <button
-              onClick={() => navigate('/katalog')}
-              className="no-print"
-              style={{
-                padding: '10px 22px',
-                borderRadius: 100,
-                border: 'none',
-                background: accentColor,
-                color: '#ffffff',
-                fontSize: 13.5,
-                fontWeight: 850,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                boxShadow: `0 4px 16px rgba(${accentRgb}, 0.35)`,
-                transition: 'all 0.15s ease'
-              }}
-            >
-              <ShoppingBag size={16} />
-              <span>Buka Katalog Toko</span>
-            </button>
-
-            <button
-              onClick={handleCopyLink}
-              className="no-print"
-              style={{
-                padding: '10px 20px',
-                borderRadius: 100,
-                border: `1px solid ${isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.15)'}`,
-                background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.03)',
-                color: isDark ? '#f8fafc' : '#0f172a',
-                fontSize: 13.5,
-                fontWeight: 750,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                transition: 'all 0.15s ease'
-              }}
-            >
-              {copied ? <Check size={16} color={accentColor} /> : <Share2 size={16} />}
-              <span>{copied ? 'Tautan Disalin' : 'Bagikan'}</span>
-            </button>
-          </div>
-        </div>
+              <button
+                onClick={handleCopyLink}
+                className="no-print"
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: 100,
+                  border: `1px solid ${isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.15)'}`,
+                  background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.03)',
+                  color: isDark ? '#f8fafc' : '#0f172a',
+                  fontSize: 13.5,
+                  fontWeight: 750,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                {copied ? <Check size={16} color={accentColor} /> : <Share2 size={16} />}
+                <span>{copied ? 'Tautan Disalin' : 'Bagikan'}</span>
+              </button>
+            </>
+          }
+        />
 
         {/* ── 1. TAMPILAN PAKET UNGGULAN (PALING ATAS) ── */}
         {featuredPackages.length > 0 && (
@@ -440,20 +511,20 @@ export const PublicRateCardPage: React.FC = () => {
                   onClick={() => setDetailPackage(pkg)}
                   className={`print-white-bg reveal-delay-${(idx % 4) + 1}`}
                   style={{
-                    background: isDark ? 'rgba(30, 41, 59, 0.65)' : 'rgba(255, 255, 255, 0.95)',
-                    backdropFilter: 'blur(16px)',
-                    border: `1.5px solid rgba(${accentRgb}, 0.4)`,
+                    background: isDark ? '#151824' : '#ffffff',
+                    backdropFilter: 'none',
+                    border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(15, 23, 42, 0.08)'}`,
                     borderRadius: 22,
                     padding: '24px 22px',
                     display: 'flex',
                     flexDirection: 'column',
                     position: 'relative',
-                    boxShadow: `0 8px 24px rgba(${accentRgb}, 0.12)`,
+                    boxShadow: 'none',
                     cursor: 'pointer',
-                    transition: 'transform 0.15s ease, box-shadow 0.15s ease'
+                    transition: 'transform 0.15s ease, border-color 0.15s ease'
                   }}
-                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = accentColor; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(15, 23, 42, 0.08)'; e.currentTarget.style.transform = 'translateY(0)'; }}
                 >
                   {pkg.badge && (
                     <div style={{
@@ -467,7 +538,7 @@ export const PublicRateCardPage: React.FC = () => {
                       padding: '3px 11px',
                       borderRadius: 100,
                       letterSpacing: '0.04em',
-                      boxShadow: `0 3px 10px ${getPackageBadgeColor(pkg)}55`
+                      boxShadow: 'none'
                     }}>
                       {pkg.badge}
                     </div>
@@ -517,9 +588,34 @@ export const PublicRateCardPage: React.FC = () => {
                     <span style={{ fontSize: 12, color: isDark ? '#94a3b8' : '#64748b', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                       <Clock size={12} /> {pkg.durationDays ? `${pkg.durationDays} hari` : 'Fleksibel'}
                     </span>
-                    <span style={{ fontSize: 12, fontWeight: 800, color: accentColor, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                      Lihat Detail <ArrowUpRight size={14} />
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOrderPackage(pkg);
+                        }}
+                        style={{
+                          padding: '5px 12px',
+                          borderRadius: 100,
+                          border: 'none',
+                          background: accentColor,
+                          color: '#ffffff',
+                          fontSize: 11.5,
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          boxShadow: 'none'
+                        }}
+                      >
+                        <ShoppingBag size={12} /> Pesan
+                      </button>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: accentColor, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        Detail <ArrowUpRight size={14} />
+                      </span>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -660,16 +756,16 @@ export const PublicRateCardPage: React.FC = () => {
                         onClick={() => setDetailPackage(pkg)}
                         className={`print-white-bg reveal-delay-${(pIdx % 6) + 1}`}
                         style={{
-                          background: isDark ? 'rgba(30, 41, 59, 0.45)' : 'rgba(255, 255, 255, 0.8)',
-                          backdropFilter: 'blur(12px)',
-                          border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
-                          borderRadius: 18,
-                          padding: '18px 20px',
+                          background: isDark ? '#151824' : '#ffffff',
+                          backdropFilter: 'none',
+                          border: `1px solid ${isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15, 23, 42, 0.08)'}`,
+                          borderRadius: 22,
+                          padding: '22px 20px',
                           display: 'flex',
                           flexDirection: 'column',
                           position: 'relative',
                           cursor: 'pointer',
-                          boxShadow: '0 4px 14px rgba(0,0,0,0.04)',
+                          boxShadow: 'none',
                           transition: 'transform 0.15s ease, border-color 0.15s ease'
                         }}
                         onMouseEnter={e => {
@@ -677,7 +773,7 @@ export const PublicRateCardPage: React.FC = () => {
                           e.currentTarget.style.transform = 'translateY(-2px)';
                         }}
                         onMouseLeave={e => {
-                          e.currentTarget.style.borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+                          e.currentTarget.style.borderColor = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15, 23, 42, 0.08)';
                           e.currentTarget.style.transform = 'translateY(0)';
                         }}
                       >
@@ -691,7 +787,7 @@ export const PublicRateCardPage: React.FC = () => {
                             padding: '3px 10px',
                             borderRadius: 100,
                             marginBottom: 8,
-                            boxShadow: `0 2px 8px ${getPackageBadgeColor(pkg)}44`,
+                            boxShadow: 'none',
                             letterSpacing: '0.03em'
                           }}>
                             {pkg.badge}
@@ -731,9 +827,34 @@ export const PublicRateCardPage: React.FC = () => {
                           <span style={{ fontSize: 11.5, color: isDark ? '#94a3b8' : '#64748b', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                             <Clock size={11} /> {pkg.durationDays ? `${pkg.durationDays} hari` : 'Fleksibel'}
                           </span>
-                          <span style={{ fontSize: 11.5, fontWeight: 800, color: accentColor, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                            Detail <ArrowUpRight size={13} />
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOrderPackage(pkg);
+                              }}
+                              style={{
+                                padding: '3px 10px',
+                                borderRadius: 100,
+                                border: 'none',
+                                background: accentColor,
+                                color: '#ffffff',
+                                fontSize: 11,
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 3,
+                                boxShadow: 'none'
+                              }}
+                            >
+                              <ShoppingBag size={11} /> Pesan
+                            </button>
+                            <span style={{ fontSize: 11.5, fontWeight: 800, color: accentColor, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                              Detail <ArrowUpRight size={12} />
+                            </span>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -875,14 +996,14 @@ export const PublicRateCardPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Redesigned High-Contrast Table */}
+              {/* Redesigned Bento 2.0 High-Contrast Table */}
               <div className="print-white-bg" style={{
-                background: isDark ? 'rgba(15, 23, 42, 0.7)' : '#ffffff',
-                backdropFilter: 'blur(16px)',
-                borderRadius: 20,
-                border: `1px solid ${isDark ? 'rgba(255,255,255,0.12)' : '#e2e8f0'}`,
+                background: isDark ? '#151824' : '#ffffff',
+                backdropFilter: 'none',
+                borderRadius: 22,
+                border: `1px solid ${isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,23,42,0.08)'}`,
                 overflow: 'hidden',
-                boxShadow: isDark ? '0 12px 32px rgba(0,0,0,0.3)' : '0 8px 24px rgba(15,23,42,0.06)'
+                boxShadow: 'none'
               }}>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: 720 }}>
@@ -977,7 +1098,7 @@ export const PublicRateCardPage: React.FC = () => {
                                       fontWeight: 850,
                                       color: '#ffffff',
                                       background: getPackageBadgeColor(pkg),
-                                      boxShadow: `0 2px 6px ${getPackageBadgeColor(pkg)}44`,
+                                      boxShadow: 'none',
                                       padding: '2px 9px',
                                       borderRadius: 100,
                                       whiteSpace: 'nowrap',
@@ -1043,6 +1164,32 @@ export const PublicRateCardPage: React.FC = () => {
                                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
                                   <button
                                     type="button"
+                                    title="Pesan Paket Langsung"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleOrderPackage(pkg);
+                                    }}
+                                    style={{
+                                      padding: '7px 14px',
+                                      borderRadius: 100,
+                                      border: 'none',
+                                      background: accentColor,
+                                      color: '#ffffff',
+                                      fontSize: 12,
+                                      fontWeight: 800,
+                                      cursor: 'pointer',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 5,
+                                      boxShadow: 'none'
+                                    }}
+                                  >
+                                    <ShoppingBag size={13} />
+                                    <span>Pesan</span>
+                                  </button>
+
+                                  <button
+                                    type="button"
                                     title="Lihat Detail Paket"
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -1085,7 +1232,7 @@ export const PublicRateCardPage: React.FC = () => {
                                       display: 'inline-flex',
                                       alignItems: 'center',
                                       gap: 6,
-                                      boxShadow: `0 2px 8px rgba(${accentRgb}, 0.35)`,
+                                      boxShadow: 'none',
                                       transition: 'all 0.15s ease'
                                     }}
                                   >
@@ -1108,10 +1255,10 @@ export const PublicRateCardPage: React.FC = () => {
           {/* ── INTERACTIVE ADD-ONS SECTION ── */}
           <div className="no-print" style={{
             marginTop: 32,
-            background: isDark ? 'rgba(30, 41, 59, 0.45)' : 'rgba(0, 0, 0, 0.02)',
-            backdropFilter: 'blur(16px)',
-            borderRadius: 24,
-            border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
+            background: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
+            backdropFilter: 'none',
+            borderRadius: 22,
+            border: `1px solid ${isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,23,42,0.08)'}`,
             padding: '28px 24px'
           }}>
             <div style={{ marginBottom: 18 }}>
@@ -1139,16 +1286,16 @@ export const PublicRateCardPage: React.FC = () => {
                     data-reveal-type="fade"
                     className={`reveal-delay-${(aIdx % 6) + 1}`}
                     style={{
-                      background: isDark ? 'rgba(15, 23, 42, 0.5)' : '#ffffff',
-                      border: `1px solid ${isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.08)'}`,
-                      borderRadius: 18,
+                      background: isDark ? '#151824' : '#ffffff',
+                      border: `1px solid ${isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,23,42,0.08)'}`,
+                      borderRadius: 16,
                       padding: '16px 18px',
                       display: 'flex',
                       flexDirection: 'column',
                       gap: 8,
                       position: 'relative',
-                      boxShadow: isDark ? '0 4px 20px rgba(0,0,0,0.2)' : '0 4px 16px rgba(0,0,0,0.04)',
-                      transition: 'transform 0.15s ease, box-shadow 0.15s ease'
+                      boxShadow: 'none',
+                      transition: 'transform 0.15s ease, border-color 0.15s ease'
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -1228,7 +1375,7 @@ export const PublicRateCardPage: React.FC = () => {
                               });
                             }
                             localStorage.setItem('porto_client_cart', JSON.stringify(currentCart));
-                            navigate('/katalog?openCart=true');
+                            navigate('/keranjang');
                           } catch {
                             navigate(`/katalog?search=${encodeURIComponent(addon.name)}`);
                           }
@@ -1364,7 +1511,7 @@ export const PublicRateCardPage: React.FC = () => {
 
       </main>
 
-      {/* ── POPUP MODAL DETAIL PAKET (BISA POP UP UNTUK DETAIL) ── */}
+      {/* ── POPUP MODAL DETAIL PAKET (TIDAK MENYENTUH NAVBAR & SMOOTH SCROLL) ── */}
       {detailPackage && (
         <div 
           onClick={() => setDetailPackage(null)}
@@ -1374,13 +1521,16 @@ export const PublicRateCardPage: React.FC = () => {
             left: 0,
             right: 0,
             bottom: 0,
-            background: 'rgba(0, 0, 0, 0.75)',
-            backdropFilter: 'blur(10px)',
+            background: 'rgba(0, 0, 0, 0.78)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 1000,
-            padding: 20
+            zIndex: 100005,
+            padding: '96px 16px 24px',
+            overflowY: 'auto',
+            boxSizing: 'border-box'
           }}
         >
           <div
@@ -1388,22 +1538,32 @@ export const PublicRateCardPage: React.FC = () => {
             style={{
               background: isDark ? '#0f172a' : '#ffffff',
               color: isDark ? '#f8fafc' : '#0f172a',
-              border: `1px solid ${isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)'}`,
+              border: `1.5px solid ${isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.1)'}`,
               borderRadius: 24,
               width: '100%',
-              maxWidth: 540,
-              maxHeight: '90vh',
-              overflowY: 'auto',
-              padding: '28px',
-              boxShadow: '0 24px 60px rgba(0,0,0,0.5)',
+              maxWidth: 580,
+              maxHeight: 'min(780px, calc(100vh - 124px))',
+              boxShadow: isDark 
+                ? '0 24px 70px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.08)' 
+                : '0 24px 70px rgba(15,23,42,0.25), 0 0 0 1px rgba(0,0,0,0.04)',
               display: 'flex',
               flexDirection: 'column',
-              gap: 18,
-              position: 'relative'
+              position: 'relative',
+              overflow: 'hidden',
+              margin: 'auto'
             }}
           >
-            {/* Header with Close button */}
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14 }}>
+            {/* Header with Close button (Clean & Non-scrolling) */}
+            <div style={{
+              padding: '20px 24px 16px',
+              borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`,
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              gap: 14,
+              flexShrink: 0,
+              background: isDark ? 'rgba(15, 23, 42, 0.98)' : 'rgba(255, 255, 255, 0.98)'
+            }}>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
                   <span style={{ 
@@ -1424,13 +1584,13 @@ export const PublicRateCardPage: React.FC = () => {
                       padding: '2px 9px',
                       borderRadius: 100,
                       letterSpacing: '0.04em',
-                      boxShadow: `0 2px 6px ${getPackageBadgeColor(detailPackage)}44`
+                      boxShadow: 'none'
                     }}>
                       {detailPackage.badge}
                     </span>
                   )}
                 </div>
-                <h3 style={{ margin: 0, fontSize: 22, fontWeight: 900, fontFamily: "'Outfit', sans-serif" }}>
+                <h3 style={{ margin: 0, fontSize: 21, fontWeight: 900, fontFamily: "'Outfit', sans-serif" }}>
                   {detailPackage.title}
                 </h3>
               </div>
@@ -1440,8 +1600,8 @@ export const PublicRateCardPage: React.FC = () => {
                 onClick={() => setDetailPackage(null)}
                 title="Tutup"
                 style={{
-                  width: 36,
-                  height: 36,
+                  width: 34,
+                  height: 34,
                   borderRadius: '50%',
                   border: `1px solid ${isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)'}`,
                   background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
@@ -1450,86 +1610,216 @@ export const PublicRateCardPage: React.FC = () => {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  flexShrink: 0
+                  flexShrink: 0,
+                  transition: 'background 0.15s ease'
                 }}
               >
                 <X size={16} />
               </button>
             </div>
 
-            {/* Price Box */}
-            <div style={{
-              background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
-              borderRadius: 16,
-              padding: '16px 20px',
-              display: 'flex',
-              alignItems: 'baseline',
-              justifyContent: 'space-between'
-            }}>
+            {/* Scrollable Body Container */}
+            <div 
+              className="custom-modal-scroll"
+              style={{
+                flex: 1,
+                overflowY: 'auto',
+                padding: '20px 24px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 16,
+                overscrollBehavior: 'contain'
+              }}
+            >
+              {/* Price Box */}
+              <div style={{
+                background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+                borderRadius: 16,
+                padding: '16px 20px',
+                display: 'flex',
+                alignItems: 'baseline',
+                justifyContent: 'space-between',
+                flexShrink: 0
+              }}>
+                <div>
+                  <span style={{ fontSize: 24, fontWeight: 900, color: accentColor, fontFamily: "'Outfit', sans-serif" }}>
+                    {formatCurrency(detailPackage.price)}
+                  </span>
+                  <span style={{ fontSize: 12, color: isDark ? '#94a3b8' : '#64748b', marginLeft: 6 }}>
+                    / {detailPackage.billingPeriod || 'per proyek'}
+                  </span>
+                </div>
+                <div style={{ fontSize: 12, color: isDark ? '#cbd5e1' : '#475569', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Clock size={13} color={accentColor} />
+                  <span>{detailPackage.durationDays ? `${detailPackage.durationDays} hari kerja` : 'Fleksibel'}</span>
+                </div>
+              </div>
+
+              {detailPackage.description && (
+                <p style={{ margin: 0, fontSize: 13.5, color: isDark ? '#94a3b8' : '#64748b', lineHeight: 1.6 }}>
+                  {detailPackage.description}
+                </p>
+              )}
+
+              {/* Deliverables */}
               <div>
-                <span style={{ fontSize: 24, fontWeight: 900, color: accentColor, fontFamily: "'Outfit', sans-serif" }}>
-                  {formatCurrency(detailPackage.price)}
-                </span>
-                <span style={{ fontSize: 12, color: isDark ? '#94a3b8' : '#64748b', marginLeft: 6 }}>
-                  / {detailPackage.billingPeriod || 'per proyek'}
-                </span>
-              </div>
-              <div style={{ fontSize: 12, color: isDark ? '#cbd5e1' : '#475569', display: 'flex', alignItems: 'center', gap: 4 }}>
-                <Clock size={13} color={accentColor} />
-                <span>{detailPackage.durationDays ? `${detailPackage.durationDays} hari kerja` : 'Fleksibel'}</span>
-              </div>
-            </div>
-
-            {detailPackage.description && (
-              <p style={{ margin: 0, fontSize: 13.5, color: isDark ? '#94a3b8' : '#64748b', lineHeight: 1.6 }}>
-                {detailPackage.description}
-              </p>
-            )}
-
-            {/* Deliverables */}
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: isDark ? '#94a3b8' : '#64748b', marginBottom: 10 }}>
-                Rincian Deliverables:
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {(detailPackage.deliverables || []).map((item, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: isDark ? '#cbd5e1' : '#334155' }}>
-                    <div style={{ width: 18, height: 18, borderRadius: '50%', background: `rgba(${accentRgb}, 0.15)`, color: accentColor, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
-                      <Check size={11} strokeWidth={3} />
+                <div style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: isDark ? '#94a3b8' : '#64748b', marginBottom: 10 }}>
+                  Rincian Deliverables:
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {(detailPackage.deliverables || []).map((item, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: isDark ? '#cbd5e1' : '#334155' }}>
+                      <div style={{ width: 18, height: 18, borderRadius: '50%', background: `rgba(${accentRgb}, 0.15)`, color: accentColor, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
+                        <Check size={11} strokeWidth={3} />
+                      </div>
+                      <span>{item}</span>
                     </div>
-                    <span>{item}</span>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
+
+              {/* Add-on Selection in Modal */}
+              {addons && addons.length > 0 && (
+                <div style={{
+                  background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                  borderRadius: 16,
+                  padding: '16px',
+                  border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`
+                }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: 10
+                  }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: accentColor }}>
+                      Pilihan Add-on Opsional:
+                    </div>
+                    <span style={{ fontSize: 11, color: isDark ? '#94a3b8' : '#64748b' }}>
+                      Dapat dicentang sesuai kebutuhan
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 180, overflowY: 'auto' }}>
+                    {addons.map(addon => {
+                      const isChecked = selectedAddonIds.includes(addon.id);
+                      return (
+                        <label
+                          key={addon.id}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: 10,
+                            padding: '8px 12px',
+                            borderRadius: 10,
+                            background: isChecked 
+                              ? (isDark ? 'rgba(245, 158, 11, 0.15)' : 'rgba(245, 158, 11, 0.08)')
+                              : (isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)'),
+                            border: `1px solid ${isChecked ? accentColor : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)')}`,
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                setSelectedAddonIds(prev => 
+                                  prev.includes(addon.id) ? prev.filter(id => id !== addon.id) : [...prev, addon.id]
+                                );
+                              }}
+                              style={{ accentColor, width: 15, height: 15 }}
+                            />
+                            <div>
+                              <div style={{ fontSize: 12.5, fontWeight: 750, color: isDark ? '#f8fafc' : '#0f172a' }}>
+                                {addon.name}
+                              </div>
+                              <div style={{ fontSize: 11, color: isDark ? '#94a3b8' : '#64748b' }}>
+                                {addon.desc}
+                              </div>
+                            </div>
+                          </div>
+
+                          <span style={{ fontSize: 12, fontWeight: 800, color: accentColor, whiteSpace: 'nowrap' }}>
+                            +{formatCurrency(addon.priceIdr)}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Total Investment Summary */}
+              {(() => {
+                const chosen = addons.filter(a => selectedAddonIds.includes(a.id));
+                const addonsSum = chosen.reduce((acc, a) => acc + (a.priceIdr || 0), 0);
+                const grandTotal = (detailPackage.price || 0) + addonsSum;
+
+                return (
+                  <div style={{
+                    padding: '14px 18px',
+                    borderRadius: 16,
+                    background: `rgba(${accentRgb}, 0.1)`,
+                    border: `1px solid rgba(${accentRgb}, 0.3)`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: 8,
+                    flexShrink: 0
+                  }}>
+                    <div>
+                      <span style={{ fontSize: 11.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: accentColor }}>
+                        Total Investasi (Paket + {chosen.length} Add-on)
+                      </span>
+                      <div style={{ fontSize: 11, color: isDark ? '#cbd5e1' : '#64748b' }}>
+                        Tersedia opsi DP 50% di langkah checkout
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 20, fontWeight: 900, color: accentColor, fontFamily: "'Outfit', sans-serif" }}>
+                      {formatCurrency(grandTotal)}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
-            {/* Action Buttons: Go to Katalog or WhatsApp */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
+            {/* Fixed Bottom Action Buttons */}
+            <div style={{
+              padding: '16px 24px',
+              borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`,
+              background: isDark ? '#0c1322' : '#f8fafc',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+              flexShrink: 0
+            }}>
               <button
                 type="button"
-                onClick={() => {
-                  setDetailPackage(null);
-                  navigate('/katalog');
-                }}
+                onClick={() => handleOrderPackage(detailPackage)}
                 style={{
                   width: '100%',
-                  height: 48,
+                  height: 46,
                   borderRadius: 14,
                   border: 'none',
                   background: accentColor,
                   color: '#ffffff',
-                  fontSize: 14,
+                  fontSize: 13.5,
                   fontWeight: 850,
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: 8,
-                  boxShadow: `0 4px 16px rgba(${accentRgb}, 0.4)`
+                  boxShadow: 'none',
+                  transition: 'all 0.15s ease'
                 }}
               >
-                <ShoppingBag size={17} />
-                <span>Pesan Paket di Katalog Toko</span>
+                <ShoppingBag size={16} />
+                <span>Pesan Paket & Lanjut ke Checkout (DP / Lunas)</span>
               </button>
 
               <button
@@ -1537,12 +1827,12 @@ export const PublicRateCardPage: React.FC = () => {
                 onClick={() => handleConsultWhatsApp(detailPackage)}
                 style={{
                   width: '100%',
-                  height: 44,
+                  height: 40,
                   borderRadius: 14,
                   border: `1px solid ${isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)'}`,
                   background: 'transparent',
                   color: isDark ? '#ffffff' : '#0f172a',
-                  fontSize: 13.5,
+                  fontSize: 13,
                   fontWeight: 750,
                   cursor: 'pointer',
                   display: 'flex',
@@ -1551,7 +1841,7 @@ export const PublicRateCardPage: React.FC = () => {
                   gap: 8
                 }}
               >
-                <MessageSquare size={16} />
+                <MessageSquare size={15} />
                 <span>Konsultasi Paket via WhatsApp</span>
               </button>
             </div>
@@ -1568,8 +1858,21 @@ export const PublicRateCardPage: React.FC = () => {
         />
       </div>
 
-      {/* ── STYLESHEET (CLEAN FOOTER SPACING & PRINT PROPOSAL) ── */}
+      {/* ── STYLESHEET (CLEAN FOOTER SPACING & PRINT PROPOSAL & MODAL SCROLL) ── */}
       <style>{`
+        .custom-modal-scroll::-webkit-scrollbar {
+          width: 6px;
+        }
+        .custom-modal-scroll::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .custom-modal-scroll::-webkit-scrollbar-thumb {
+          background: ${isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)'};
+          border-radius: 10px;
+        }
+        .custom-modal-scroll::-webkit-scrollbar-thumb:hover {
+          background: ${accentColor};
+        }
         .public-ratecard-root [data-reveal] {
           opacity: 1 !important;
           transform: none !important;
@@ -1613,6 +1916,9 @@ export const PublicRateCardPage: React.FC = () => {
           }
         }
       `}</style>
+
+      {/* Studio Creative Inquiry & Brief Modal */}
+      <StudioInquiryModal isDark={isDark} accentColor={accentColor} />
     </div>
   );
 };

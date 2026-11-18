@@ -8,7 +8,7 @@ import {
   Copy, Check, ExternalLink, Lightbulb, Compass, ShoppingBag,
   FileText, BookOpen, Layers, Edit3, Share2, Download, HardDrive,
   Gamepad2, LayoutGrid, Radio, QrCode, Receipt, UploadCloud, FolderPlus, FilePlus2,
-  PlusCircle, DollarSign, DownloadCloud, Image as GalleryIcon, Sliders
+  PlusCircle, DollarSign, DownloadCloud, Image as GalleryIcon, Sliders, CloudLightning, Wand2
 } from 'lucide-react';
 import { callGemini } from '../../utils/ai';
 import { storage } from '../../utils/storage';
@@ -179,6 +179,7 @@ const GlobalSearchCenter = ({
   const [googleResults, setGoogleResults] = useState([]);
   const [isTyping, setIsTyping] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState(null);
+  const [isClosing, setIsClosing] = useState(false);
   
   // ── Mini Browser States ──
   const [browserEngine, setBrowserEngine] = useState('google'); // 'google' | 'duckduckgo' | 'bing' | 'wikipedia'
@@ -194,8 +195,14 @@ const GlobalSearchCenter = ({
 
   // AI States
   const [sessions, setSessions] = useState(() => {
-    const saved = localStorage.getItem('porto_ai_sessions');
-    return saved ? JSON.parse(saved) : [
+    try {
+      const saved = localStorage.getItem('porto_ai_sessions');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch { /* fallback to default session */ }
+    return [
       { id: 'default', title: 'Sesi Utama', messages: [
         { role: 'assistant', text: "Halo! Saya adalah Co-Pilot strategis CMS Anda. Anda dapat menanyakan ide konten, saran optimasi website, data offline apa pun, atau mengeksekusi aksi dan pintasan sistem secara instan.", type: 'text' }
       ]}
@@ -364,7 +371,8 @@ const GlobalSearchCenter = ({
   // Focus Input on Open
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => searchInputRef.current?.focus(), 100);
+      setIsClosing(false);
+      setTimeout(() => searchInputRef.current?.focus(), 80);
       setInputValue('');
       setActiveTab('shortcuts');
       setSearchSelectedIndex(0);
@@ -657,6 +665,7 @@ const GlobalSearchCenter = ({
 
   // ── Contextual Prefix System: Slash Commands (/), Hashtag Modules (#), & Mentions (@) ──
   const slashCommands = useMemo(() => [
+    { key: '/cloud-nexus', label: 'Cloud Nexus & Gimic Cerdas', desc: 'Radar latensi pihak ketiga, konversi brief chat, dan link generator', icon: CloudLightning, badge: 'Pihak ke-3', action: () => { onSwitchPage('third-party'); onClose(); } },
     { key: '/buat-proyek', label: 'Tambah Proyek Portofolio', desc: 'Buka wizard karya baru, upload thumbnail mockup, & tag', icon: FolderPlus, badge: 'Buat', action: triggerCreateProject },
     { key: '/tulis-artikel', label: 'Tulis Artikel Blog Baru', desc: 'Buka editor blog untuk membuat dan publikasi tulisan', icon: FilePlus2, badge: 'Buat', action: triggerCreateBlog },
     { key: '/tambah-produk', label: 'Tambah Produk / Jasa Baru', desc: 'Input item produk baru ke katalog & set harga/stok', icon: PlusCircle, badge: 'Buat', action: triggerCreateProduct },
@@ -678,6 +687,8 @@ const GlobalSearchCenter = ({
   ], [onSwitchPage, onClose]);
 
   const hashtagModules = useMemo(() => [
+    { key: '#nexus', label: 'Cloud Nexus (Pihak Ketiga)', desc: 'Pusat radar gateway, transformer Cloudinary, dan WhatsApp router', icon: CloudLightning, page: 'third-party' },
+    { key: '#gimic', label: 'Gimic Cerdas Admin (8 Fitur)', desc: 'Ekstrak chat ke proyek, Google Calendar linker, dan kalkulator hari kerja', icon: Wand2, page: 'third-party' },
     { key: '#proyek', label: 'Portofolio & Karya', desc: 'Semua daftar proyek karya agensi dan portofolio desain', icon: FolderKanban, page: 'projects' },
     { key: '#blog', label: 'Blog & Artikel Berita', desc: 'Semua konten tulisan, publikasi, dan artikel website', icon: BookOpen, page: 'blog' },
     { key: '#katalog', label: 'Katalog Produk & Layanan', desc: 'Daftar produk digital, layanan jasa, dan paket harga', icon: ShoppingBag, page: 'catalog' },
@@ -1545,11 +1556,28 @@ const GlobalSearchCenter = ({
     }
   };
 
+  // Dynamic Expansion & Morph State (Only expands when typing, bang engine, or subtab)
+  const isExpanded = Boolean(
+    inputValue.trim() || 
+    activeBangEngine || 
+    activeTab !== 'shortcuts' || 
+    selectedCategoryFilter !== 'all'
+  );
+
+  const handleClose = () => {
+    if (isClosing) return;
+    setIsClosing(true);
+    setTimeout(() => {
+      setIsClosing(false);
+      onClose();
+    }, 200);
+  };
+
   // Keyboard navigation
   const handleKeyDown = (e) => {
     if (e.key === 'Escape') {
       e.preventDefault();
-      onClose();
+      handleClose();
     } else if (e.key === 'Backspace' && !inputValue && activeBangEngine) {
       e.preventDefault();
       setActiveBangEngine(null);
@@ -1570,178 +1598,334 @@ const GlobalSearchCenter = ({
 
   return (
     <div 
-      className="global-search-overlay"
+      className={`global-search-overlay ${isClosing ? 'anim-out' : 'anim-in'}`}
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(0, 0, 0, 0.25)',
+        background: 'rgba(0, 0, 0, 0.55)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
         zIndex: 2147483640,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: 'max(20px, 3vh) 16px calc(75px + env(safe-area-inset-bottom, 0px))',
-        animation: 'cmsFadeIn 0.2s ease-out',
+        padding: '20px 16px',
         cursor: 'pointer'
       }}
-      onClick={onClose}
+      onClick={handleClose}
     >
       <div 
-        className="global-search-modal"
+        className={`global-search-modal ${isClosing ? 'anim-out' : 'anim-in'} ${isExpanded ? 'is-expanded' : 'is-collapsed'}`}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
         style={{
           position: 'relative',
           width: '100%',
-          maxWidth: 720,
-          maxHeight: 'min(640px, calc(100dvh - 120px))',
-          borderRadius: 18,
+          maxWidth: isExpanded ? 640 : 620,
+          maxHeight: isExpanded ? 'min(520px, calc(100dvh - 120px))' : 54,
+          height: isExpanded ? 'auto' : 54,
+          borderRadius: isExpanded ? 24 : 9999,
           background: 'var(--cms-card-bg)',
           backdropFilter: 'none',
           WebkitBackdropFilter: 'none',
-          border: '1px solid var(--cms-border, rgba(255, 255, 255, 0.12))',
+          border: '1.5px solid var(--cms-border, rgba(255, 255, 255, 0.16))',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          animation: 'cmsModalPop 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
           cursor: 'default',
-          boxShadow: '0 16px 40px rgba(0, 0, 0, 0.22)'
+          boxShadow: isExpanded 
+            ? '0 24px 60px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.1)' 
+            : '0 16px 40px rgba(0, 0, 0, 0.38), 0 0 0 1px rgba(255, 255, 255, 0.1)',
+          transition: 'border-radius 0.22s ease, max-height 0.26s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease'
         }}
       >
-        {/* Top Header */}
+        {/* ── 1-LINE FLOATING SEARCH BAR ── */}
         <div className="global-search-header" style={{
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '12px 18px',
-          borderBottom: '1px solid var(--cms-border, rgba(255, 255, 255, 0.08))',
+          padding: isExpanded ? '10px 16px' : '7px 14px 7px 9px',
+          borderBottom: isExpanded ? '1px solid var(--cms-border, rgba(255, 255, 255, 0.08))' : 'none',
           background: 'var(--cms-card-bg)',
           flexShrink: 0,
-          gap: 8,
-          flexWrap: 'nowrap'
+          gap: 10,
+          boxSizing: 'border-box',
+          minHeight: 52,
+          height: isExpanded ? 'auto' : 52,
+          borderRadius: isExpanded ? '24px 24px 0 0' : 9999
         }}>
-          {/* Logo & Title */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
-            <div style={{
-              width: 30, height: 30, borderRadius: 8,
-              background: 'var(--cms-accent)',
-              color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: 'none',
-              flexShrink: 0
-            }}>
-              <Search size={16} strokeWidth={2.4} />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-              <span style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--cms-text)', fontFamily: "'Outfit', sans-serif", letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                Pencarian Sistem & AI
-              </span>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block', flexShrink: 0 }} />
-            </div>
-          </div>
-
-          {/* Unified Action Header (No fragmented tabs) */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-            {activeTab !== 'shortcuts' && (
-              <button
-                type="button"
-                onClick={() => setActiveTab('shortcuts')}
-                style={{
-                  padding: '5px 12px',
-                  borderRadius: 100,
-                  border: '1px solid var(--glass-border)',
-                  background: 'var(--cms-switcher-bg)',
-                  color: 'var(--cms-text)',
-                  fontSize: 11.5,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  transition: 'all 0.15s ease',
-                  flexShrink: 0
-                }}
-              >
-                <ArrowLeft size={13} strokeWidth={2.5} /> Menu Utama
-              </button>
-            )}
-
-            <button 
-              onClick={onClose} 
+          {/* Back button if in subtab, otherwise Search Icon */}
+          {activeTab !== 'shortcuts' ? (
+            <button
+              type="button"
+              onClick={() => setActiveTab('shortcuts')}
               style={{
-                width: 32,
-                height: 32,
-                minWidth: 32,
-                minHeight: 32,
-                maxWidth: 32,
-                maxHeight: 32,
-                flexShrink: 0,
-                aspectRatio: '1 / 1',
-                borderRadius: '50%',
-                border: '1px solid var(--glass-border)',
+                width: 36,
+                height: 36,
+                borderRadius: 9999,
+                border: '1px solid var(--glass-border, rgba(0,0,0,0.1))',
                 background: 'var(--cms-switcher-bg)',
-                color: 'var(--cms-text-muted)',
-                cursor: 'pointer',
+                color: 'var(--cms-text)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                transition: '0.2s',
-                marginLeft: 2,
-                boxSizing: 'border-box'
+                cursor: 'pointer',
+                flexShrink: 0
               }}
-              className="close-modal-btn"
-              title="Tutup (ESC)"
+              title="Kembali ke Menu Utama"
             >
-              <X size={15} style={{ flexShrink: 0 }} />
+              <ArrowLeft size={16} strokeWidth={2.4} />
             </button>
+          ) : (
+            <div style={{
+              width: 36,
+              height: 36,
+              borderRadius: 9999,
+              background: 'var(--cms-accent, #10b981)',
+              color: '#fff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              boxShadow: '0 2px 10px rgba(16, 185, 129, 0.35)'
+            }}>
+              <Search size={16} strokeWidth={2.4} />
+            </div>
+          )}
+
+          {/* Kotakan Active Bang Engine (Misal: !youtube) */}
+          {activeBangEngine && (
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '3px 8px',
+              borderRadius: 6,
+              background: 'rgba(37, 99, 235, 0.15)',
+              border: '1px solid #2563eb',
+              color: '#2563eb',
+              fontSize: 12,
+              fontWeight: 800,
+              fontFamily: 'monospace',
+              flexShrink: 0
+            }}>
+              {activeBangEngine.icon && <activeBangEngine.icon size={13} strokeWidth={2.4} />}
+              <span>{activeBangEngine.key}</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveBangEngine(null);
+                  setInputWithCursorAtEnd('!');
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  cursor: 'pointer',
+                  color: '#2563eb',
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+                title="Batal"
+              >
+                <X size={12} strokeWidth={2.5} />
+              </button>
+            </div>
+          )}
+
+          {/* 1-Line Input Search Field */}
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center' }}>
+            <input 
+              ref={searchInputRef}
+              value={inputValue}
+              autoFocus
+              onChange={(e) => {
+                const val = e.target.value;
+                if (!activeBangEngine && val.startsWith('!')) {
+                  const match = bangEngines.find(b => val.toLowerCase().startsWith(`${b.key.toLowerCase()} `));
+                  if (match) {
+                    const queryAfter = val.slice(match.key.length + 1);
+                    setActiveBangEngine(match);
+                    setInputValue(queryAfter);
+                    setTimeout(() => {
+                      if (searchInputRef.current) {
+                        searchInputRef.current.focus();
+                        searchInputRef.current.setSelectionRange(queryAfter.length, queryAfter.length);
+                      }
+                    }, 20);
+                    return;
+                  }
+                }
+                setInputValue(val);
+                setSearchSelectedIndex(0);
+              }}
+              placeholder={
+                activeBangEngine
+                  ? `Cari di ${activeBangEngine.label.replace('Cari ', '')}...`
+                  : isSlashActive 
+                  ? "Ketik perintah (/buat-proyek, /tulis-artikel, /tambah-produk)..."
+                  : isHashActive
+                  ? "Filter modul (#proyek, #blog, #katalog, #transaksi, #memo)..."
+                  : isAtActive
+                  ? "Tanya AI atau panggil data (@ai, @keuangan, @catatan, @kontak)..."
+                  : isBangActive
+                  ? "Cari Internet (! google, ! duckduckgo, ! wiki)..."
+                  : activeTab === 'ai-chat'
+                  ? "Ketik pesan untuk AI..."
+                  : "Cari atau ketik '/' aksi, '#' modul, '@' AI, '!' web..."
+              }
+              style={{
+                width: '100%',
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--cms-text)',
+                fontSize: 14.5,
+                fontWeight: 600,
+                outline: 'none',
+                padding: '0 4px',
+                letterSpacing: '-0.01em'
+              }}
+              className="global-ai-input"
+            />
           </div>
+
+          {/* Inline Prefix Shortcuts in Pill Mode */}
+          {!isExpanded && (
+            <div className="pill-shortcuts-inline hide-on-mobile" style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+              {[
+                { prefix: '/', title: 'Perintah' },
+                { prefix: '#', title: 'Modul' },
+                { prefix: '@', title: 'Tanya AI' },
+                { prefix: '!', title: 'Cari Web' }
+              ].map(p => (
+                <button
+                  key={p.prefix}
+                  type="button"
+                  onClick={() => setInputWithCursorAtEnd(p.prefix)}
+                  style={{
+                    padding: '3px 8px',
+                    borderRadius: 9999,
+                    border: '1px solid var(--cms-border, rgba(255,255,255,0.12))',
+                    background: 'var(--cms-switcher-bg)',
+                    color: 'var(--cms-text-muted)',
+                    fontSize: 11,
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    fontFamily: 'monospace',
+                    lineHeight: 1.2,
+                    transition: 'all 0.15s ease'
+                  }}
+                  title={p.title}
+                >
+                  {p.prefix}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Clear Button */}
+          {inputValue && (
+            <button
+              type="button"
+              onClick={() => {
+                setInputValue('');
+                setActiveBangEngine(null);
+                searchInputRef.current?.focus();
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--cms-text-muted)',
+                cursor: 'pointer',
+                padding: 4,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}
+              title="Hapus input"
+            >
+              <X size={15} />
+            </button>
+          )}
+
+          {/* Submit / Action Button (Only show when there is query or in expanded mode) */}
+          {inputValue.trim() && (
+            <button
+              type="button"
+              onClick={() => handleUnifiedSubmit()}
+              disabled={isTyping}
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: '50%',
+                border: 'none',
+                background: 'var(--cms-accent, #10b981)',
+                color: '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: isTyping ? 'not-allowed' : 'pointer',
+                flexShrink: 0,
+                transition: 'opacity 0.15s ease',
+                boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)'
+              }}
+              title="Kirim / Cari (Enter)"
+            >
+              {isTyping ? (
+                <RefreshCw size={14} className="cms-spin" />
+              ) : (
+                <Send size={13} strokeWidth={2.4} style={{ transform: 'translateX(1px)' }} />
+              )}
+            </button>
+          )}
+
+          {/* Close ESC Button */}
+          <button 
+            onClick={handleClose} 
+            style={{
+              padding: '3px 10px',
+              height: 28,
+              borderRadius: 9999,
+              border: '1px solid var(--cms-border, rgba(255,255,255,0.14))',
+              background: 'var(--cms-switcher-bg)',
+              color: 'var(--cms-text-muted)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              fontSize: 10,
+              fontWeight: 800,
+              letterSpacing: '0.04em'
+            }}
+            title="Tutup (ESC)"
+          >
+            ESC
+          </button>
         </div>
 
-        {/* ── CENTRAL CONTENT AREA ── */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 18px', display: 'flex', flexDirection: 'column', height: 0, scrollbarWidth: 'thin', WebkitOverflowScrolling: 'touch' }}>
+        {/* ── CENTRAL CONTENT AREA (ONLY EXPANDS WHEN TYPING OR SUBTAB) ── */}
+        {isExpanded && (
+          <div 
+            className="global-search-content-area"
+            style={{ 
+              flex: 1, 
+              overflowY: 'auto', 
+              padding: '12px 16px', 
+              display: 'flex', 
+              flexDirection: 'column', 
+              height: 0, 
+              scrollbarWidth: 'thin', 
+              WebkitOverflowScrolling: 'touch',
+              animation: 'resultsSlideDown 0.22s cubic-bezier(0.16, 1, 0.3, 1)'
+            }}
+          >
           
           {/* TAB 1: SHORTCUTS & LOCAL CMS MATCHES */}
           {activeTab === 'shortcuts' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               
-              {/* Category Filter Pills (Pure Lucide Icons, No Emojis) */}
-              <div className="cat-filter-scroll" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, overflowX: 'auto', scrollbarWidth: 'none', padding: '4px 6px 6px 6px', width: '100%', margin: '0 auto' }}>
-                {[
-                  { id: 'all', label: 'Semua', icon: Layers },
-                  { id: 'Aksi Cepat', label: 'Aksi Cepat', icon: Zap },
-                  { id: 'Modul', label: 'Modul Konten', icon: FolderKanban },
-                  { id: 'Pengaturan', label: 'Pengaturan', icon: Settings },
-                  { id: 'Pintasan', label: 'Pintasan Sistem', icon: Sliders }
-                ].map(cat => {
-                  const CatIcon = cat.icon;
-                  const isCatActive = selectedCategoryFilter === cat.id;
-                  return (
-                    <button
-                      key={cat.id}
-                      type="button"
-                      onClick={() => setSelectedCategoryFilter(cat.id)}
-                      className="cat-pill-btn"
-                      style={{
-                        padding: '5px 12px',
-                        borderRadius: 8,
-                        border: `1px solid ${isCatActive ? 'var(--cms-accent)' : 'var(--cms-border, rgba(0,0,0,0.1))'}`,
-                        background: isCatActive ? 'var(--cms-accent-soft)' : 'var(--cms-input-bg)',
-                        color: isCatActive ? 'var(--cms-accent)' : 'var(--cms-text-muted)',
-                        fontSize: 11.5,
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        whiteSpace: 'nowrap',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        transition: 'all 0.15s ease'
-                      }}
-                      title={cat.label}
-                    >
-                      <CatIcon size={13} strokeWidth={2.2} />
-                      <span className="cat-pill-text">{cat.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
 
               {/* When typing, show filtered items instantly */}
               {inputValue.trim() || selectedCategoryFilter !== 'all' ? (
@@ -2179,136 +2363,205 @@ const GlobalSearchCenter = ({
                   })()}
                 </div>
               ) : (
-                /* Default View: Minimalist Clean Sections */
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                /* Default View: Minimalist Clean 1-Line Command List */
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   
-                  {/* Section 0: Aksi Cepat & Tambah Data */}
+                  {/* Section: Aksi Cepat & Tambah Data */}
                   <div>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--cms-accent)', letterSpacing: '0.06em', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <Zap size={13} /> AKSI CEPAT & TAMBAH DATA
+                    <div style={{ 
+                      fontSize: 10, 
+                      fontWeight: 800, 
+                      color: 'var(--cms-accent)', 
+                      letterSpacing: '0.06em', 
+                      padding: '2px 8px 6px', 
+                      textTransform: 'uppercase', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: 5 
+                    }}>
+                      <Zap size={11} strokeWidth={2.4} /> Aksi Cepat & Tambah Data
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 8 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                       {[
-                        { label: 'Buka Galeri Media', icon: GalleryIcon, action: () => setShowMediaGalleryModal(true) },
-                        { label: 'Upload File Langsung', icon: UploadCloud, action: () => fileInputRef.current?.click() },
-                        { label: 'Tambah Proyek Baru', icon: FolderPlus, action: triggerCreateProject },
-                        { label: 'Tulis Artikel Blog', icon: FilePlus2, action: triggerCreateBlog },
-                        { label: 'Tambah Produk Jasa', icon: PlusCircle, action: triggerCreateProduct },
-                        { label: 'Buat Catatan / Memo', icon: StickyNote, action: triggerCreateMemo },
-                        { label: 'Catat Transaksi Baru', icon: DollarSign, action: triggerCreateTransaction },
-                        { label: 'Ekspor Backup JSON', icon: DownloadCloud, action: handleDirectBackup },
+                        { label: 'Buka Galeri Media', icon: GalleryIcon, tag: 'Media', action: () => setShowMediaGalleryModal(true) },
+                        { label: 'Upload File Langsung', icon: UploadCloud, tag: 'Upload', action: () => fileInputRef.current?.click() },
+                        { label: 'Tambah Proyek Portofolio', icon: FolderPlus, tag: 'Porto', action: triggerCreateProject },
+                        { label: 'Tulis Artikel Blog Baru', icon: FilePlus2, tag: 'Blog', action: triggerCreateBlog },
+                        { label: 'Tambah Produk / Jasa', icon: PlusCircle, tag: 'Katalog', action: triggerCreateProduct },
+                        { label: 'Buat Catatan / Memo', icon: StickyNote, tag: 'Memo', action: triggerCreateMemo },
+                        { label: 'Catat Transaksi Keuangan', icon: DollarSign, tag: 'Finance', action: triggerCreateTransaction },
+                        { label: 'Ekspor Backup Database JSON', icon: DownloadCloud, tag: 'Backup', action: handleDirectBackup },
                       ].map((m, i) => (
                         <div
                           key={i}
                           onClick={m.action}
-                          className="quick-action-card"
+                          className="search-cmd-row"
                           style={{
-                            padding: '10px 12px', borderRadius: 14,
-                            background: 'var(--cms-input-bg)', border: '1px solid var(--glass-border)',
-                            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
-                            transition: 'all 0.2s', minWidth: 0
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '6px 10px',
+                            borderRadius: 7,
+                            cursor: 'pointer',
+                            transition: 'background 0.12s, border-color 0.12s'
                           }}
                         >
-                          <m.icon size={15} color="var(--cms-accent)" style={{ flexShrink: 0 }} />
-                          <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--cms-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {m.label}
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+                            <div style={{ 
+                              width: 24, 
+                              height: 24, 
+                              borderRadius: 5, 
+                              background: 'var(--cms-accent-soft, rgba(124, 58, 237, 0.1))', 
+                              color: 'var(--cms-accent)', 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              justifyContent: 'center', 
+                              flexShrink: 0 
+                            }}>
+                              <m.icon size={13} strokeWidth={2.2} />
+                            </div>
+                            <span style={{ fontSize: 12, fontWeight: 650, color: 'var(--cms-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {m.label}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                            <span style={{ fontSize: 9.5, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'var(--cms-switcher-bg)', color: 'var(--cms-text-muted)' }}>
+                              {m.tag}
+                            </span>
+                            <CornerDownLeft size={11} style={{ opacity: 0.35, color: 'var(--cms-text-muted)' }} />
+                          </div>
                         </div>
                       ))}
                     </div>
                   </div>
 
-                  {/* Section 1: Modul Utama */}
+                  {/* Section: Navigasi Modul */}
                   <div>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--cms-text-muted)', letterSpacing: '0.06em', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <Layers size={13} color="var(--cms-accent)" /> MODUL KONTEN
+                    <div style={{ 
+                      fontSize: 10, 
+                      fontWeight: 800, 
+                      color: 'var(--cms-text-muted)', 
+                      letterSpacing: '0.06em', 
+                      padding: '2px 8px 6px', 
+                      textTransform: 'uppercase', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: 5 
+                    }}>
+                      <Layers size={11} strokeWidth={2.4} /> Navigasi Modul
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                       {[
-                        { label: 'Memo & Catatan', icon: FileText, page: 'memo' },
-                        { label: 'Proyek Portofolio', icon: FolderKanban, page: 'projects' },
-                        { label: 'Artikel Blog', icon: BookOpen, page: 'blog' },
-                        { label: 'Katalog & Transaksi', icon: ShoppingBag, page: 'transactions' },
+                        { label: 'Proyek Portofolio', icon: FolderKanban, page: 'projects', tag: 'Modul' },
+                        { label: 'Katalog & Transaksi', icon: ShoppingBag, page: 'transactions', tag: 'Modul' },
+                        { label: 'Artikel Blog', icon: BookOpen, page: 'blog', tag: 'Modul' },
+                        { label: 'Memo & Catatan', icon: FileText, page: 'memo', tag: 'Modul' },
                       ].map((m, i) => (
                         <div
                           key={i}
                           onClick={() => { onSwitchPage(m.page); onClose(); }}
-                          className="quick-action-card"
+                          className="search-cmd-row"
                           style={{
-                            padding: '10px 12px', borderRadius: 14,
-                            background: 'var(--cms-input-bg)', border: '1px solid var(--glass-border)',
-                            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
-                            transition: 'all 0.2s', minWidth: 0
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '6px 10px',
+                            borderRadius: 7,
+                            cursor: 'pointer',
+                            transition: 'background 0.12s, border-color 0.12s'
                           }}
                         >
-                          <m.icon size={15} color="var(--cms-accent)" style={{ flexShrink: 0 }} />
-                          <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--cms-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {m.label}
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+                            <div style={{ 
+                              width: 24, 
+                              height: 24, 
+                              borderRadius: 5, 
+                              background: 'rgba(16, 185, 129, 0.12)', 
+                              color: '#10b981', 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              justifyContent: 'center', 
+                              flexShrink: 0 
+                            }}>
+                              <m.icon size={13} strokeWidth={2.2} />
+                            </div>
+                            <span style={{ fontSize: 12, fontWeight: 650, color: 'var(--cms-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {m.label}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                            <span style={{ fontSize: 9.5, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'var(--cms-switcher-bg)', color: 'var(--cms-text-muted)' }}>
+                              {m.tag}
+                            </span>
+                            <CornerDownLeft size={11} style={{ opacity: 0.35, color: 'var(--cms-text-muted)' }} />
+                          </div>
                         </div>
                       ))}
                     </div>
                   </div>
 
-                  {/* Section 2: Pengaturan & Sistem */}
+                  {/* Section: Pengaturan & Sistem */}
                   <div>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--cms-text-muted)', letterSpacing: '0.06em', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <Settings size={13} color="#f59e0b" /> PENGATURAN & SISTEM
+                    <div style={{ 
+                      fontSize: 10, 
+                      fontWeight: 800, 
+                      color: 'var(--cms-text-muted)', 
+                      letterSpacing: '0.06em', 
+                      padding: '2px 8px 6px', 
+                      textTransform: 'uppercase', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: 5 
+                    }}>
+                      <Settings size={11} strokeWidth={2.4} /> Pengaturan & Sistem
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                       {[
-                        { label: 'Website Landing', icon: Globe, page: 'website' },
-                        { label: 'Penyimpanan & DB', icon: Database, page: 'storage' },
-                        { label: 'Manajemen User', icon: Users, page: 'users' },
-                        { label: 'Pengaturan Global', icon: Settings, page: 'settings' },
-                      ].map((m, i) => (
-                        <div
-                          key={i}
-                          onClick={() => { onSwitchPage(m.page); onClose(); }}
-                          className="quick-action-card"
-                          style={{
-                            padding: '10px 12px', borderRadius: 14,
-                            background: 'var(--cms-input-bg)', border: '1px solid var(--glass-border)',
-                            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
-                            transition: 'all 0.2s', minWidth: 0
-                          }}
-                        >
-                          <m.icon size={15} color="#f59e0b" style={{ flexShrink: 0 }} />
-                          <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--cms-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {m.label}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Section 3: Pintasan Cepat */}
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--cms-text-muted)', letterSpacing: '0.06em', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <Zap size={13} color="#10b981" /> PINTASAN CEPAT
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8 }}>
-                      {[
-                        { label: 'Bersihkan Cache', icon: RefreshCw, action: handleClearCache },
-                        { label: 'Mode Gelap / Terang', icon: Zap, action: () => window.dispatchEvent(new CustomEvent('porto_toggle_theme')) },
-                        { label: 'Simpan Cloud', icon: Save, action: () => window.dispatchEvent(new CustomEvent('porto_manual_save', { detail: { force: true } })) },
-                        { label: 'Buka Web Publik', icon: ExternalLink, action: () => window.open('/', '_blank') },
+                        { label: 'Website Landing & Desain', icon: Globe, tag: 'Web', action: () => { onSwitchPage('website'); onClose(); } },
+                        { label: 'Penyimpanan & Database', icon: Database, tag: 'Storage', action: () => { onSwitchPage('storage'); onClose(); } },
+                        { label: 'Manajemen Pengguna & Tim', icon: Users, tag: 'User', action: () => { onSwitchPage('users'); onClose(); } },
+                        { label: 'Pengaturan Global CMS', icon: Settings, tag: 'Setting', action: () => { onSwitchPage('settings'); onClose(); } },
+                        { label: 'Ganti Mode Gelap / Terang', icon: Zap, tag: 'Tema', action: () => window.dispatchEvent(new CustomEvent('porto_toggle_theme')) },
+                        { label: 'Bersihkan Cache Sistem', icon: RefreshCw, tag: 'Cache', action: handleClearCache }
                       ].map((s, i) => (
                         <div
                           key={i}
-                          onClick={() => { s.action(); if (s.label !== 'Bersihkan Cache') onClose(); }}
-                          className="quick-action-card"
+                          onClick={() => { s.action(); if (s.label !== 'Bersihkan Cache Sistem') onClose(); }}
+                          className="search-cmd-row"
                           style={{
-                            padding: '12px 14px', borderRadius: 14,
-                            background: 'var(--cms-input-bg)', border: '1px solid var(--glass-border)',
-                            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10,
-                            transition: 'all 0.2s'
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '6px 10px',
+                            borderRadius: 7,
+                            cursor: 'pointer',
+                            transition: 'background 0.12s, border-color 0.12s'
                           }}
                         >
-                          <s.icon size={16} color="#10b981" style={{ flexShrink: 0 }} />
-                          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--cms-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {s.label}
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+                            <div style={{ 
+                              width: 24, 
+                              height: 24, 
+                              borderRadius: 5, 
+                              background: 'rgba(245, 158, 11, 0.12)', 
+                              color: '#f59e0b', 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              justifyContent: 'center', 
+                              flexShrink: 0 
+                            }}>
+                              <s.icon size={13} strokeWidth={2.2} />
+                            </div>
+                            <span style={{ fontSize: 12, fontWeight: 650, color: 'var(--cms-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {s.label}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                            <span style={{ fontSize: 9.5, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'var(--cms-switcher-bg)', color: 'var(--cms-text-muted)' }}>
+                              {s.tag}
+                            </span>
+                            <CornerDownLeft size={11} style={{ opacity: 0.35, color: 'var(--cms-text-muted)' }} />
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -2617,21 +2870,24 @@ const GlobalSearchCenter = ({
             </div>
           )}
 
-        </div>
+          </div>
+        )}
 
-        {/* ── UNIFIED BOTTOM CONTROL STATION ── */}
-        <div className="global-search-bottom-station" style={{
-          padding: '12px 18px 16px 18px',
-          borderTop: '1px solid var(--cms-border, rgba(255,255,255,0.08))',
-          background: 'var(--cms-card-bg)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 6,
-          flexShrink: 0
-        }}>
-          {activeTab === 'google-search' ? (
+        {/* ── UNIFIED BOTTOM CONTROL STATION (ONLY VISIBLE WHEN EXPANDED) ── */}
+        {isExpanded && (
+          <div className="global-search-bottom-station" style={{
+            padding: activeTab === 'google-search' ? '10px 16px 12px' : '8px 16px',
+            borderTop: '1px solid var(--cms-border, rgba(255,255,255,0.08))',
+            background: 'var(--cms-card-bg)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6,
+            flexShrink: 0,
+            animation: 'resultsSlideDown 0.22s cubic-bezier(0.16, 1, 0.3, 1)'
+          }}>
+          {activeTab === 'google-search' && (
             /* Mode Search Web: Back Button + Kapsul Pill Input + Icon Search */
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', marginBottom: 2 }}>
               {/* Tombol Back */}
               <button
                 type="button"
@@ -2808,327 +3064,88 @@ const GlobalSearchCenter = ({
                 </button>
               </form>
             </div>
-          ) : (
-            /* Mode AI / Shortcuts bottom station */
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {/* Quick Prefix Shortcut Chips (Thumb-friendly & Pure Lucide Icons) */}
-              <div className="quick-prefix-chips" style={{ display: 'flex', alignItems: 'center', gap: 6, overflowX: 'auto', scrollbarWidth: 'none', padding: '4px 6px 6px 6px', minHeight: 36 }}>
-                <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginRight: 2, flexShrink: 0 }}>
-                  Aksi Cepat:
-                </span>
-                
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveBangEngine(null);
-                    setInputWithCursorAtEnd('/');
-                  }}
-                  style={{
-                    padding: '5px 11px',
-                    borderRadius: 8,
-                    border: `1px solid ${isSlashActive ? 'var(--cms-accent)' : 'var(--cms-border, rgba(0,0,0,0.1))'}`,
-                    background: isSlashActive ? 'var(--cms-accent-soft)' : 'var(--cms-input-bg)',
-                    color: isSlashActive ? 'var(--cms-accent)' : 'var(--cms-text)',
-                    fontSize: 11,
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 5,
-                    whiteSpace: 'nowrap',
-                    flexShrink: 0,
-                    boxSizing: 'border-box',
-                    lineHeight: 1.2
-                  }}
-                  title="Perintah Aksi & Buat Data"
-                >
-                  <Terminal size={12} strokeWidth={2.2} color="var(--cms-accent)" />
-                  <span>/ Perintah</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveBangEngine(null);
-                    setInputWithCursorAtEnd('#');
-                  }}
-                  style={{
-                    padding: '5px 11px',
-                    borderRadius: 8,
-                    border: `1px solid ${isHashActive ? '#10b981' : 'var(--cms-border, rgba(0,0,0,0.1))'}`,
-                    background: isHashActive ? 'rgba(16, 185, 129, 0.12)' : 'var(--cms-input-bg)',
-                    color: isHashActive ? '#10b981' : 'var(--cms-text)',
-                    fontSize: 11,
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 5,
-                    whiteSpace: 'nowrap',
-                    flexShrink: 0,
-                    boxSizing: 'border-box',
-                    lineHeight: 1.2
-                  }}
-                  title="Filter Modul & Entitas"
-                >
-                  <FolderKanban size={12} strokeWidth={2.2} color="#10b981" />
-                  <span># Modul</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveBangEngine(null);
-                    setInputWithCursorAtEnd('@');
-                  }}
-                  style={{
-                    padding: '5px 11px',
-                    borderRadius: 8,
-                    border: `1px solid ${isAtActive ? '#f59e0b' : 'var(--cms-border, rgba(0,0,0,0.1))'}`,
-                    background: isAtActive ? 'rgba(245, 158, 11, 0.12)' : 'var(--cms-input-bg)',
-                    color: isAtActive ? '#d97706' : 'var(--cms-text)',
-                    fontSize: 11,
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 5,
-                    whiteSpace: 'nowrap',
-                    flexShrink: 0,
-                    boxSizing: 'border-box',
-                    lineHeight: 1.2
-                  }}
-                  title="Tanya AI & Konteks Data"
-                >
-                  <Bot size={12} strokeWidth={2.2} color="#f59e0b" />
-                  <span>@ Tanya AI</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveBangEngine(null);
-                    setInputWithCursorAtEnd('!');
-                  }}
-                  style={{
-                    padding: '5px 11px',
-                    borderRadius: 8,
-                    border: `1px solid ${isBangActive ? '#2563eb' : 'var(--cms-border, rgba(0,0,0,0.1))'}`,
-                    background: isBangActive ? 'rgba(37, 99, 235, 0.12)' : 'var(--cms-input-bg)',
-                    color: isBangActive ? '#2563eb' : 'var(--cms-text)',
-                    fontSize: 11,
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 5,
-                    whiteSpace: 'nowrap',
-                    flexShrink: 0,
-                    boxSizing: 'border-box',
-                    lineHeight: 1.2
-                  }}
-                  title="Cari di Web Internet"
-                >
-                  <Globe size={12} strokeWidth={2.2} color="#2563eb" />
-                  <span>! Cari Web</span>
-                </button>
-              </div>
-
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                {activeTab === 'ai-chat' && (
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('shortcuts')}
-                    style={{
-                      width: 40,
-                      height: 40,
-                      minWidth: 40,
-                      minHeight: 40,
-                      borderRadius: 8,
-                      border: '1px solid var(--cms-border, rgba(0,0,0,0.1))',
-                      background: 'var(--cms-card-bg)',
-                      color: 'var(--cms-text)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer',
-                      flexShrink: 0
-                    }}
-                    title="Kembali ke Menu"
-                  >
-                    <ArrowLeft size={16} strokeWidth={2.4} />
-                  </button>
-                )}
-
-                <div style={{
-                  position: 'relative',
-                  flex: 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  background: 'var(--cms-input-bg)',
-                  borderRadius: 8,
-                  padding: activeBangEngine ? '0 10px 0 6px' : '0 12px',
-                  height: 40,
-                  border: activeBangEngine 
-                    ? '1.5px solid #2563eb' 
-                    : isSlashActive 
-                    ? '1.5px solid var(--cms-accent)' 
-                    : isHashActive 
-                    ? '1.5px solid #10b981' 
-                    : isAtActive 
-                    ? '1.5px solid #f59e0b' 
-                    : isBangActive 
-                    ? '1.5px solid #2563eb' 
-                    : '1px solid var(--cms-border, rgba(0,0,0,0.1))',
-                  transition: 'all 0.15s ease'
-                }}>
-                  {/* Kotakan Active Bang Engine (Misal: !youtube) */}
-                  {activeBangEngine && (
-                    <div style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      padding: '3px 8px',
-                      borderRadius: 6,
-                      background: 'rgba(37, 99, 235, 0.15)',
-                      border: '1px solid #2563eb',
-                      color: '#2563eb',
-                      fontSize: 12,
-                      fontWeight: 800,
-                      fontFamily: 'monospace',
-                      flexShrink: 0,
-                      marginRight: 6
-                    }}>
-                      {activeBangEngine.icon && <activeBangEngine.icon size={13} strokeWidth={2.4} />}
-                      <span>{activeBangEngine.key}</span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setActiveBangEngine(null);
-                          setInputWithCursorAtEnd('!');
-                        }}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          padding: 0,
-                          cursor: 'pointer',
-                          color: '#2563eb',
-                          display: 'flex',
-                          alignItems: 'center',
-                          marginLeft: 2
-                        }}
-                        title="Batal / Ganti"
-                      >
-                        <X size={12} strokeWidth={2.5} />
-                      </button>
-                    </div>
-                  )}
-
-                  <input 
-                    ref={searchInputRef}
-                    value={inputValue}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (!activeBangEngine && val.startsWith('!')) {
-                        const match = bangEngines.find(b => val.toLowerCase().startsWith(`${b.key.toLowerCase()} `));
-                        if (match) {
-                          const queryAfter = val.slice(match.key.length + 1);
-                          setActiveBangEngine(match);
-                          setInputValue(queryAfter);
-                          setTimeout(() => {
-                            if (searchInputRef.current) {
-                              searchInputRef.current.focus();
-                              searchInputRef.current.setSelectionRange(queryAfter.length, queryAfter.length);
-                            }
-                          }, 20);
-                          return;
-                        }
-                      }
-                      setInputValue(val);
-                      setSearchSelectedIndex(0);
-                    }}
-                    placeholder={
-                      activeBangEngine
-                        ? `Ketik apa saja untuk cari di ${activeBangEngine.label.replace('Cari ', '')}...`
-                        : isSlashActive 
-                        ? "Ketik perintah (/buat-proyek, /tulis-artikel, /tambah-produk)..."
-                        : isHashActive
-                        ? "Filter modul (#proyek, #blog, #katalog, #transaksi, #memo)..."
-                        : isAtActive
-                        ? "Tanya AI atau panggil data (@ai, @keuangan, @catatan, @kontak)..."
-                        : isBangActive
-                        ? "Cari Internet (! google, ! duckduckgo, ! wiki)..."
-                        : activeTab === 'ai-chat'
-                        ? "Ketik pesan untuk AI..."
-                        : "Ketik cari, '/' aksi, '#' modul, '@' AI, atau '!' web..."
-                    }
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      padding: 0,
-                      background: 'transparent',
-                      border: 'none',
-                      color: 'var(--cms-text)',
-                      fontSize: 13,
-                      fontWeight: 600,
-                      outline: 'none',
-                      flex: 1
-                    }}
-                    className="global-ai-input"
-                  />
-                </div>
-
-                {/* SINGLE UNIFIED SOLID BUTTON */}
-                <button
-                  type="button"
-                  onClick={() => handleUnifiedSubmit()}
-                  disabled={isTyping}
-                  style={{
-                    width: 40,
-                    height: 40,
-                    minWidth: 40,
-                    minHeight: 40,
-                    borderRadius: 8,
-                    border: 'none',
-                    background: 'var(--cms-accent)',
-                    color: '#fff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: isTyping ? 'not-allowed' : 'pointer',
-                    boxShadow: 'none',
-                    transition: 'opacity 0.15s ease',
-                    flexShrink: 0
-                  }}
-                  title="Kirim / Cari (Enter)"
-                >
-                  {isTyping ? (
-                    <RefreshCw size={16} className="cms-spin" />
-                  ) : (
-                    <Send size={15} strokeWidth={2.4} style={{ transform: 'translateX(1px)' }} />
-                  )}
-                </button>
-              </div>
-            </div>
           )}
 
-          {/* Footer Keyboard Hints (Desktop only, with clean padding) */}
-          <div className="search-footer-hints" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 10.5, color: 'var(--cms-text-muted)', fontWeight: 600, paddingTop: 4, paddingBottom: 2 }}>
+          {/* Footer Keyboard Hints */}
+          <div className="search-footer-hints" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 10.5, color: 'var(--cms-text-muted)', fontWeight: 600, padding: '2px 0' }}>
             <div style={{ display: 'flex', gap: 10 }}>
               <span><kbd style={{ padding: '1px 5px', borderRadius: 4, background: 'var(--cms-switcher-bg)', border: '1px solid var(--cms-border, rgba(0,0,0,0.06))' }}>Enter</kbd> Pilih</span>
-              <span><kbd style={{ padding: '1px 5px', borderRadius: 4, background: 'var(--cms-switcher-bg)', border: '1px solid var(--cms-border, rgba(0,0,0,0.06))' }}>!</kbd> Web</span>
+              <span><kbd style={{ padding: '1px 5px', borderRadius: 4, background: 'var(--cms-switcher-bg)', border: '1px solid var(--cms-border, rgba(0,0,0,0.06))' }}>↑↓</kbd> Navigasi</span>
               <span><kbd style={{ padding: '1px 5px', borderRadius: 4, background: 'var(--cms-switcher-bg)', border: '1px solid var(--cms-border, rgba(0,0,0,0.06))' }}>ESC</kbd> Tutup</span>
             </div>
-            <div>Google Gemini AI & Internet</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block' }}></span>
+              <span>Google Gemini AI & Internet</span>
+            </div>
           </div>
         </div>
-      </div>
+      )}
+    </div>
 
       <style>{`
+        /* Clean Slide-Up Animations (Menggeser ke atas halus, tanpa melingkar) */
+        @keyframes searchSlideUpIn {
+          0% {
+            opacity: 0;
+            transform: translateY(24px);
+          }
+          100% {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        @keyframes searchSlideUpOut {
+          0% {
+            opacity: 1;
+            transform: translateY(0);
+          }
+          100% {
+            opacity: 0;
+            transform: translateY(-20px);
+          }
+        }
+        @keyframes resultsSlideDown {
+          0% {
+            opacity: 0;
+            transform: translateY(-6px);
+          }
+          100% {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
         .global-search-overlay {
           z-index: 100000 !important;
+          background: rgba(0, 0, 0, 0.55) !important;
+          backdrop-filter: blur(8px) !important;
+          -webkit-backdrop-filter: blur(8px) !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          padding: 20px 16px !important;
         }
+
+        .global-search-modal {
+          border-radius: 9999px !important;
+          transition: max-height 0.26s cubic-bezier(0.16, 1, 0.3, 1),
+                      border-radius 0.2s ease,
+                      box-shadow 0.2s ease !important;
+          will-change: transform, opacity, max-height;
+        }
+        .global-search-modal.is-expanded {
+          border-radius: 24px !important;
+        }
+        .global-search-modal.is-collapsed {
+          border-radius: 9999px !important;
+        }
+        .global-search-modal.anim-in {
+          animation: searchSlideUpIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        .global-search-modal.anim-out {
+          animation: searchSlideUpOut 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
         .quick-prefix-chips {
           overflow-x: auto !important;
           -webkit-overflow-scrolling: touch !important;
@@ -3145,14 +3162,12 @@ const GlobalSearchCenter = ({
         .quick-prefix-chips::-webkit-scrollbar {
           display: none !important;
         }
-        .global-search-modal {
-          width: 100%;
-          max-width: 720px;
-          height: min(600px, 86vh);
-          border-radius: 18px;
-          background: var(--cms-card-bg, #ffffff) !important;
-          border: 1px solid var(--cms-border, rgba(255, 255, 255, 0.12)) !important;
-          box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22) !important;
+
+        .search-cmd-row {
+          background: transparent;
+        }
+        .search-cmd-row:hover {
+          background: var(--cms-accent-soft, rgba(124, 58, 237, 0.08)) !important;
         }
         .close-modal-btn {
           width: 32px !important;
@@ -3163,7 +3178,7 @@ const GlobalSearchCenter = ({
           max-height: 32px !important;
           flex-shrink: 0 !important;
           aspect-ratio: 1 / 1 !important;
-          border-radius: 50% !important;
+          border-radius: 8px !important;
           box-sizing: border-box !important;
         }
         .close-modal-btn:hover { background: var(--cms-accent-soft) !important; color: var(--cms-accent) !important; }
@@ -3172,11 +3187,11 @@ const GlobalSearchCenter = ({
         
         @media (max-width: 640px) {
           .global-search-overlay {
-            padding: 0 !important;
-            align-items: stretch !important;
-            justify-content: stretch !important;
+            padding: 16px !important;
+            align-items: center !important;
+            justify-content: center !important;
           }
-          .global-search-modal {
+          .global-search-modal.is-expanded {
             position: fixed !important;
             inset: 0 !important;
             width: 100vw !important;
@@ -3190,41 +3205,23 @@ const GlobalSearchCenter = ({
             flex-direction: column !important;
             z-index: 100000 !important;
           }
+          .global-search-modal:not(.is-expanded) {
+            width: 100% !important;
+            max-width: 100% !important;
+            height: 52px !important;
+            border-radius: 9999px !important;
+          }
           .global-search-header {
-            padding-top: max(12px, env(safe-area-inset-top, 12px)) !important;
             border-radius: 0 !important;
           }
           .global-search-bottom-station {
-            /* 64px navbar + 16px bottom offset + 10px elevation above navbar = 90px */
-            padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px)) !important;
+            padding-bottom: max(16px, env(safe-area-inset-bottom, 16px)) !important;
             border-radius: 0 !important;
             background: var(--cms-card-bg, #ffffff) !important;
           }
           /* Filter Kategori: Hanya Icon Saja di Mobile (Rata 1 Baris Penuh) */
           .cat-pill-text {
             display: none !important;
-          }
-        .cat-filter-scroll {
-          display: flex !important;
-          justify-content: center !important;
-          align-items: center !important;
-          width: 100% !important;
-          margin: 0 auto !important;
-          gap: 6px !important;
-        }
-          .cat-pill-btn {
-            flex: 1 !important;
-            height: 40px !important;
-            min-height: 40px !important;
-            padding: 0 !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            border-radius: 8px !important;
-          }
-          .cat-pill-btn svg {
-            width: 18px !important;
-            height: 18px !important;
           }
           .hide-on-mobile { display: none !important; }
           .search-footer-hints { display: none !important; }

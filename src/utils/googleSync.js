@@ -13,9 +13,13 @@ export function extractSheetId(input) {
 }
 
 export function sanitizeScriptUrl(url) {
-  const val = url || GOOGLE_CONFIG.appsScriptUrl;
+  let val = url || GOOGLE_CONFIG.appsScriptUrl;
   if (!val) return '';
-  return String(val).trim();
+  val = String(val).trim();
+  if (_failed404Url && val === _failed404Url && GOOGLE_CONFIG.appsScriptUrl && GOOGLE_CONFIG.appsScriptUrl !== _failed404Url) {
+    return String(GOOGLE_CONFIG.appsScriptUrl).trim();
+  }
+  return val;
 }
 
 /**
@@ -70,6 +74,7 @@ export async function compressImageForDrive(file, maxWidth = 1920, quality = 0.8
 
 let _failed404Url = null;
 let _isGas404OfflineLogged = false;
+let _lastDriveBackupSignature = '';
 
 async function safeFetchGAS(scriptUrl, payload, notify) {
   const cleanUrl = sanitizeScriptUrl(scriptUrl);
@@ -184,9 +189,16 @@ export const googleSync = {
       const [
         projects, pages, stickers, frames, whiteboard,
         notes, memos, memoFolders, blogPosts, blogs, shopProducts, catalog,
-        transactions, bookings, bookingSettings, biodata, mainWebsite, gallery,
+        catalogProducts, catalogCategories, catalogVouchers,
+        transactions, bookings, bookingSettings, biodata, mainWebsite, gallery, mediaVault, vaultFolders,
         links, users, contacts, chatMessages, trxDiscounts, trxCustomers, trxSettings,
-        activityLogs, forms, formResponses, socialUpdates, businessProfile
+        activityLogs, forms, formResponses, socialUpdates, businessProfile,
+        rateCards, rateCardAddons, clientReviews, clientFeedbacks, clientFaqs,
+        portfolioWorks, customGames, gameLicenses, kanbanColumns, projectCategories,
+        invitationsList, invitationMakerData,
+        clientFlipbooks, proofingProjects, contractsSpk, partnerships, flashSales,
+        contentPlans, crmLeads, whatsappTemplates, customPages, brandVaults,
+        clientVaultFiles, quickTodos, studioInquiries, projectReminders
       ] = await Promise.all([
         storage.getItem('porto_projects', []),
         storage.getItem('porto_pages', {}),
@@ -200,12 +212,17 @@ export const googleSync = {
         storage.getItem('porto_blogs', []),
         storage.getItem('porto_shop_products', []),
         storage.getItem('porto_catalog', []),
+        storage.getItem('porto_catalog_products', []),
+        storage.getItem('porto_catalog_categories', []),
+        storage.getItem('porto_catalog_vouchers', []),
         storage.getItem('porto_transactions', []),
         storage.getItem('porto_bookings', []),
         storage.getItem('porto_booking_settings', {}),
         storage.getItem('porto_biodata', {}),
         storage.getItem('porto_main_website', null),
         storage.getItem('porto_media_gallery', []),
+        storage.getItem('porto_media_vault', []),
+        storage.getItem('porto_vault_folders', []),
         storage.getItem('porto_links', []),
         storage.getItem('porto_users', []),
         storage.getItem('porto_contacts', []),
@@ -217,7 +234,33 @@ export const googleSync = {
         storage.getItem('porto_forms', []),
         storage.getItem('porto_form_responses', {}),
         storage.getItem('porto_social_updates', []),
-        storage.getItem('porto_business_profile', null)
+        storage.getItem('porto_business_profile', null),
+        storage.getItem('porto_rate_cards', []),
+        storage.getItem('porto_rate_card_addons', []),
+        storage.getItem('porto_client_reviews', []),
+        storage.getItem('porto_client_feedbacks', []),
+        storage.getItem('porto_client_faqs', []),
+        storage.getItem('porto_portfolio', []),
+        storage.getItem('porto_custom_games', []),
+        storage.getItem('porto_game_licenses', []),
+        storage.getItem('porto_kanban_columns', []),
+        storage.getItem('porto_project_categories', []),
+        storage.getItem('porto_invitations_list', []),
+        storage.getItem('porto_invitation_maker_data', null),
+        storage.getItem('porto_client_flipbooks', []),
+        storage.getItem('porto_proofing_projects', []),
+        storage.getItem('porto_contracts_spk', []),
+        storage.getItem('porto_partnerships', []),
+        storage.getItem('porto_flash_sales', []),
+        storage.getItem('porto_content_plans', []),
+        storage.getItem('porto_crm_leads', []),
+        storage.getItem('porto_whatsapp_templates', []),
+        storage.getItem('porto_custom_pages', []),
+        storage.getItem('porto_brand_vaults', []),
+        storage.getItem('porto_client_vault_files', []),
+        storage.getItem('porto_quick_todos', []),
+        storage.getItem('porto_studio_inquiries', []),
+        storage.getItem('porto_project_reminders', [])
       ]);
 
       // Custom Templates & Categories from localStorage
@@ -251,7 +294,7 @@ export const googleSync = {
       const currentUser = storage.getCurrentUser ? storage.getCurrentUser() : { uid: null, scope: 'global' };
       const isPrivateUser = currentUser.scope === 'private' && currentUser.uid;
       const folderCategory = isPrivateUser ? `Users/${currentUser.uid}` : 'Admin';
-      const fileName = isPrivateUser ? `user_database_${currentUser.uid}.json` : 'master_database.json';
+      const fileName = isPrivateUser ? `user_database_${currentUser.uid}.json` : 'sumrday_master_backup_LATEST.json';
 
       const backupData = {
         version: '3.0-complete-master-drive',
@@ -270,12 +313,11 @@ export const googleSync = {
         porto_frames: frames,
         porto_whiteboard_canvases: whiteboard,
         porto_memo_notes: (notes && notes.length > 0) ? notes : memos,
-        porto_memos: (memos && memos.length > 0) ? memos : notes,
         porto_memo_folders: memoFolders,
         porto_blog_posts: (blogPosts && blogPosts.length > 0) ? blogPosts : blogs,
-        porto_blogs: (blogs && blogs.length > 0) ? blogs : blogPosts,
-        porto_shop_products: (shopProducts && shopProducts.length > 0) ? shopProducts : catalog,
-        porto_catalog: (catalog && catalog.length > 0) ? catalog : shopProducts,
+        porto_catalog_products: (catalogProducts && catalogProducts.length > 0) ? catalogProducts : ((catalog && catalog.length > 0) ? catalog : shopProducts),
+        porto_catalog_categories: catalogCategories,
+        porto_catalog_vouchers: catalogVouchers,
         porto_transactions: transactions,
         porto_trx_discounts: trxDiscounts,
         porto_trx_customers: trxCustomers,
@@ -285,17 +327,51 @@ export const googleSync = {
         porto_booking_settings: bookingSettings,
         porto_main_website: mainWebsite,
         porto_media_gallery: gallery,
+        porto_media_vault: mediaVault,
+        porto_vault_folders: vaultFolders,
         porto_links: links,
         porto_users: users,
         porto_contacts: contacts,
-        porto_activity_logs: activityLogs,
+        porto_activity_logs: Array.isArray(activityLogs) ? activityLogs.slice(0, 100) : [],
         porto_forms: forms,
         porto_form_responses: formResponses,
         porto_social_updates: socialUpdates,
         porto_business_profile: businessProfile,
+        porto_rate_cards: rateCards,
+        porto_rate_card_addons: rateCardAddons,
+        porto_client_reviews: clientReviews,
+        porto_client_feedbacks: clientFeedbacks,
+        porto_client_faqs: clientFaqs,
+        porto_portfolio: (portfolioWorks && portfolioWorks.length > 0) ? portfolioWorks : [],
+        porto_custom_games: customGames,
+        porto_game_licenses: gameLicenses,
+        porto_kanban_columns: kanbanColumns,
+        porto_project_categories: projectCategories,
+        porto_invitations_list: invitationsList,
+        porto_invitation_maker_data: invitationMakerData,
+        porto_client_flipbooks: clientFlipbooks,
+        porto_proofing_projects: proofingProjects,
+        porto_contracts_spk: contractsSpk,
+        porto_partnerships: partnerships,
+        porto_flash_sales: flashSales,
+        porto_content_plans: contentPlans,
+        porto_crm_leads: crmLeads,
+        porto_whatsapp_templates: whatsappTemplates,
+        porto_custom_pages: customPages,
+        porto_brand_vaults: brandVaults,
+        porto_client_vault_files: clientVaultFiles,
+        porto_quick_todos: quickTodos,
+        porto_studio_inquiries: studioInquiries,
+        porto_project_reminders: projectReminders,
         custom_templates: customTemplates,
         theme_settings: themeSettings
       };
+
+      // Deduplicate background auto-backups when data has not changed
+      const currentSignature = JSON.stringify({ ...backupData, exportedAt: undefined });
+      if (!notify && _lastDriveBackupSignature && _lastDriveBackupSignature === currentSignature) {
+        return true;
+      }
 
       const response = await safeFetchGAS(scriptUrl, { 
         action: 'backup', 
@@ -305,6 +381,8 @@ export const googleSync = {
         payload: backupData 
       }, notify);
       if (!response) return false;
+
+      _lastDriveBackupSignature = currentSignature;
 
       const now = new Date().toISOString();
       await storage.setItem('porto_last_backup', now);
@@ -318,7 +396,7 @@ export const googleSync = {
         }
       } else {
         if (!_isGas404OfflineLogged) {
-          console.warn('[AutoSync] Background Drive sync paused: Google Apps Script URL returned 404. Update the URL in Global Settings.');
+          console.warn('[AutoSync] Background Drive sync paused:', err?.message || err);
           _isGas404OfflineLogged = true;
         }
       }
@@ -342,7 +420,7 @@ export const googleSync = {
       const currentUser = storage.getCurrentUser ? storage.getCurrentUser() : { uid: null, scope: 'global' };
       const isPrivateUser = currentUser.scope === 'private' && currentUser.uid;
       const folderCategory = isPrivateUser ? `Users/${currentUser.uid}` : 'Admin';
-      const fileName = isPrivateUser ? `user_database_${currentUser.uid}.json` : 'master_database.json';
+      const fileName = isPrivateUser ? `user_database_${currentUser.uid}.json` : 'sumrday_master_backup_LATEST.json';
 
       if (notify) notify(`⏳ Mengambil Database (${folderCategory}) dari Google Drive...`);
 
@@ -355,19 +433,30 @@ export const googleSync = {
       const result = await response.json();
 
       if (result.status === 'success' && result.data) {
-        const data = result.data.payload || result.data;
+        const rawPayload = result.data.payload || result.data;
+        const data = rawPayload.collections ? { ...rawPayload, ...rawPayload.collections } : rawPayload;
         const itemsToSave = {};
 
         const collections = [
           'porto_settings', 'porto_biodata', 'porto_projects', 'porto_pages',
           'porto_stickers', 'porto_frames', 'porto_whiteboard_canvases',
           'porto_memo_notes', 'porto_memos', 'porto_memo_folders', 
-          'porto_blog_posts', 'porto_blogs', 'porto_shop_products', 'porto_catalog', 
+          'porto_blog_posts', 'porto_blogs', 'porto_blog', 'porto_shop_products', 'porto_catalog', 
+          'porto_catalog_products', 'porto_catalog_categories', 'porto_catalog_vouchers',
           'porto_transactions', 'porto_trx_discounts', 'porto_trx_customers', 'porto_trx_settings',
           'porto_chat_messages', 'porto_bookings', 'porto_booking_settings', 
-          'porto_main_website', 'porto_media_gallery', 'porto_links', 
+          'porto_main_website', 'porto_media_gallery', 'porto_media_vault', 'porto_vault_folders', 'porto_links', 
           'porto_users', 'porto_contacts', 'porto_activity_logs',
-          'porto_forms', 'porto_form_responses', 'porto_social_updates', 'porto_business_profile'
+          'porto_forms', 'porto_form_responses', 'porto_social_updates', 'porto_business_profile',
+          'porto_rate_cards', 'porto_rate_card_addons', 'porto_client_reviews', 'porto_client_feedbacks', 'porto_client_faqs',
+          'porto_portfolio', 'porto_custom_games', 'porto_games_data', 'porto_game_licenses',
+          'porto_kanban_columns', 'porto_project_categories',
+          'porto_invitations_list', 'porto_invitation_maker_data',
+          'porto_client_flipbooks', 'porto_proofing_projects', 'porto_contracts_spk',
+          'porto_partnerships', 'porto_flash_sales', 'porto_content_plans',
+          'porto_crm_leads', 'porto_whatsapp_templates', 'porto_custom_pages',
+          'porto_brand_vaults', 'porto_client_vault_files', 'porto_quick_todos',
+          'porto_studio_inquiries', 'porto_project_reminders'
         ];
 
         for (const col of collections) {
@@ -402,16 +491,23 @@ export const googleSync = {
           if (ts.weatherMode) localStorage.setItem('porto_weather_mode', ts.weatherMode);
         }
 
-        // Support legacy & alternate schema mappings
+        // Support legacy & alternate schema mappings (Guarantees zero-miss database restore)
         if (data.projects && !itemsToSave['porto_projects']) itemsToSave['porto_projects'] = data.projects;
+        if (data.portfolio && !itemsToSave['porto_portfolio']) itemsToSave['porto_portfolio'] = data.portfolio;
         if (data.pages && !itemsToSave['porto_pages']) itemsToSave['porto_pages'] = data.pages;
         if (data.notes && !itemsToSave['porto_memo_notes']) itemsToSave['porto_memo_notes'] = data.notes;
         if (data.porto_memos && !itemsToSave['porto_memo_notes']) itemsToSave['porto_memo_notes'] = data.porto_memos;
         if (data.porto_memo_notes && !itemsToSave['porto_memos']) itemsToSave['porto_memos'] = data.porto_memo_notes;
         if (data.porto_blogs && !itemsToSave['porto_blog_posts']) itemsToSave['porto_blog_posts'] = data.porto_blogs;
         if (data.porto_blog_posts && !itemsToSave['porto_blogs']) itemsToSave['porto_blogs'] = data.porto_blog_posts;
+        if (data.porto_blog_posts && !itemsToSave['porto_blog']) itemsToSave['porto_blog'] = data.porto_blog_posts;
         if (data.porto_catalog && !itemsToSave['porto_shop_products']) itemsToSave['porto_shop_products'] = data.porto_catalog;
         if (data.porto_shop_products && !itemsToSave['porto_catalog']) itemsToSave['porto_catalog'] = data.porto_shop_products;
+        if (data.porto_catalog && !itemsToSave['porto_catalog_products']) itemsToSave['porto_catalog_products'] = data.porto_catalog;
+        if (data.porto_catalog_products && !itemsToSave['porto_catalog']) itemsToSave['porto_catalog'] = data.porto_catalog_products;
+        if (data.porto_catalog_products && !itemsToSave['porto_shop_products']) itemsToSave['porto_shop_products'] = data.porto_catalog_products;
+        if (data.porto_custom_games && !itemsToSave['porto_games_data']) itemsToSave['porto_games_data'] = data.porto_custom_games;
+        if (data.porto_games_data && !itemsToSave['porto_custom_games']) itemsToSave['porto_custom_games'] = data.porto_games_data;
         if (data.memoFolders && !itemsToSave['porto_memo_folders']) itemsToSave['porto_memo_folders'] = data.memoFolders;
         if (data.settings && !itemsToSave['porto_settings']) itemsToSave['porto_settings'] = data.settings;
 
@@ -463,8 +559,6 @@ export const googleSync = {
         if (result.projects && Array.isArray(result.projects)) {
           setProjects(result.projects);
           await storage.setItem('porto_projects', result.projects);
-          // Sync directly to Cloud Firestore to make it permanent immediately across devices
-          await storage.syncToDatabase({ 'porto_projects': result.projects });
         }
         
         if (notify) notify('✅ Sinkronisasi ke "Manajemen Project" Berhasil!');
@@ -570,11 +664,8 @@ export const googleSync = {
       const sheetId = extractSheetId(settings.googleSheetId);
       if (!scriptUrl || !sheetId) return null;
 
-      const response = await fetch(scriptUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: 'get_platform_config', sheetId: sheetId })
-      });
+      const response = await safeFetchGAS(scriptUrl, { action: 'get_platform_config', sheetId: sheetId });
+      if (!response) return null;
       const result = await response.json();
       return result.status === 'success' ? result.config : null;
     } catch (err) {
@@ -593,11 +684,8 @@ export const googleSync = {
       const sheetId = extractSheetId(settings.googleSheetId);
       if (!scriptUrl || !sheetId) return false;
 
-      const response = await fetch(scriptUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: 'update_platform_config', sheetId: sheetId, payload: config })
-      });
+      const response = await safeFetchGAS(scriptUrl, { action: 'update_platform_config', sheetId: sheetId, payload: config });
+      if (!response) return false;
       const result = await response.json();
       return result.status === 'success';
     } catch (err) {
@@ -619,15 +707,12 @@ export const googleSync = {
         return false;
       }
 
-      const response = await fetch(scriptUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
-          action: 'sync_contacts',
-          sheetId: sheetId || '',
-          payload: contactData
-        })
-      });
+      const response = await safeFetchGAS(scriptUrl, {
+        action: 'sync_contacts',
+        sheetId: sheetId || '',
+        payload: contactData
+      }, notify);
+      if (!response) return false;
       const result = await response.json();
       if (result.status === 'success') {
         if (notify) notify(`✅ ${contactData.name || 'Kontak'} berhasil tersinkron ke Google Contacts!`);
@@ -664,15 +749,12 @@ export const googleSync = {
         notes: `Total Pesanan: ${c.totalOrders || 0} • Status: ${c.status || 'Active'}`
       }));
 
-      const response = await fetch(scriptUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
-          action: 'sync_contacts',
-          sheetId: sheetId || '',
-          payload: payload
-        })
-      });
+      const response = await safeFetchGAS(scriptUrl, {
+        action: 'sync_contacts',
+        sheetId: sheetId || '',
+        payload: payload
+      }, notify);
+      if (!response) return false;
       const result = await response.json();
       if (result.status === 'success') {
         if (notify) notify(`✅ ${result.count || payload.length} Klien berhasil tersinkron ke Google Contacts & Sheets!`);
@@ -728,16 +810,13 @@ export const googleSync = {
       if (!scriptUrl) return false;
 
       const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
-      const response = await fetch(scriptUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
-          action: 'permanent_delete',
-          sheetId: sheetId || '',
-          sheetName: sheetName || '',
-          ids: ids
-        })
-      });
+      const response = await safeFetchGAS(scriptUrl, {
+        action: 'permanent_delete',
+        sheetId: sheetId || '',
+        sheetName: sheetName || '',
+        ids: ids
+      }, notify);
+      if (!response) return false;
       const result = await response.json();
       if (result.status === 'success') {
         if (notify) notify(`🗑️ ${result.deletedCount || ids.length} data berhasil dihapus permanen dari Google Sheets!`);
@@ -786,22 +865,74 @@ export const googleSync = {
         ? `Agenze_CMS_Database/Users/${currentUser.uid}/${customFolder}`
         : `Agenze_CMS_Database/Admin/${customFolder}`;
 
-      const response = await fetch(scriptUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
-          action: 'upload_file',
-          fileName: processedFile.name,
-          mimeType: processedFile.type || 'application/octet-stream',
-          folderName: finalFolder,
-          base64: base64Data
-        })
-      });
+      const response = await safeFetchGAS(scriptUrl, {
+        action: 'upload_file',
+        fileName: processedFile.name,
+        mimeType: processedFile.type || 'application/octet-stream',
+        folder: finalFolder,
+        folderPath: finalFolder,
+        folderName: finalFolder,
+        base64: base64Data
+      }, notify);
+      if (!response) throw new Error('Gagal terhubung ke Google Apps Script');
 
       const result = await response.json();
       if (result.status === 'success') {
         if (notify) notify('✅ Berkas tersimpan di Google Drive!');
-        return result.directUrl || result.downloadUrl || result.url || result.fileUrl;
+        const fileId = result.fileId || result.id;
+        const isImage = (processedFile.type || '').startsWith('image/');
+        const resolvedUrl = (isImage && fileId)
+          ? `https://drive.google.com/thumbnail?id=${fileId}&sz=w1600`
+          : (result.directUrl || result.downloadUrl || result.url || result.fileUrl);
+
+        // Auto-register uploaded Drive file into Media Gallery & Media Vault so it is immediately accessible everywhere
+        try {
+          if (resolvedUrl) {
+            const nowMs = Date.now();
+            const nowIso = new Date(nowMs).toISOString();
+            const mediaType = isImage ? 'image' : ((processedFile.type || '').startsWith('video/') ? 'video' : 'document');
+            if (isImage || mediaType === 'video') {
+              const curGallery = (await storage.getItem('porto_media_gallery', [])) || [];
+              if (Array.isArray(curGallery) && !curGallery.some(g => g?.url === resolvedUrl)) {
+                const newGItem = {
+                  id: `drive_${fileId || nowMs}`,
+                  url: resolvedUrl,
+                  name: processedFile.name || 'Berkas Drive',
+                  resource_type: mediaType,
+                  format: (processedFile.name || '').split('.').pop() || 'webp',
+                  source: 'drive',
+                  createdAt: nowMs
+                };
+                await storage.setItem('porto_media_gallery', [newGItem, ...curGallery]);
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent('porto_media_uploaded', { detail: newGItem }));
+                }
+              }
+            }
+            const curVault = (await storage.getItem('porto_media_vault', [])) || [];
+            if (Array.isArray(curVault) && !curVault.some(v => v?.url === resolvedUrl)) {
+              const newVItem = {
+                id: `mv_drive_${fileId || nowMs}`,
+                name: processedFile.name || 'Berkas Drive',
+                url: resolvedUrl,
+                type: mediaType,
+                source: 'drive',
+                folderId: 'fld-drive-projects',
+                folder: customFolder || 'Google Drive Projects',
+                size: processedFile.size || result.size || 0,
+                createdAt: nowIso
+              };
+              await storage.setItem('porto_media_vault', [newVItem, ...curVault]);
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('porto_media_vault_updated'));
+              }
+            }
+          }
+        } catch (regErr) {
+          console.warn('[GoogleSync] Auto-register Drive media warning:', regErr);
+        }
+
+        return resolvedUrl;
       }
       throw new Error(result.message || 'Gagal mengunggah file ke Google Drive');
     } catch (err) {
@@ -830,15 +961,12 @@ export const googleSync = {
         fileId = idMatch[0];
       }
 
-      const response = await fetch(scriptUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
-          action: 'delete_file',
-          fileId: fileId,
-          fileUrl: fileUrlOrId
-        })
+      const response = await safeFetchGAS(scriptUrl, {
+        action: 'delete_file',
+        fileId: fileId,
+        fileUrl: fileUrlOrId
       });
+      if (!response) return false;
 
       const result = await response.json().catch(() => null);
       if (result && result.status === 'success') {
@@ -902,8 +1030,90 @@ export const googleSync = {
   },
 
   /**
-   * Sync Project Deadline to Google Calendar
+   * Ekstraksi teks nota/dokumen fisik gratis menggunakan Google Drive OCR
    */
+  async ocrDocumentWithDrive(base64Image, fileName = 'scan.jpg', mimeType = 'image/jpeg', notify = null) {
+    try {
+      const settings = await storage.getItem('porto_settings', {});
+      const scriptUrl = sanitizeScriptUrl(settings.googleAppsScriptUrl);
+      if (!scriptUrl) {
+        if (notify) notify('URL Google Apps Script belum diatur', 'error');
+        return null;
+      }
+      if (notify) notify('Memproses OCR via Google Drive...');
+      const response = await safeFetchGAS(scriptUrl, {
+        action: 'ocr_document',
+        payload: { base64: base64Image, fileName, mimeType }
+      }, notify);
+      if (!response) return null;
+      const result = await response.json().catch(() => null);
+      if (result && result.status === 'success') {
+        if (notify) notify('OCR Dokumen berhasil dibaca', 'success');
+        return result;
+      }
+      return result;
+    } catch (err) {
+      console.warn('[GoogleSync] ocrDocumentWithDrive error:', err);
+      return null;
+    }
+  },
+
+  /**
+   * One-Click Generate Surat Perjanjian Kerja Sama (SPK) PDF ke Google Drive
+   */
+  async generateSpkDocument(spkData, notify = null) {
+    try {
+      const settings = await storage.getItem('porto_settings', {});
+      const scriptUrl = sanitizeScriptUrl(settings.googleAppsScriptUrl);
+      if (!scriptUrl) {
+        if (notify) notify('URL Google Apps Script belum diatur', 'error');
+        return null;
+      }
+      if (notify) notify('Membuat berkas SPK resmi di Google Drive...');
+      const response = await safeFetchGAS(scriptUrl, {
+        action: 'generate_spk_document',
+        payload: spkData
+      }, notify);
+      if (!response) return null;
+      const result = await response.json().catch(() => null);
+      if (result && result.status === 'success') {
+        if (notify) notify('Dokumen SPK resmi siap di Google Drive', 'success');
+        return result;
+      }
+      return result;
+    } catch (err) {
+      console.error('[GoogleSync] generateSpkDocument error:', err);
+      return null;
+    }
+  },
+
+  /**
+   * Pasang Serverless 07:00 AM Cron Executive Briefing
+   */
+  async setupMorningBriefing(notify = null) {
+    try {
+      const settings = await storage.getItem('porto_settings', {});
+      const scriptUrl = sanitizeScriptUrl(settings.googleAppsScriptUrl);
+      if (!scriptUrl) {
+        if (notify) notify('URL Google Apps Script belum diatur', 'error');
+        return false;
+      }
+      const response = await safeFetchGAS(scriptUrl, {
+        action: 'setup_morning_briefing',
+        sheetId: settings.googleSheetId
+      }, notify);
+      if (!response) return false;
+      const result = await response.json().catch(() => null);
+      if (result && result.status === 'success') {
+        if (notify) notify('Serverless 07:00 AM Briefing aktif', 'success');
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error('[GoogleSync] setupMorningBriefing error:', err);
+      return false;
+    }
+  },
   async syncProjectToCalendar(project, notify) {
     try {
       const settings = await storage.getItem('porto_settings', {});
@@ -917,19 +1127,16 @@ export const googleSync = {
         return false;
       }
 
-      const response = await fetch(scriptUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
-          action: 'sync_calendar',
-          payload: {
-            projectId: project.id,
-            title: project.title,
-            description: project.description || '',
-            deadline: project.deadline
-          }
-        })
-      });
+      const response = await safeFetchGAS(scriptUrl, {
+        action: 'sync_calendar',
+        payload: {
+          projectId: project.id,
+          title: project.title,
+          description: project.description || '',
+          deadline: project.deadline
+        }
+      }, notify);
+      if (!response) return false;
       const result = await response.json();
       if (result.status === 'success') {
         if (notify) {
@@ -1225,11 +1432,470 @@ export const googleSync = {
   },
 
   /**
+   * Sinkronisasi Paket Layanan / Rate Cards ke Google Sheets
+   */
+  async syncRateCards(notify) {
+    try {
+      const settings = await storage.getItem('porto_settings', {});
+      const scriptUrl = sanitizeScriptUrl(settings.googleAppsScriptUrl);
+      const sheetId = extractSheetId(settings.googleSheetId);
+      if (!scriptUrl || !sheetId) {
+        if (notify) notify('⚠️ Google Sheet ID atau Apps Script URL belum diatur.', 'error');
+        return false;
+      }
+      const packages = (await storage.getItem('porto_rate_cards', [])) || [];
+      const addons = (await storage.getItem('porto_rate_card_addons', [])) || [];
+      const response = await safeFetchGAS(scriptUrl, {
+        action: 'sync_rate_cards',
+        sheetId: sheetId,
+        payload: { packages, addons }
+      }, notify);
+      if (!response) return false;
+      const result = await response.json();
+      if (result.status === 'success') {
+        if (notify) notify('✅ Sinkronisasi Paket Layanan (Rate Cards) ke Google Sheets Berhasil!');
+        await storage.setItem('porto_last_sync_ratecards', Date.now());
+        return true;
+      }
+      if (notify) notify('❌ Gagal sinkronisasi Rate Cards: ' + (result.message || 'Error'), 'error');
+      return false;
+    } catch (err) {
+      console.error('Rate cards sync failed:', err);
+      if (notify && !err.message?.includes('⚠️')) {
+        notify('❌ Gagal sinkronisasi Rate Cards: ' + err.message, 'error');
+      }
+      return false;
+    }
+  },
+
+  /**
+   * Sinkronisasi Ulasan & Testimoni Klien ke Google Sheets
+   */
+  async syncClientReviews(notify) {
+    try {
+      const settings = await storage.getItem('porto_settings', {});
+      const scriptUrl = sanitizeScriptUrl(settings.googleAppsScriptUrl);
+      const sheetId = extractSheetId(settings.googleSheetId);
+      if (!scriptUrl || !sheetId) {
+        if (notify) notify('⚠️ Google Sheet ID atau Apps Script URL belum diatur.', 'error');
+        return false;
+      }
+      const reviews = (await storage.getItem('porto_client_reviews', [])) || [];
+      const feedbacks = (await storage.getItem('porto_client_feedbacks', [])) || [];
+      const response = await safeFetchGAS(scriptUrl, {
+        action: 'sync_reviews',
+        sheetId: sheetId,
+        payload: { reviews, feedbacks }
+      }, notify);
+      if (!response) return false;
+      const result = await response.json();
+      if (result.status === 'success') {
+        if (notify) notify('✅ Sinkronisasi Ulasan & Testimoni Klien ke Google Sheets Berhasil!');
+        await storage.setItem('porto_last_sync_reviews', Date.now());
+        return true;
+      }
+      if (notify) notify('❌ Gagal sinkronisasi Ulasan Klien: ' + (result.message || 'Error'), 'error');
+      return false;
+    } catch (err) {
+      console.error('Client reviews sync failed:', err);
+      if (notify && !err.message?.includes('⚠️')) {
+        notify('❌ Gagal sinkronisasi Ulasan Klien: ' + err.message, 'error');
+      }
+      return false;
+    }
+  },
+
+  /**
+   * Sinkronisasi Flash Sale & Kampanye Promo ke Google Sheets
+   */
+  async syncFlashSales(notify) {
+    try {
+      const settings = await storage.getItem('porto_settings', {});
+      const scriptUrl = sanitizeScriptUrl(settings.googleAppsScriptUrl);
+      const sheetId = extractSheetId(settings.googleSheetId);
+      if (!scriptUrl || !sheetId) {
+        if (notify) notify('⚠️ Google Sheet ID atau Apps Script URL belum diatur.', 'error');
+        return false;
+      }
+      const shopSettings = (await storage.getItem('porto_shop_settings', {})) || {};
+      const flashSales = (await storage.getItem('porto_flash_sales', [])) || [];
+      const combined = [...flashSales];
+      if (shopSettings.flashSale && shopSettings.flashSale.isActive) {
+        combined.unshift(shopSettings.flashSale);
+      }
+      const response = await safeFetchGAS(scriptUrl, {
+        action: 'sync_flash_sales',
+        sheetId: sheetId,
+        payload: combined
+      }, notify);
+      if (!response) return false;
+      const result = await response.json();
+      if (result.status === 'success') {
+        if (notify) notify('✅ Sinkronisasi Flash Sale & Promo ke Google Sheets Berhasil!');
+        await storage.setItem('porto_last_sync_flash_sales', Date.now());
+        return true;
+      }
+      if (notify) notify('❌ Gagal sinkronisasi Flash Sale: ' + (result.message || 'Error'), 'error');
+      return false;
+    } catch (err) {
+      console.error('Flash sale sync failed:', err);
+      if (notify && !err.message?.includes('⚠️')) {
+        notify('❌ Gagal sinkronisasi Flash Sale: ' + err.message, 'error');
+      }
+      return false;
+    }
+  },
+
+  /**
+   * Sinkronisasi Kemitraan, Reseller & Komisi Afiliasi ke Google Sheets
+   */
+  async syncPartnerships(notify) {
+    try {
+      const settings = await storage.getItem('porto_settings', {});
+      const scriptUrl = sanitizeScriptUrl(settings.googleAppsScriptUrl);
+      const sheetId = extractSheetId(settings.googleSheetId);
+      if (!scriptUrl || !sheetId) {
+        if (notify) notify('⚠️ Google Sheet ID atau Apps Script URL belum diatur.', 'error');
+        return false;
+      }
+      const withdrawals = (await storage.getItem('porto_affiliate_withdrawals', [])) || [];
+      const partners = (await storage.getItem('porto_partnerships', [])) || [];
+      const response = await safeFetchGAS(scriptUrl, {
+        action: 'sync_partnerships',
+        sheetId: sheetId,
+        payload: partners.length > 0 ? partners : withdrawals
+      }, notify);
+      if (!response) return false;
+      const result = await response.json();
+      if (result.status === 'success') {
+        if (notify) notify('✅ Sinkronisasi Kemitraan & Afiliasi ke Google Sheets Berhasil!');
+        await storage.setItem('porto_last_sync_partnerships', Date.now());
+        return true;
+      }
+      if (notify) notify('❌ Gagal sinkronisasi Kemitraan: ' + (result.message || 'Error'), 'error');
+      return false;
+    } catch (err) {
+      console.error('Partnership sync failed:', err);
+      if (notify && !err.message?.includes('⚠️')) {
+        notify('❌ Gagal sinkronisasi Kemitraan: ' + err.message, 'error');
+      }
+      return false;
+    }
+  },
+
+  /**
+   * Sinkronisasi Kontrak & SPK Kerja Sama ke Google Sheets
+   */
+  async syncContracts(notify) {
+    try {
+      const settings = await storage.getItem('porto_settings', {});
+      const scriptUrl = sanitizeScriptUrl(settings.googleAppsScriptUrl);
+      const sheetId = extractSheetId(settings.googleSheetId);
+      if (!scriptUrl || !sheetId) {
+        if (notify) notify('⚠️ Google Sheet ID atau Apps Script URL belum diatur.', 'error');
+        return false;
+      }
+      const contracts = (await storage.getItem('porto_contracts_spk', [])) || [];
+      const response = await safeFetchGAS(scriptUrl, {
+        action: 'sync_contracts',
+        sheetId: sheetId,
+        payload: contracts
+      }, notify);
+      if (!response) return false;
+      const result = await response.json();
+      if (result.status === 'success') {
+        if (notify) notify('✅ Sinkronisasi Kontrak & SPK ke Google Sheets Berhasil!');
+        await storage.setItem('porto_last_sync_contracts', Date.now());
+        return true;
+      }
+      if (notify) notify('❌ Gagal sinkronisasi Kontrak SPK: ' + (result.message || 'Error'), 'error');
+      return false;
+    } catch (err) {
+      console.error('Contract SPK sync failed:', err);
+      if (notify && !err.message?.includes('⚠️')) {
+        notify('❌ Gagal sinkronisasi Kontrak SPK: ' + err.message, 'error');
+      }
+      return false;
+    }
+  },
+
+  /**
+   * Membangun & Memperbarui Tab #1 "📊 Dashboard Studio" di Google Sheets
+   * Menghasilkan Executive Command Center dengan palet Obsidian & Terracotta, KPI finansial, 
+   * dan formula akurat real-time.
+   */
+  async buildDashboard(notify) {
+    try {
+      const settings = await storage.getItem('porto_settings', {});
+      const scriptUrl = sanitizeScriptUrl(settings.googleAppsScriptUrl);
+      const sheetId = extractSheetId(settings.googleSheetId);
+      if (!scriptUrl) {
+        if (notify) notify('⚠️ URL Google Apps Script belum diatur di Pengaturan Global.', 'error');
+        return false;
+      }
+      if (notify) notify('📊 Membangun Executive Dashboard Studio di Google Sheets...');
+      const response = await safeFetchGAS(scriptUrl, {
+        action: 'build_dashboard',
+        sheetId: sheetId
+      }, notify);
+      if (!response) return false;
+      const result = await response.json();
+      if (result.status === 'success') {
+        if (notify) notify('✅ Dashboard Studio Google Sheets berhasil dibangun & diperbarui!', 'success');
+        return true;
+      }
+      if (notify) notify('❌ Gagal membangun Dashboard: ' + (result.message || 'Error'), 'error');
+      return false;
+    } catch (err) {
+      console.error('Build dashboard failed:', err);
+      if (notify) notify('❌ Gagal membangun Dashboard: ' + err.message, 'error');
+      return false;
+    }
+  },
+
+  /**
+   * Menjalankan Diagnostik Kesehatan Spreadsheet & Cloud Engine
+   */
+  async diagnoseSystem(notify) {
+    try {
+      const settings = await storage.getItem('porto_settings', {});
+      const scriptUrl = sanitizeScriptUrl(settings.googleAppsScriptUrl);
+      const sheetId = extractSheetId(settings.googleSheetId);
+      if (!scriptUrl) {
+        if (notify) notify('⚠️ URL Google Apps Script belum diatur.', 'error');
+        return null;
+      }
+      const response = await safeFetchGAS(scriptUrl, {
+        action: 'diagnose_system',
+        sheetId: sheetId
+      }, notify);
+      if (!response) return null;
+      const result = await response.json();
+      if (result.status === 'success') {
+        if (notify) notify(`✅ Diagnostik Selesai: ${result.totalSheets} Tab Terdeteksi, Health: ${result.health}`);
+        return result;
+      }
+      if (notify) notify('❌ Diagnostik Gagal: ' + (result.message || 'Error'), 'error');
+      return null;
+    } catch (err) {
+      console.error('Diagnose system failed:', err);
+      if (notify) notify('❌ Diagnostik Gagal: ' + err.message, 'error');
+      return null;
+    }
+  },
+
+  /**
+   * Pembuatan Otomatis Google Drive Client Vault per Pesanan
+   */
+  async createClientVault(payload, notify) {
+    try {
+      const settings = await storage.getItem('porto_settings', {});
+      const scriptUrl = sanitizeScriptUrl(settings.googleAppsScriptUrl);
+      if (!scriptUrl) {
+        if (notify) notify('⚠️ URL Google Apps Script belum diatur.', 'error');
+        return null;
+      }
+      const response = await safeFetchGAS(scriptUrl, {
+        action: 'create_client_vault',
+        payload: payload || {}
+      }, notify);
+      if (!response) return null;
+      const result = await response.json();
+      if (result.status === 'success') {
+        if (notify) notify('📁 Client Vault Google Drive berhasil dibuat!', 'success');
+        return result;
+      }
+      if (notify) notify('❌ Gagal membuat Client Vault: ' + (result.message || 'Error'), 'error');
+      return null;
+    } catch (err) {
+      console.error('Create client vault failed:', err);
+      if (notify) notify('❌ Gagal membuat Client Vault: ' + err.message, 'error');
+      return null;
+    }
+  },
+
+  /**
+   * Pengiriman Email Notifikasi Resmi Studio via Gmail API Engine
+   */
+  async sendEmailNotification(payload, notify) {
+    try {
+      const settings = await storage.getItem('porto_settings', {});
+      const scriptUrl = sanitizeScriptUrl(settings.googleAppsScriptUrl);
+      if (!scriptUrl) {
+        if (notify) notify('⚠️ URL Google Apps Script belum diatur.', 'error');
+        return false;
+      }
+      const response = await safeFetchGAS(scriptUrl, {
+        action: 'send_email_notification',
+        payload: payload || {}
+      }, notify);
+      if (!response) return false;
+      const result = await response.json();
+      if (result.status === 'success') {
+        if (notify) notify('✉️ Email notifikasi berhasil dikirimkan!', 'success');
+        return true;
+      }
+      if (notify) notify('❌ Gagal kirim email: ' + (result.message || 'Error'), 'error');
+      return false;
+    } catch (err) {
+      console.error('Send email failed:', err);
+      if (notify) notify('❌ Gagal kirim email: ' + err.message, 'error');
+      return false;
+    }
+  },
+
+  /**
+   * Penjadwalan Konsultasi & Briefing di Google Calendar
+   */
+  async scheduleConsultation(payload, notify) {
+    try {
+      const settings = await storage.getItem('porto_settings', {});
+      const scriptUrl = sanitizeScriptUrl(settings.googleAppsScriptUrl);
+      if (!scriptUrl) {
+        if (notify) notify('⚠️ URL Google Apps Script belum diatur.', 'error');
+        return null;
+      }
+      const response = await safeFetchGAS(scriptUrl, {
+        action: 'schedule_consultation',
+        payload: payload || {}
+      }, notify);
+      if (!response) return null;
+      const result = await response.json();
+      if (result.status === 'success') {
+        if (notify) notify('📅 Sesi konsultasi berhasil dijadwalkan di Google Calendar!', 'success');
+        return result;
+      }
+      if (notify) notify('❌ Gagal menjadwalkan konsultasi: ' + (result.message || 'Error'), 'error');
+      return null;
+    } catch (err) {
+      console.error('Schedule consultation failed:', err);
+      if (notify) notify('❌ Gagal menjadwalkan konsultasi: ' + err.message, 'error');
+      return null;
+    }
+  },
+
+  /**
+   * Penarikan Rangkuman Finansial & Operasional Harian C-Level
+   */
+  async fetchDailyExecutiveDigest(payload, notify) {
+    try {
+      const settings = await storage.getItem('porto_settings', {});
+      const scriptUrl = sanitizeScriptUrl(settings.googleAppsScriptUrl);
+      const sheetId = extractSheetId(settings.googleSheetId);
+      if (!scriptUrl) {
+        if (notify) notify('⚠️ URL Google Apps Script belum diatur.', 'error');
+        return null;
+      }
+      const response = await safeFetchGAS(scriptUrl, {
+        action: 'daily_executive_digest',
+        sheetId: sheetId,
+        payload: payload || {}
+      }, notify);
+      if (!response) return null;
+      const result = await response.json();
+      if (result.status === 'success') {
+        if (notify) notify('📊 Rangkuman eksekutif studio berhasil dikompilasi!', 'success');
+        return result;
+      }
+      if (notify) notify('❌ Gagal memuat rangkuman eksekutif: ' + (result.message || 'Error'), 'error');
+      return null;
+    } catch (err) {
+      console.error('Executive digest failed:', err);
+      if (notify) notify('❌ Gagal memuat rangkuman eksekutif: ' + err.message, 'error');
+      return null;
+    }
+  },
+
+  /**
+   * Pembuatan Dokumen Invoice Digital & Penyimpanan di Google Drive
+   */
+  async generateDriveInvoice(payload, notify) {
+    try {
+      const settings = await storage.getItem('porto_settings', {});
+      const scriptUrl = sanitizeScriptUrl(settings.googleAppsScriptUrl);
+      if (!scriptUrl) {
+        if (notify) notify('⚠️ URL Google Apps Script belum diatur.', 'error');
+        return null;
+      }
+      const response = await safeFetchGAS(scriptUrl, {
+        action: 'generate_invoice_document',
+        payload: payload || {}
+      }, notify);
+      if (!response) return null;
+      const result = await response.json();
+      if (result.status === 'success') {
+        if (notify) notify('🧾 Dokumen invoice berhasil dibuat & disimpan di Google Drive!', 'success');
+        return result;
+      }
+      if (notify) notify('❌ Gagal membuat invoice: ' + (result.message || 'Error'), 'error');
+      return null;
+    } catch (err) {
+      console.error('Generate invoice failed:', err);
+      if (notify) notify('❌ Gagal membuat invoice: ' + err.message, 'error');
+      return null;
+    }
+  },
+
+  /**
+   * Smart Storage Optimizer (Pembersihan Otomatis Backup Lama & Audit Kuota Drive)
+   */
+  async optimizeStorage(notify) {
+    try {
+      const settings = await storage.getItem('porto_settings', {});
+      const scriptUrl = sanitizeScriptUrl(settings.googleAppsScriptUrl);
+      if (!scriptUrl) {
+        if (notify) notify('⚠️ URL Google Apps Script belum diatur.', 'error');
+        return null;
+      }
+      const response = await safeFetchGAS(scriptUrl, {
+        action: 'smart_storage_optimizer'
+      }, notify);
+      if (!response) return null;
+      const result = await response.json();
+      if (result.status === 'success') {
+        if (notify) notify(`🚀 Storage Dioptimasi: ${result.backupsCleaned} backup diarsipkan, sisa pemakaian: ${result.usedMb} MB (${result.healthStatus})`, 'success');
+        return result;
+      }
+      if (notify) notify('❌ Optimasi Storage Gagal: ' + (result.message || 'Error'), 'error');
+      return null;
+    } catch (err) {
+      console.error('Optimize storage failed:', err);
+      if (notify) notify('❌ Optimasi Storage Gagal: ' + err.message, 'error');
+      return null;
+    }
+  },
+
+  /**
    * Sinkronisasi Data Modul Halaman Aktif
    */
   async syncCurrentPage(pageKey, notify, setProjects) {
     const key = (pageKey || '').toLowerCase();
     let result = false;
+
+    if (key === 'ratecard' || key === 'ratecards' || key === 'pricing' || key === 'rates') {
+      result = await this.syncRateCards(notify);
+      return result;
+    }
+
+    if (key === 'reviews' || key === 'client-voice' || key === 'testimonials' || key === 'testimoni') {
+      result = await this.syncClientReviews(notify);
+      return result;
+    }
+
+    if (key === 'flashsale' || key === 'flash-sale' || key === 'promo' || key === 'campaign') {
+      result = await this.syncFlashSales(notify);
+      return result;
+    }
+
+    if (key === 'partnership' || key === 'partnerships' || key === 'affiliate' || key === 'reseller') {
+      result = await this.syncPartnerships(notify);
+      return result;
+    }
+
+    if (key === 'contracts' || key === 'contract' || key === 'spk') {
+      result = await this.syncContracts(notify);
+      return result;
+    }
 
     if (key === 'projects' || key === 'proyek') {
       const projects = await storage.getItem('porto_projects', []);
@@ -1489,6 +2155,75 @@ export const googleSync = {
         console.warn('Form responses sync error:', e);
       }
 
+      // 9e. Rate Cards & Paket Layanan
+      try {
+        const rateCards = (await storage.getItem('porto_rate_cards', [])) || [];
+        const addons = (await storage.getItem('porto_rate_card_addons', [])) || [];
+        if (rateCards.length > 0 || addons.length > 0) {
+          totalTasks++;
+          const resRate = await safeFetchGAS(scriptUrl, { action: 'sync_rate_cards', sheetId, payload: { packages: rateCards, addons } });
+          if (resRate.ok) successCount++;
+        }
+      } catch (e) {
+        console.warn('Rate cards sync error:', e);
+      }
+
+      // 9f. Client Reviews & Testimonials
+      try {
+        const reviews = (await storage.getItem('porto_client_reviews', [])) || [];
+        const feedbacks = (await storage.getItem('porto_client_feedbacks', [])) || [];
+        if (reviews.length > 0 || feedbacks.length > 0) {
+          totalTasks++;
+          const resRev = await safeFetchGAS(scriptUrl, { action: 'sync_reviews', sheetId, payload: { reviews, feedbacks } });
+          if (resRev && resRev.ok) successCount++;
+        }
+      } catch (e) {
+        console.warn('Reviews sync error:', e);
+      }
+
+      // 9g. Flash Sale & Kampanye Promo
+      try {
+        const flashSales = (await storage.getItem('porto_flash_sales', [])) || [];
+        const shopSettings = (await storage.getItem('porto_shop_settings', {})) || {};
+        const combinedFs = [...flashSales];
+        if (shopSettings.flashSale && shopSettings.flashSale.isActive) {
+          combinedFs.unshift(shopSettings.flashSale);
+        }
+        if (combinedFs.length > 0) {
+          totalTasks++;
+          const resFs = await safeFetchGAS(scriptUrl, { action: 'sync_flash_sales', sheetId, payload: combinedFs });
+          if (resFs && resFs.ok) successCount++;
+        }
+      } catch (e) {
+        console.warn('Flash sales sync error:', e);
+      }
+
+      // 9h. Kemitraan & Afiliasi
+      try {
+        const partnerships = (await storage.getItem('porto_partnerships', [])) || [];
+        const withdrawals = (await storage.getItem('porto_affiliate_withdrawals', [])) || [];
+        const combinedParts = partnerships.length > 0 ? partnerships : withdrawals;
+        if (combinedParts.length > 0) {
+          totalTasks++;
+          const resParts = await safeFetchGAS(scriptUrl, { action: 'sync_partnerships', sheetId, payload: combinedParts });
+          if (resParts && resParts.ok) successCount++;
+        }
+      } catch (e) {
+        console.warn('Partnerships sync error:', e);
+      }
+
+      // 9i. Kontrak & SPK Kerja Sama
+      try {
+        const contracts = (await storage.getItem('porto_contracts_spk', [])) || [];
+        if (contracts.length > 0) {
+          totalTasks++;
+          const resContracts = await safeFetchGAS(scriptUrl, { action: 'sync_contracts', sheetId, payload: contracts });
+          if (resContracts && resContracts.ok) successCount++;
+        }
+      } catch (e) {
+        console.warn('Contracts sync error:', e);
+      }
+
       // 10. Content Plans & Social Media Schedule
       try {
         const contentPlans = await storage.getItem('porto_content_plans', []) || [];
@@ -1632,7 +2367,7 @@ export const googleSync = {
       const currentUser = storage.getCurrentUser ? storage.getCurrentUser() : { uid: null, scope: 'global' };
       const isPrivateUser = currentUser.scope === 'private' && currentUser.uid;
       const folderCategory = isPrivateUser ? `Users/${currentUser.uid}` : 'Admin';
-      const fileName = isPrivateUser ? `user_database_${currentUser.uid}.json` : 'master_database_latest.json';
+      const fileName = isPrivateUser ? `user_database_${currentUser.uid}.json` : 'sumrday_master_backup_LATEST.json';
 
       const response = await safeFetchGAS(scriptUrl, {
         action: 'get_master_database',
@@ -1644,7 +2379,12 @@ export const googleSync = {
       const result = await response.json();
       if (result.status === 'success' && result.data) {
         if (notify) notify('✅ Master Database berhasil diambil dari Google Drive!', 'success');
-        return result.data;
+        const rawPayload = result.data.payload || result.data;
+        const normalized = rawPayload.collections ? { ...rawPayload, ...rawPayload.collections } : rawPayload;
+        if (result.updatedAt && !normalized.exportedAt) {
+          normalized.exportedAt = result.updatedAt;
+        }
+        return normalized;
       }
       if (notify) notify(`⚠️ ${result.message || 'Master Database tidak ditemukan di Google Drive.'}`, 'error');
       return null;
@@ -1854,6 +2594,31 @@ export function scheduleAutoSyncToSheets(key) {
               await googleSync.syncFormResponses(formResponses, null);
               await storage.setItem('porto_last_sync_form_responses', Date.now(), false);
             })());
+          } else if (k === 'porto_rate_cards' || k === 'porto_rate_card_addons') {
+            syncTasks.push((async () => {
+              await googleSync.syncRateCards(null);
+              await storage.setItem('porto_last_sync_ratecards', Date.now(), false);
+            })());
+          } else if (k === 'porto_client_reviews' || k === 'porto_client_feedbacks') {
+            syncTasks.push((async () => {
+              await googleSync.syncClientReviews(null);
+              await storage.setItem('porto_last_sync_reviews', Date.now(), false);
+            })());
+          } else if (k === 'porto_flash_sales') {
+            syncTasks.push((async () => {
+              await googleSync.syncFlashSales(null);
+              await storage.setItem('porto_last_sync_flash_sales', Date.now(), false);
+            })());
+          } else if (k === 'porto_partnerships' || k === 'porto_affiliate_withdrawals') {
+            syncTasks.push((async () => {
+              await googleSync.syncPartnerships(null);
+              await storage.setItem('porto_last_sync_partnerships', Date.now(), false);
+            })());
+          } else if (k === 'porto_contracts_spk') {
+            syncTasks.push((async () => {
+              await googleSync.syncContracts(null);
+              await storage.setItem('porto_last_sync_contracts', Date.now(), false);
+            })());
           }
         }
         if (syncTasks.length > 0) {
@@ -1892,13 +2657,31 @@ if (typeof window !== 'undefined') {
 
   window.addEventListener('porto_request_drive_sync', () => {
     if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/admin')) return;
-    googleSync.fetchMasterDatabaseFromDrive(null).then((masterData) => {
+    googleSync.fetchMasterDatabaseFromDrive(null).then(async (masterData) => {
       if (masterData && typeof masterData === 'object') {
+        const driveExportedMs = masterData.exportedAt ? new Date(masterData.exportedAt).getTime() : 0;
+        const lastLocalWriteMs = Number(localStorage.getItem('porto_last_local_write_ts') || 0);
+        const isDriveNewer = driveExportedMs > 0 && driveExportedMs > lastLocalWriteMs;
+
         for (const [k, v] of Object.entries(masterData)) {
           if (k.startsWith('porto_') && v !== undefined && v !== null) {
-            storage.setItem(k, v, false).catch(() => {});
+            try {
+              const existingLocal = await storage.getItem(k, null);
+              const isLocalEmpty = existingLocal === null || existingLocal === undefined ||
+                (Array.isArray(existingLocal) && existingLocal.length === 0) ||
+                (typeof existingLocal === 'object' && !Array.isArray(existingLocal) && Object.keys(existingLocal).length === 0);
+              const isDriveNonEmpty = !Array.isArray(v) || v.length > 0;
+
+              // Only hydrate from Drive if local is empty OR Drive snapshot is strictly newer than local edits
+              if (isDriveNonEmpty && (isLocalEmpty || isDriveNewer)) {
+                await storage.setItem(k, v, false);
+              }
+            } catch (err) {
+              console.warn('[GoogleSync] Skip local hydration key:', k, err);
+            }
           }
         }
+        window.dispatchEvent(new CustomEvent('porto_drive_master_hydrated'));
       }
     }).catch(() => {});
   });

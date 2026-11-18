@@ -390,8 +390,13 @@ export const FormEditor: React.FC<FormEditorProps> = ({
       setUploadingOptionImg(optId);
       let finalUrl = '';
       try {
-        finalUrl = await uploadToCloudinary(file);
+        const res = await uploadToCloudinary(file);
+        finalUrl = (typeof res === 'object' && res?.url) ? res.url : (typeof res === 'string' ? res : '');
       } catch {
+        finalUrl = '';
+      }
+
+      if (!finalUrl) {
         finalUrl = await new Promise<string>((resolve) => {
           const reader = new FileReader();
           reader.onload = () => resolve(String(reader.result));
@@ -429,8 +434,13 @@ export const FormEditor: React.FC<FormEditorProps> = ({
       if (notify) notify('Mengunggah banner tema formulir...');
       let finalUrl = '';
       try {
-        finalUrl = await uploadToCloudinary(file);
+        const res = await uploadToCloudinary(file);
+        finalUrl = (typeof res === 'object' && res?.url) ? res.url : (typeof res === 'string' ? res : '');
       } catch {
+        finalUrl = '';
+      }
+
+      if (!finalUrl) {
         finalUrl = await new Promise<string>((resolve) => {
           const reader = new FileReader();
           reader.onload = () => resolve(String(reader.result));
@@ -911,8 +921,8 @@ export const FormEditor: React.FC<FormEditorProps> = ({
 
           {/* Download Excel Button (Icon Only) */}
           <button
-            onClick={() => {
-              const ok = downloadFormExcel(form, responses);
+            onClick={async () => {
+              const ok = await downloadFormExcel(form, responses);
               if (ok && notify) notify(`Excel "${form.title} (Tanggapan).xlsx" berhasil diunduh!`, 'success');
             }}
             style={{

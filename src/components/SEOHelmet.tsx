@@ -1,17 +1,34 @@
 import React, { useEffect } from 'react';
 
-const SEOHelmet = ({ 
-  title = 'Portofolio', 
-  description = 'Welcome to my portofolio website.', 
+export interface SEOHelmetProps {
+  title?: string;
+  description?: string;
+  image?: string;
+  url?: string;
+  keywords?: string;
+  type?: 'website' | 'article' | 'product';
+  noindex?: boolean;
+  [key: string]: any;
+}
+
+const SEOHelmet: React.FC<SEOHelmetProps> = ({ 
+  title = 'sumr.day | Creative Digital Studio', 
+  description = 'A little sunshine for your screen — Creative Digital Studio berkonsep Warm Tech & Skena-Aesthetic.', 
   image = '', 
-  url = window.location.href 
+  url = typeof window !== 'undefined' ? window.location.href : 'https://sumrday.web.app/',
+  keywords = '',
+  type = 'website',
+  noindex = false,
 }) => {
   useEffect(() => {
-    // Set Title
-    document.title = title;
+    // 1. Title
+    if (title) {
+      document.title = title;
+    }
 
-    // Helper to set or update meta tags
-    const setMetaTag = (attrName, attrValue, content) => {
+    // Helper to set or update meta tag
+    const setMetaTag = (attrName: string, attrValue: string, content: string) => {
+      if (!content) return;
       let element = document.querySelector(`meta[${attrName}="${attrValue}"]`);
       if (!element) {
         element = document.createElement('meta');
@@ -21,30 +38,77 @@ const SEOHelmet = ({
       element.setAttribute('content', content);
     };
 
-    // Standard Meta Tags
+    // Helper to set or update link tag (canonical)
+    const setLinkTag = (rel: string, href: string) => {
+      if (!href) return;
+      let element = document.querySelector(`link[rel="${rel}"]`) as HTMLLinkElement | null;
+      if (!element) {
+        element = document.createElement('link');
+        element.setAttribute('rel', rel);
+        document.head.appendChild(element);
+      }
+      element.setAttribute('href', href);
+    };
+
+    // 2. Canonical URL
+    const activeUrl = url || window.location.href;
+    setLinkTag('canonical', activeUrl);
+
+    // 3. Robots indexing
+    setMetaTag('name', 'robots', noindex ? 'noindex, nofollow' : 'index, follow');
+
+    // 4. Standard Meta Tags
     setMetaTag('name', 'description', description);
+    if (keywords) setMetaTag('name', 'keywords', keywords);
     
-    // Open Graph / Facebook
-    setMetaTag('property', 'og:type', 'website');
-    setMetaTag('property', 'og:url', url);
+    // 5. Open Graph / Facebook
+    setMetaTag('property', 'og:type', type);
+    setMetaTag('property', 'og:url', activeUrl);
     setMetaTag('property', 'og:title', title);
     setMetaTag('property', 'og:description', description);
-    if (image) setMetaTag('property', 'og:image', image);
+    setMetaTag('property', 'og:site_name', 'sumr.day');
+    setMetaTag('property', 'og:locale', 'id_ID');
+    if (image) {
+      setMetaTag('property', 'og:image', image);
+    }
 
-    // Twitter
+    // 6. Twitter Card
     setMetaTag('name', 'twitter:card', 'summary_large_image');
-    setMetaTag('name', 'twitter:url', url);
+    setMetaTag('name', 'twitter:url', activeUrl);
     setMetaTag('name', 'twitter:title', title);
     setMetaTag('name', 'twitter:description', description);
-    if (image) setMetaTag('name', 'twitter:image', image);
+    if (image) {
+      setMetaTag('name', 'twitter:image', image);
+    }
 
-    // Cleanup function is not strictly necessary here because we want the tags to persist 
-    // until another SEOHelmet overrides them, but to be clean, we could restore defaults.
-    // However, in an SPA, having the last active route's meta tags remain is standard behavior.
-    
-  }, [title, description, image, url]);
+    // 7. Dynamic JSON-LD WebPage schema for search bots
+    const schemaId = 'dynamic-seo-schema';
+    let scriptEl = document.getElementById(schemaId) as HTMLScriptElement | null;
+    if (!scriptEl) {
+      scriptEl = document.createElement('script');
+      scriptEl.id = schemaId;
+      scriptEl.type = 'application/ld+json';
+      document.head.appendChild(scriptEl);
+    }
 
-  // Render nothing, it's just a side-effect component
+    const pageSchema = {
+      '@context': 'https://schema.org',
+      '@type': type === 'article' ? 'Article' : 'WebPage',
+      'name': title,
+      'description': description,
+      'url': activeUrl,
+      ...(image ? { 'image': image } : {}),
+      'isPartOf': {
+        '@type': 'WebSite',
+        'name': 'sumr.day',
+        'url': 'https://sumrday.web.app/'
+      }
+    };
+
+    scriptEl.textContent = JSON.stringify(pageSchema);
+
+  }, [title, description, image, url, type, noindex]);
+
   return null;
 };
 

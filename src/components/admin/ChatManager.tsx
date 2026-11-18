@@ -327,7 +327,113 @@ const ChatManager = () => {
     setIsAiThinking(false);
   };
 
-  const activeConv = conversations.find(c => c.id === activeChatId);
+  const activeConv = conversations.find(c => c.id === activeChatId) as any;
+
+  // ── Smart Intent & Deal Extractor ──
+  const detectedDealInfo = React.useMemo(() => {
+    if (!messages.length) return null;
+    const textAll = messages.slice(-6).map((m: any) => m.text || '').join(' ');
+    
+    // 1. Ekstrak Anggaran / Nominal
+    let amount: number | null = null;
+    let amountLabel = '';
+    const jtMatch = textAll.match(/(\d+(?:[.,]\d+)?)\s*(?:jt|juta)/i);
+    const rpMatch = textAll.match(/rp\s*(\d{1,3}(?:\.\d{3})+|\d+)/i);
+    const kMatch = textAll.match(/(\d+)\s*(?:rb|ribu|k)/i);
+
+    if (jtMatch) {
+      const val = parseFloat(jtMatch[1].replace(',', '.'));
+      amount = Math.round(val * 1000000);
+      amountLabel = `Rp ${val} Juta`;
+    } else if (rpMatch) {
+      const val = parseInt(rpMatch[1].replace(/\./g, ''), 10);
+      if (val >= 10000) {
+        amount = val;
+        amountLabel = `Rp ${val.toLocaleString('id-ID')}`;
+      }
+    } else if (kMatch) {
+      const val = parseInt(kMatch[1], 10);
+      amount = val * 1000;
+      amountLabel = `Rp ${val} Ribu`;
+    }
+
+    // 2. Ekstrak Kategori Layanan
+    let category = '';
+    if (/web|landing|website|aplikasi/i.test(textAll)) category = 'Website & Web App';
+    else if (/logo|branding|identitas/i.test(textAll)) category = 'Branding Visual';
+    else if (/desain|banner|feed|poster/i.test(textAll)) category = 'Desain Grafis';
+
+    if (!amount && !category) return null;
+    return { amount, amountLabel: amountLabel || (amount ? `Rp ${amount.toLocaleString('id-ID')}` : ''), category };
+  }, [messages]);
+
+  const handleConvertDealToInvoice = async () => {
+    if (!activeConv) return;
+    const clientName = activeConv.userName || 'Klien Chat';
+    const amount = detectedDealInfo?.amount || 1000000;
+    const newTrx = {
+      id: `trx_${Date.now()}`,
+      date: new Date().toISOString().slice(0, 10),
+      customer: {
+        id: `cust_${Date.now()}`,
+        name: clientName,
+        phone: activeConv.userPhone || '',
+        email: activeConv.userEmail || '',
+        address: ''
+      },
+      items: [
+        {
+          id: `item_${Date.now()}`,
+          name: detectedDealInfo?.category || 'Layanan Studio & Desain',
+          price: amount,
+          qty: 1
+        }
+      ],
+      discount: { type: 'percent', value: 0, label: '' },
+      shipping: 0,
+      tax: { enabled: false, percent: 11 },
+      paymentStatus: 'belum',
+      dpAmount: 0,
+      notes: `Dibuat otomatis dari obrolan klien ${clientName}`,
+      createdAt: new Date().toISOString()
+    };
+
+    const existing = await storage.getItem('porto_transactions', []);
+    const updated = [newTrx, ...(Array.isArray(existing) ? existing : [])];
+    await storage.setItem('porto_transactions', updated);
+    window.dispatchEvent(new Event('porto_storage_dirty'));
+    addUserNotification('Transaksi Baru', `Draf invoice untuk ${clientName} sebesar ${detectedDealInfo?.amountLabel || ''} berhasil dibuat!`);
+    alert(`Draf invoice untuk ${clientName} sebesar ${detectedDealInfo?.amountLabel || ''} berhasil disimpan ke modul Transaksi!`);
+  };
+
+  const handleConvertDealToProject = async () => {
+    if (!activeConv) return;
+    const clientName = activeConv.userName || 'Klien Chat';
+    const newProject = {
+      id: `proj_${Date.now()}`,
+      title: `${detectedDealInfo?.category || 'Proyek'} - ${clientName}`,
+      client: clientName,
+      clientPhone: activeConv.userPhone || '',
+      category: detectedDealInfo?.category || 'Desain',
+      status: 'pending_acc',
+      progress: 0,
+      deadline: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+      tasks: [
+        { id: `t1_${Date.now()}`, text: 'Briefing & Pengumpulan Materi', completed: false },
+        { id: `t2_${Date.now()}`, text: 'Pengerjaan Desain Awal', completed: false },
+        { id: `t3_${Date.now()}`, text: 'Review & Proofing Klien', completed: false }
+      ],
+      createdAt: new Date().toISOString()
+    };
+
+    const existing = await storage.getItem('porto_projects', []);
+    const updated = [newProject, ...(Array.isArray(existing) ? existing : [])];
+    await storage.setItem('porto_projects', updated);
+    window.dispatchEvent(new Event('porto_storage_dirty'));
+    addUserNotification('Proyek Baru', `Proyek "${newProject.title}" berhasil ditambahkan ke papan Kanban!`);
+    alert(`Proyek untuk ${clientName} berhasil ditambahkan ke Papan Proyek!`);
+  };
+
   const filtered = conversations.filter(c =>
     (c.userName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     (c.lastMessage || '').toLowerCase().includes(searchQuery.toLowerCase())
@@ -930,7 +1036,7 @@ Format keluaran HARUS berupa valid JSON array of objects tanpa markdown wrap ata
               borderTop: '1px solid var(--glass-border)',
               flexShrink: 0
             }}>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                  <button 
                    type="button" 
                    onClick={handleAiSuggest}
@@ -945,6 +1051,45 @@ Format keluaran HARUS berupa valid JSON array of objects tanpa markdown wrap ata
                    {isAiThinking ? <Loader2 size={12} className="cms-spin" /> : <Sparkles size={12} />}
                    {isAiThinking ? 'AI BERPIKIR...' : '✨ SARAN BALASAN AI'}
                  </button>
+
+                 {/* ⚡ Smart Intent & Deal Quick Actions */}
+                 {detectedDealInfo && (
+                   <>
+                     {detectedDealInfo.amount && (
+                       <button
+                         type="button"
+                         onClick={handleConvertDealToInvoice}
+                         style={{
+                           display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px',
+                           borderRadius: 100, border: '1px solid rgba(16, 185, 129, 0.4)',
+                           background: 'rgba(16, 185, 129, 0.12)', color: '#10b981',
+                           fontSize: 11, fontWeight: 800, cursor: 'pointer',
+                           boxShadow: '0 2px 6px rgba(16, 185, 129, 0.15)'
+                         }}
+                         title="Buat Draf Invoice Transaksi Otomatis"
+                       >
+                         <Receipt size={12} />
+                         <span>⚡ Buat Invoice {detectedDealInfo.amountLabel}</span>
+                       </button>
+                     )}
+
+                     <button
+                       type="button"
+                       onClick={handleConvertDealToProject}
+                       style={{
+                         display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px',
+                         borderRadius: 100, border: '1px solid rgba(56, 189, 248, 0.4)',
+                         background: 'rgba(56, 189, 248, 0.12)', color: '#38bdf8',
+                         fontSize: 11, fontWeight: 800, cursor: 'pointer',
+                         boxShadow: '0 2px 6px rgba(56, 189, 248, 0.15)'
+                       }}
+                       title="Konversi ke Proyek Kanban"
+                     >
+                       <Zap size={12} />
+                       <span>⚡ Jadikan Proyek Kanban</span>
+                     </button>
+                   </>
+                 )}
               </div>
               <form onSubmit={handleSend} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 {/* Google Drive File Attachment Button */}

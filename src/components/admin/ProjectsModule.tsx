@@ -1,18 +1,20 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { 
-  FolderKanban, Plus, Trash2, CheckCircle2, Clock, 
-  AlertCircle, ChevronRight, ChevronDown, MoreVertical, Calendar, 
-  Tag, ListTodo, Search, Loader2, Paperclip, LayoutGrid, X, 
-  List, PieChart, TrendingUp, History, Upload, File, Download, 
-  Edit3, Check, Image as ImageIcon, ArrowLeft, LayoutPanelLeft, 
+import {
+  FolderKanban, Plus, Trash2, CheckCircle2, Clock,
+  AlertCircle, ChevronRight, ChevronDown, MoreVertical, Calendar,
+  Tag, ListTodo, Search, Loader2, Paperclip, LayoutGrid, X,
+  List, PieChart, TrendingUp, History, Upload, File, Download,
+  Edit3, Check, Image as ImageIcon, ArrowLeft, LayoutPanelLeft,
   RotateCw, Zap, Workflow, Table, Pin, CheckSquare, Layers, Eye,
   Copy, ExternalLink, Wand2, Sparkles, PenTool, Layout, Code, Briefcase, MessageSquare,
-  Palette, Monitor, FileText, Globe, Info, Rocket, Target, Star, Bookmark, Flag, Lightbulb, Box, ShoppingBag, ShieldCheck, Heart, User, Users, Compass, Megaphone, Terminal, Cpu, Camera, Film, Music, Coffee, Flame, Award, Trophy, Smile, UserCheck,
+  Palette, Monitor, FileText, Globe, Info, Rocket, Target, Star, Bookmark, Flag, Lightbulb, Box, ShoppingBag, ShieldCheck, Heart, User, Users, Compass, Megaphone, Terminal, Cpu, Camera, Film, Music, Coffee, Flame, Award, Trophy, Smile, UserCheck, Mic,
   Phone, Mail, Settings2, Video, XCircle, Save, Maximize2, Minimize2,
   Bold, Italic, Strikethrough, Heading1, Heading2, Heading3, ListOrdered, Quote, Minus, CheckCheck, RotateCcw, Table as TableIcon, Link as LinkIcon, Volume2,
-  AlignLeft, AlignCenter, AlignRight, AlignJustify, ArrowUp, ArrowDown, MoreHorizontal, Receipt
+  AlignLeft, AlignCenter, AlignRight, AlignJustify, ArrowUp, ArrowDown, MoreHorizontal, Receipt,
+  MessageCircle, Store, Share2, Archive
 } from 'lucide-react';
+import { downloadFilesAsZip } from '../../utils/zipExporter';
 import { storage } from '../../utils/storage';
 import { uploadToCloudinary } from '../../utils/cloudinary';
 import { useDialog } from './DialogProvider';
@@ -22,16 +24,17 @@ import { addNotification } from '../../utils/notifications';
 import { googleSync } from '../../utils/googleSync';
 import { generateAiProject, generateAiProjectTasks, callGemini } from '../../utils/ai';
 import { OFFLINE_PROJECT_TEMPLATES, buildOfflineProject, OfflineProjectTemplate } from '../../utils/offlineTemplates';
-import { 
-  getCustomProjectTemplates, 
-  saveCustomProjectTemplate, 
-  deleteCustomProjectTemplate, 
-  getCustomProjectCategories, 
-  addCustomProjectCategory 
+import {
+  getCustomProjectTemplates,
+  saveCustomProjectTemplate,
+  deleteCustomProjectTemplate,
+  getCustomProjectCategories,
+  addCustomProjectCategory
 } from '../../utils/customTemplatesStorage';
 import CustomDropdown from './CustomDropdown';
 import { generateProjectCalendarEvent, downloadIcsFile, createGoogleCalendarUrl } from '../../utils/calendarUtils';
 import DriveAttachmentPicker from '../common/DriveAttachmentPicker';
+import ProtectedPreviewImage from '../common/ProtectedPreviewImage';
 import MediaGalleryModal from './MediaGalleryModal';
 import CalendarGridView from './CalendarGridView';
 import ContentPlanModal, { ContentPlanItem } from './ContentPlanModal';
@@ -39,6 +42,17 @@ import InfoTooltip from './InfoTooltip';
 import { db, auth } from '../../firebase';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { haptic } from '../../utils/haptics';
+import ProjectRemindersBar from './ProjectRemindersBar';
+import ServiceOrderModal from './ServiceOrderModal';
+import { normalizeGoogleDocUrl } from '../../utils/serviceOrderSync';
+import TimelineGanttView from './projects/TimelineGanttView';
+import {
+  type NoteBlock,
+  parseContentToBlocks,
+  serializeBlocksToContent
+} from './NoteBlockEditor';
+import ProjectProofingModal from './projects/ProjectProofingModal';
+import { ImageInputWithActions } from '../common/ImageInputWithActions';
 
 // ---------------------------------------------------------
 // CONSTANTS & UTILS
@@ -52,92 +66,8 @@ const NOTE_COLOR_THEMES: Record<string, { dot: string; bg: string; border: strin
   amber: { dot: '#f59e0b', bg: 'rgba(245, 158, 11, 0.15)', border: 'rgba(245, 158, 11, 0.35)', text: '#f59e0b', lightBg: 'rgba(245, 158, 11, 0.08)' },
   rose: { dot: '#f43f5e', bg: 'rgba(244, 63, 94, 0.15)', border: 'rgba(244, 63, 94, 0.35)', text: '#f43f5e', lightBg: 'rgba(244, 63, 94, 0.05)' },
 };
+// NoteBlock, parseContentToBlocks, and serializeBlocksToContent are imported from ./NoteBlockEditor
 
-interface NoteBlock {
-  id: string;
-  type: 'h1' | 'h2' | 'h3' | 'todo' | 'bullet' | 'number' | 'quote' | 'callout' | 'scene' | 'hook' | 'cta' | 'voiceover' | 'code' | 'table' | 'image' | 'divider' | 'p';
-  text: string;
-  checked?: boolean;
-  num?: number;
-  url?: string;
-  size?: 'small' | 'medium' | 'full';
-  wrap?: 'inline' | 'left' | 'right' | 'center';
-  tableData?: { headers: string[]; rows: string[][] };
-}
-
-const parseContentToBlocks = (content: string): NoteBlock[] => {
-  if (!content || !content.trim()) {
-    return [{ id: 'b_0', type: 'p', text: '' }];
-  }
-
-  // Regex that matches markdown image expressions anywhere in text
-  const imgRegex = /(!\[.*?\]\(.*?\))/g;
-  const rawParts = content.split(imgRegex);
-  const blocks: NoteBlock[] = [];
-
-  for (let i = 0; i < rawParts.length; i++) {
-    const part = rawParts[i];
-    if (!part) continue;
-
-    const imgMatch = part.match(/^!\[(.*?)\]\((.*?)\)/);
-    if (imgMatch) {
-      let rawAlt = imgMatch[1] || '';
-      let size: 'small' | 'medium' | 'full' = 'small';
-      let wrap: 'inline' | 'left' | 'right' | 'center' = 'inline';
-
-      const segs = rawAlt.split(/[|:]/);
-      let cleanAlt = segs[0] || 'Gambar';
-
-      for (let p = 1; p < segs.length; p++) {
-        const seg = segs[p].toLowerCase().trim();
-        if (seg === 'small' || seg === 'kecil' || seg === '25%') size = 'small';
-        else if (seg === 'medium' || seg === 'sedang' || seg === '50%' || seg === '75%') size = 'medium';
-        else if (seg === 'full' || seg === 'penuh' || seg === '100%') size = 'full';
-        else if (seg === 'left' || seg === 'wrap-left' || seg === 'square-left') wrap = 'left';
-        else if (seg === 'right' || seg === 'wrap-right' || seg === 'square-right') wrap = 'right';
-        else if (seg === 'center' || seg === 'tengah') wrap = 'center';
-        else if (seg === 'inline' || seg === 'top-bottom' || seg === 'atas-bawah') wrap = 'inline';
-      }
-
-      blocks.push({
-        id: `blk_img_${blocks.length}_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-        type: 'image',
-        text: cleanAlt,
-        url: imgMatch[2],
-        size,
-        wrap
-      });
-    } else {
-      blocks.push({
-        id: `blk_text_${blocks.length}_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-        type: 'p',
-        text: part
-      });
-    }
-  }
-
-  // Always ensure there is a text block at the end if the note ends with an image
-  if (blocks.length === 0 || blocks[blocks.length - 1].type === 'image') {
-    blocks.push({
-      id: `blk_text_end_${Date.now()}`,
-      type: 'p',
-      text: ''
-    });
-  }
-
-  return blocks.length > 0 ? blocks : [{ id: 'b_0', type: 'p', text: '' }];
-};
-
-const serializeBlocksToContent = (blocks: NoteBlock[]): string => {
-  return blocks.map(b => {
-    if (b.type === 'image') {
-      const sizeTag = b.size || 'small';
-      const wrapTag = b.wrap || 'inline';
-      return `![${(b.text || 'Gambar')}|${sizeTag}|${wrapTag}](${b.url})`;
-    }
-    return b.text;
-  }).join('');
-};
 
 // ── TRUE WYSIWYG AUTO-GROW TEXTAREA (100% TRANSPARENT, ZERO GREY BOXES, FLUID MULTILINE) ──
 const AutoGrowTextarea: React.FC<{
@@ -228,8 +158,8 @@ function renderInlineFormattedText(text: string): React.ReactNode {
     const clean = text.replace(/\*\*\[SCENE\]\*\*|\[SCENE\]/g, '').trim();
     return (
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 11, fontWeight: 900, padding: '2px 8px', borderRadius: 6, background: 'rgba(6, 182, 212, 0.16)', color: '#06b6d4', border: '1px solid rgba(6, 182, 212, 0.3)', letterSpacing: '0.04em' }}>
-          🎬 SCENE
+        <span style={{ fontSize: 11, fontWeight: 900, padding: '2px 8px', borderRadius: 6, background: 'rgba(6, 182, 212, 0.16)', color: '#06b6d4', border: '1px solid rgba(6, 182, 212, 0.3)', letterSpacing: '0.04em', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <Film size={12} /> SCENE
         </span>
         <span>{renderInlineFormattedText(clean)}</span>
       </span>
@@ -239,8 +169,8 @@ function renderInlineFormattedText(text: string): React.ReactNode {
     const clean = text.replace(/\*\*\[HOOK\]\*\*|\[HOOK\]/g, '').trim();
     return (
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 11, fontWeight: 900, padding: '2px 8px', borderRadius: 6, background: 'rgba(245, 158, 11, 0.16)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.3)', letterSpacing: '0.04em' }}>
-          🎯 HOOK
+        <span style={{ fontSize: 11, fontWeight: 900, padding: '2px 8px', borderRadius: 6, background: 'rgba(245, 158, 11, 0.16)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.3)', letterSpacing: '0.04em', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <Target size={12} /> HOOK
         </span>
         <span>{renderInlineFormattedText(clean)}</span>
       </span>
@@ -250,8 +180,8 @@ function renderInlineFormattedText(text: string): React.ReactNode {
     const clean = text.replace(/\*\*\[CTA\]\*\*|\[CTA\]/g, '').trim();
     return (
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 11, fontWeight: 900, padding: '2px 8px', borderRadius: 6, background: 'rgba(16, 185, 129, 0.16)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)', letterSpacing: '0.04em' }}>
-          📢 CTA
+        <span style={{ fontSize: 11, fontWeight: 900, padding: '2px 8px', borderRadius: 6, background: 'rgba(16, 185, 129, 0.16)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)', letterSpacing: '0.04em', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <Megaphone size={12} /> CTA
         </span>
         <span>{renderInlineFormattedText(clean)}</span>
       </span>
@@ -261,8 +191,8 @@ function renderInlineFormattedText(text: string): React.ReactNode {
     const clean = text.replace(/\*\*\[VO\]\*\*|\[VO\]/g, '').trim();
     return (
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 11, fontWeight: 900, padding: '2px 8px', borderRadius: 6, background: 'rgba(139, 92, 246, 0.16)', color: '#8b5cf6', border: '1px solid rgba(139, 92, 246, 0.3)', letterSpacing: '0.04em' }}>
-          🎙️ VO
+        <span style={{ fontSize: 11, fontWeight: 900, padding: '2px 8px', borderRadius: 6, background: 'rgba(139, 92, 246, 0.16)', color: '#8b5cf6', border: '1px solid rgba(139, 92, 246, 0.3)', letterSpacing: '0.04em', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <Mic size={12} /> VO
         </span>
         <span>{renderInlineFormattedText(clean)}</span>
       </span>
@@ -591,24 +521,25 @@ const InlineLiveDocumentEditor: React.FC<{
             >
               <button
                 type="button"
+                className="memo-todo-checkbox"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleToggleTodo(lineIdx);
                 }}
                 style={{
-                  width: 20, height: 20, minWidth: 20, minHeight: 20,
-                  borderRadius: 6,
+                  width: 18, height: 18, minWidth: 18, minHeight: 18, maxWidth: 18, maxHeight: 18, aspectRatio: '1 / 1',
+                  borderRadius: 5,
                   border: isChecked ? 'none' : '1.8px solid var(--cms-accent)',
                   background: isChecked ? 'var(--cms-accent)' : 'transparent',
                   color: '#fff',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  cursor: 'pointer', padding: 0, marginTop: 4,
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer', padding: 0, marginTop: 4, flexShrink: 0, boxSizing: 'border-box',
                   boxShadow: isChecked ? '0 2px 6px rgba(var(--cms-accent-rgb), 0.35)' : 'none',
                   transition: 'all 0.15s ease'
                 }}
                 title={isChecked ? "Tandai belum selesai" : "Tandai selesai"}
               >
-                {isChecked && <Check size={13} strokeWidth={3} />}
+                {isChecked && <Check size={12} strokeWidth={3} />}
               </button>
               <AutoGrowTextarea
                 inputRef={el => { inputRefs.current[lineIdx] = el; }}
@@ -1055,7 +986,7 @@ const ProjectRichBlockNotepad: React.FC<{
                     type="text"
                     value={block.text || ''}
                     onChange={e => handleUpdateBlock(idx, { text: e.target.value })}
-                    placeholder="✍️ Keterangan / sumber gambar..."
+                    placeholder="Keterangan / sumber gambar..."
                     style={{
                       width: '100%',
                       background: 'transparent',
@@ -1272,15 +1203,15 @@ const CustomSelect = ({ value, onChange, options }) => {
 
   return (
     <div ref={containerRef} style={{ position: 'relative', width: '100%', minWidth: '140px' }}>
-      <button 
+      <button
         type="button"
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-label={`Select ${selectedOption.label}`}
         onClick={() => setIsOpen(!isOpen)}
-        style={{ 
+        style={{
           display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', textAlign: 'left',
-          background: 'var(--cms-input-bg)', border: '1.5px solid var(--glass-border)', 
+          background: 'var(--cms-input-bg)', border: '1.5px solid var(--glass-border)',
           color: 'var(--cms-text)', width: '100%', outline: 'none',
           fontSize: 13.5, fontWeight: 750, padding: '10px 14px', borderRadius: 12, transition: '0.2s',
           boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
@@ -1291,23 +1222,23 @@ const CustomSelect = ({ value, onChange, options }) => {
       </button>
 
       {isOpen && (
-        <div 
+        <div
           role="listbox"
-          style={{ 
+          style={{
             position: 'absolute', top: '110%', left: 0, width: '100%', zIndex: 9999,
             background: 'var(--cms-card-bg)', border: '1.5px solid var(--glass-border)',
             borderRadius: 16, boxShadow: '0 20px 40px rgba(0,0,0,0.2)', padding: 8,
             backdropFilter: 'blur(20px)'
           }}>
           {options.map(opt => (
-            <div 
+            <div
               key={opt.id}
               role="option"
               aria-selected={value === opt.id}
               tabIndex={0}
               onClick={() => { onChange(opt.id); setIsOpen(false); }}
-              onKeyDown={(e) => { if(e.key === 'Enter' || e.key === ' ') { onChange(opt.id); setIsOpen(false); e.preventDefault(); } }}
-              style={{ 
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { onChange(opt.id); setIsOpen(false); e.preventDefault(); } }}
+              style={{
                 padding: '12px 16px', borderRadius: 10, fontSize: 14, fontWeight: 700,
                 cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10,
                 background: value === opt.id ? 'rgba(var(--cms-accent-rgb), 0.1)' : 'transparent',
@@ -1338,8 +1269,8 @@ const ProgressRing = ({ progress, size = 36, color }) => {
   return (
     <div style={{ position: 'relative', width: size, height: size, flexShrink: 0 }}>
       <svg width={size} height={size} style={{ transform: 'rotate(-90deg)', display: 'block' }}>
-        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--cms-input-bg)" strokeWidth={3} />
-        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={ringColor} strokeWidth={3}
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--cms-input-bg)" strokeWidth={3} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={ringColor} strokeWidth={3}
           strokeDasharray={`${circ} ${circ}`} strokeDashoffset={offset} strokeLinecap="round"
           style={{ transition: 'stroke-dashoffset 0.5s cubic-bezier(0.16,1,0.3,1)' }} />
       </svg>
@@ -1374,8 +1305,8 @@ const TagSelect = ({ project, projects, updateProject }) => {
 
   const toggleTag = (tag) => {
     const currentTags = getSafeArray(project.tags);
-    const updated = currentTags.includes(tag) 
-      ? currentTags.filter(t => t !== tag) 
+    const updated = currentTags.includes(tag)
+      ? currentTags.filter(t => t !== tag)
       : [...currentTags, tag];
     updateProject(project.id, { tags: updated });
   };
@@ -1390,91 +1321,91 @@ const TagSelect = ({ project, projects, updateProject }) => {
 
   return (
     <div ref={containerRef} style={{ position: 'relative' }}>
-      <button 
+      <button
         type="button"
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-label="Add Tag"
         onClick={() => setIsOpen(!isOpen)}
         style={{ padding: '8px 14px', borderRadius: 10, border: '1.5px dashed var(--glass-border)', background: 'transparent', color: 'var(--cms-text-muted)', fontSize: 13, fontWeight: 800, cursor: 'pointer', transition: '0.2s' }}
-        onMouseEnter={e=>{e.currentTarget.style.borderColor='var(--cms-accent)'; e.currentTarget.style.color='var(--cms-accent)';}}
-        onMouseLeave={e=>{e.currentTarget.style.borderColor='var(--glass-border)'; e.currentTarget.style.color='var(--cms-text-muted)';}}
+        onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--cms-accent)'; e.currentTarget.style.color = 'var(--cms-accent)'; }}
+        onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--glass-border)'; e.currentTarget.style.color = 'var(--cms-text-muted)'; }}
       >
         + Add Tag
       </button>
 
       {isOpen && (
-        <div 
+        <div
           role="listbox"
-          style={{ 
-          position: 'absolute', top: '120%', left: 0, width: '280px', zIndex: 9999,
-          background: 'var(--cms-card-bg)', border: '1.5px solid var(--glass-border)',
-          borderRadius: 20, boxShadow: '0 20px 60px rgba(0,0,0,0.3)', padding: 12,
-          backdropFilter: 'blur(30px)'
-        }}>
+          style={{
+            position: 'absolute', top: '120%', left: 0, width: '280px', zIndex: 9999,
+            background: 'var(--cms-card-bg)', border: '1.5px solid var(--glass-border)',
+            borderRadius: 20, boxShadow: '0 20px 60px rgba(0,0,0,0.3)', padding: 12,
+            backdropFilter: 'blur(30px)'
+          }}>
           <form onSubmit={handleAddCustom} style={{ marginBottom: 16 }}>
-             <input 
-               autoFocus
-               placeholder="New tag name..." 
-               value={newTag} 
-               onChange={e => setNewTag(e.target.value)}
-               style={{ width: '100%', padding: '10px 16px', borderRadius: 10, background: 'var(--cms-input-bg)', border: '1.5px solid var(--glass-border)', color: 'var(--cms-text)', fontSize: 13, fontWeight: 700, outline: 'none' }} 
-             />
+            <input
+              autoFocus
+              placeholder="New tag name..."
+              value={newTag}
+              onChange={e => setNewTag(e.target.value)}
+              style={{ width: '100%', padding: '10px 16px', borderRadius: 10, background: 'var(--cms-input-bg)', border: '1.5px solid var(--glass-border)', color: 'var(--cms-text)', fontSize: 13, fontWeight: 700, outline: 'none' }}
+            />
           </form>
-          
+
           <div style={{ maxHeight: 200, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
-             <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '4px 8px', marginBottom: 4 }}>Suggestions</div>
-             {allExistingTags.length === 0 && <div style={{ padding: '8px', fontSize: 12, color: 'var(--cms-text-muted)', textAlign: 'center' }}>No existing tags yet.</div>}
-             {allExistingTags.map(tag => (
-                <div 
-                  key={tag}
-                  role="option"
-                  aria-selected={getSafeArray(project.tags).includes(tag)}
-                  tabIndex={0}
-                  onClick={() => toggleTag(tag)}
-                  onKeyDown={(e) => { if(e.key === 'Enter' || e.key === ' ') { toggleTag(tag); e.preventDefault(); } }}
-                  className="tag-suggestion-item"
-                  style={{ 
-                    padding: '10px 12px', borderRadius: 10, fontSize: 13, fontWeight: 800,
-                    cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10,
-                    background: getSafeArray(project.tags).includes(tag) ? 'rgba(var(--cms-accent-rgb), 0.1)' : 'transparent',
-                    color: getSafeArray(project.tags).includes(tag) ? 'var(--cms-accent)' : 'var(--cms-text)',
-                    transition: '0.2s',
-                    position: 'relative'
-                  }}
-                  onMouseEnter={e => e.currentTarget.querySelector('.tag-delete-btn').style.opacity = '1'}
-                  onMouseLeave={e => e.currentTarget.querySelector('.tag-delete-btn').style.opacity = '0'}
-                >
-                  <Tag size={14} />
-                  <span style={{ flex: 1 }}>{tag}</span>
-                  
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
-                    {getSafeArray(project.tags).includes(tag) && <Check size={14} style={{ color: 'var(--cms-accent)' }} />}
-                    
-                    <button 
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        const confirmed = await showConfirm(`Hapus tag "${tag}" dari SEMUA proyek?`);
-                        if (confirmed) {
-                          projects.forEach(p => {
-                            if (getSafeArray(p.tags).includes(tag)) {
-                              updateProject(p.id, { tags: getSafeArray(p.tags).filter(t => t !== tag) });
-                            }
-                          });
-                        }
-                      }}
-                      style={{ 
-                        padding: 4, borderRadius: 6, background: 'rgba(239, 68, 68, 0.1)', 
-                        border: 'none', color: '#ef4444', cursor: 'pointer', opacity: 0,
-                        transition: '0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center'
-                      }}
-                      className="tag-delete-btn"
-                    >
-                      <X size={12} />
-                    </button>
-                  </div>
+            <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '4px 8px', marginBottom: 4 }}>Suggestions</div>
+            {allExistingTags.length === 0 && <div style={{ padding: '8px', fontSize: 12, color: 'var(--cms-text-muted)', textAlign: 'center' }}>No existing tags yet.</div>}
+            {allExistingTags.map(tag => (
+              <div
+                key={tag}
+                role="option"
+                aria-selected={getSafeArray(project.tags).includes(tag)}
+                tabIndex={0}
+                onClick={() => toggleTag(tag)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { toggleTag(tag); e.preventDefault(); } }}
+                className="tag-suggestion-item"
+                style={{
+                  padding: '10px 12px', borderRadius: 10, fontSize: 13, fontWeight: 800,
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10,
+                  background: getSafeArray(project.tags).includes(tag) ? 'rgba(var(--cms-accent-rgb), 0.1)' : 'transparent',
+                  color: getSafeArray(project.tags).includes(tag) ? 'var(--cms-accent)' : 'var(--cms-text)',
+                  transition: '0.2s',
+                  position: 'relative'
+                }}
+                onMouseEnter={e => e.currentTarget.querySelector('.tag-delete-btn').style.opacity = '1'}
+                onMouseLeave={e => e.currentTarget.querySelector('.tag-delete-btn').style.opacity = '0'}
+              >
+                <Tag size={14} />
+                <span style={{ flex: 1 }}>{tag}</span>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+                  {getSafeArray(project.tags).includes(tag) && <Check size={14} style={{ color: 'var(--cms-accent)' }} />}
+
+                  <button
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      const confirmed = await showConfirm(`Hapus tag "${tag}" dari SEMUA proyek?`);
+                      if (confirmed) {
+                        projects.forEach(p => {
+                          if (getSafeArray(p.tags).includes(tag)) {
+                            updateProject(p.id, { tags: getSafeArray(p.tags).filter(t => t !== tag) });
+                          }
+                        });
+                      }
+                    }}
+                    style={{
+                      padding: 4, borderRadius: 6, background: 'rgba(239, 68, 68, 0.1)',
+                      border: 'none', color: '#ef4444', cursor: 'pointer', opacity: 0,
+                      transition: '0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    }}
+                    className="tag-delete-btn"
+                  >
+                    <X size={12} />
+                  </button>
                 </div>
-              ))}
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -1526,12 +1457,12 @@ const GlassDatePicker = ({ value, onChange }) => {
 
   return (
     <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
-      <button 
+      <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        style={{ 
+        style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', textAlign: 'left',
-          background: 'var(--cms-input-bg)', border: '1.5px solid var(--glass-border)', 
+          background: 'var(--cms-input-bg)', border: '1.5px solid var(--glass-border)',
           color: value ? 'var(--cms-text)' : 'var(--cms-text-muted)', width: '100%', outline: 'none',
           fontSize: 13.5, fontWeight: 750, padding: '10px 16px', borderRadius: 100, transition: '0.2s',
           height: 42, boxSizing: 'border-box',
@@ -1544,22 +1475,22 @@ const GlassDatePicker = ({ value, onChange }) => {
       </button>
 
       {isOpen && (
-        <div style={{ 
+        <div style={{
           position: 'absolute', top: '120%', left: 0, width: '280px', zIndex: 9999,
           background: 'var(--cms-card-bg)', border: '1.5px solid var(--glass-border)',
           borderRadius: 24, boxShadow: '0 20px 60px rgba(0,0,0,0.3)', padding: 16,
           backdropFilter: 'blur(30px)'
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <button onClick={prevMonth} style={{ padding: 4, background: 'transparent', border: 'none', color: 'var(--cms-text)', cursor: 'pointer', borderRadius: 8 }} onMouseEnter={e => e.currentTarget.style.background='var(--cms-switcher-bg)'} onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+            <button onClick={prevMonth} style={{ padding: 4, background: 'transparent', border: 'none', color: 'var(--cms-text)', cursor: 'pointer', borderRadius: 8 }} onMouseEnter={e => e.currentTarget.style.background = 'var(--cms-switcher-bg)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
               <ChevronRight size={18} style={{ transform: 'rotate(180deg)' }} />
             </button>
             <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--cms-text)' }}>{monthNames[month]} {year}</div>
-            <button onClick={nextMonth} style={{ padding: 4, background: 'transparent', border: 'none', color: 'var(--cms-text)', cursor: 'pointer', borderRadius: 8 }} onMouseEnter={e => e.currentTarget.style.background='var(--cms-switcher-bg)'} onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+            <button onClick={nextMonth} style={{ padding: 4, background: 'transparent', border: 'none', color: 'var(--cms-text)', cursor: 'pointer', borderRadius: 8 }} onMouseEnter={e => e.currentTarget.style.background = 'var(--cms-switcher-bg)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
               <ChevronRight size={18} />
             </button>
           </div>
-          
+
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 8, textAlign: 'center' }}>
             {dayNames.map(d => (
               <div key={d} style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', opacity: 0.6 }}>{d}</div>
@@ -1570,7 +1501,7 @@ const GlassDatePicker = ({ value, onChange }) => {
             {days.map((day, i) => {
               const isSelected = value && day && new Date(value).getDate() === day && new Date(value).getMonth() === month && new Date(value).getFullYear() === year;
               const isToday = !value && day && new Date().getDate() === day && new Date().getMonth() === month && new Date().getFullYear() === year;
-              
+
               if (!day) return <div key={i} />;
               return (
                 <button
@@ -1860,28 +1791,28 @@ const renderProjectIcon = (icon: any, size = 18, style?: React.CSSProperties, fa
   if (!icon) {
     return <FolderKanban size={size} style={{ color: fallbackColor, ...style }} />;
   }
-  
+
   if (React.isValidElement(icon)) {
     return icon;
   }
-  
+
   if (typeof icon === 'string') {
     const IconComp = PROJECT_ICON_MAP[icon];
     if (IconComp) {
       return <IconComp size={size} style={{ color: fallbackColor, ...style }} />;
     }
-    
+
     if (icon.startsWith('http://') || icon.startsWith('https://') || icon.startsWith('data:')) {
       return <img src={icon} alt="icon" style={{ width: size, height: size, objectFit: 'contain', borderRadius: 4, ...style }} />;
     }
-    
+
     return (
       <span style={{ fontSize: size, lineHeight: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', ...style }}>
         {icon}
       </span>
     );
   }
-  
+
   return <FolderKanban size={size} style={{ color: fallbackColor, ...style }} />;
 };
 
@@ -1913,8 +1844,8 @@ const ProjectIconPicker = ({
     };
   }, [onClose]);
 
-  const filteredLucide = POPULAR_PROJECT_ICONS.filter(item => 
-    item.id.toLowerCase().includes(search.toLowerCase()) || 
+  const filteredLucide = POPULAR_PROJECT_ICONS.filter(item =>
+    item.id.toLowerCase().includes(search.toLowerCase()) ||
     item.label.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -2128,6 +2059,17 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [isScheduleSettingsOpen, setIsScheduleSettingsOpen] = useState(false);
   const [isNewBookingOpen, setIsNewBookingOpen] = useState(false);
+  const [isServiceOrderModalOpen, setIsServiceOrderModalOpen] = useState(false);
+
+  const pendingAccCount = useMemo(() => {
+    return (projects || []).filter(p => !p.isDeleted && !p.isTrash && (p.status === 'pending_acc' || (p.requiresAcc && !p.isApproved))).length;
+  }, [projects]);
+
+  useEffect(() => {
+    const handleOpenSvcOrder = () => setIsServiceOrderModalOpen(true);
+    window.addEventListener('porto_open_service_order_modal', handleOpenSvcOrder);
+    return () => window.removeEventListener('porto_open_service_order_modal', handleOpenSvcOrder);
+  }, []);
   const [bookings, setBookings] = useState<any[]>([]);
   const [bookingSettings, setBookingSettings] = useState<any>({
     customServices: [
@@ -2152,10 +2094,10 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
   useEffect(() => {
     storage.getItem('porto_bookings', []).then(saved => {
       if (Array.isArray(saved)) setBookings(saved);
-    }).catch(() => {});
+    }).catch(() => { });
     storage.getItem('porto_settings', {}).then(sett => {
       if (sett?.bookingSettings) setBookingSettings(sett.bookingSettings);
-    }).catch(() => {});
+    }).catch(() => { });
   }, []);
 
   const handleCreateBooking = async (e: React.FormEvent) => {
@@ -2219,7 +2161,7 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
       setViewMode(initialViewMode);
     }
   }, [initialViewMode]);
-  
+
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
   const [isTablet, setIsTablet] = useState(typeof window !== 'undefined' ? (window.innerWidth >= 768 && window.innerWidth <= 1200) : false);
 
@@ -2361,6 +2303,32 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
   const [searchQuery, setSearchQuery] = useState('');
   const [activeBoardFilter, setActiveBoardFilter] = useState('all');
   const [selectedProject, setSelectedProject] = useState(null);
+  const [isGlobalProofingOpen, setIsGlobalProofingOpen] = useState(false);
+  const [proofingTargetProject, setProofingTargetProject] = useState<any>(null);
+
+  const handleOpenProofingManager = (proj?: any) => {
+    let target = proj;
+    if (!target) {
+      target = selectedProject || (projects && projects.length > 0 ? projects[0] : null);
+    }
+    if (!target) {
+      target = {
+        id: `PRJ-${Date.now().toString().slice(-5)}`,
+        title: 'Proyek Desain Visual Klien',
+        client: 'Klien Studio',
+        status: 'progress',
+        priority: 'high',
+        createdAt: new Date().toISOString(),
+        proofingImages: [
+          'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1400&q=85'
+        ]
+      };
+      saveProjects([target]);
+    }
+    setProofingTargetProject(target);
+    setIsGlobalProofingOpen(true);
+    notify?.('✨ Membuka pengunggah preview & link proofing klien', 'info');
+  };
   const [selectedIds, setSelectedIds] = useState([]);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [isModuleFullscreen, setIsModuleFullscreen] = useState(false);
@@ -2401,7 +2369,7 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
           window.history.replaceState({}, '', url.toString());
         }
       }
-    } catch (e) {}
+    } catch (e) { }
   }, [selectedProject]);
 
   // Read URL query parameter ?project=... or ?id=... on initial mount / popstate navigation
@@ -2419,7 +2387,7 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
             sessionStorage.removeItem('porto_open_project_on_mount');
           }
         }
-      } catch (e) {}
+      } catch (e) { }
     };
     checkUrlProject();
     window.addEventListener('popstate', checkUrlProject);
@@ -2448,7 +2416,15 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
     const handleOpenProject = (e: any) => {
       const projectId = typeof e.detail === 'string' ? e.detail : e.detail?.projectId || e.detail?.id;
       if (!projectId) return;
-      const list = projects.length > 0 ? projects : JSON.parse(localStorage.getItem('idb_porto_projects') || '[]');
+      let list = projects;
+      if (list.length === 0) {
+        try {
+          const parsed = JSON.parse(localStorage.getItem('idb_porto_projects') || '[]');
+          list = Array.isArray(parsed) ? parsed : [];
+        } catch {
+          list = [];
+        }
+      }
       const proj = list.find((p: any) => String(p.id) === String(projectId));
       if (proj) {
         setSelectedProject(proj);
@@ -2552,7 +2528,7 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
 
   const handleGenerateAiProjectSubmit = async (e?: React.FormEvent, forceOffline: boolean = false) => {
     if (e) e.preventDefault();
-    
+
     // 100% Instant Offline Generation (0ms, 0 tokens)
     if (plannerMode === 'offline' || forceOffline) {
       const offlineProj = buildOfflineProject(aiTemplateType, aiPrompt);
@@ -2723,10 +2699,40 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
     notify?.(`Membuka pembuatan invoice untuk "${proj.title}"`, 'info');
   };
 
+  const handleSendAssetDropLinkForProject = (proj: any) => {
+    if (!proj) return;
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://sumr.day';
+    const dropUrl = `${origin}/drop/${encodeURIComponent(proj.id)}`;
+
+    try {
+      navigator.clipboard?.writeText(dropUrl);
+    } catch { }
+
+    const rawPhone = proj.clientPhone || proj.phone || '';
+    const cleanPhone = rawPhone.replace(/\D/g, '');
+    const phoneToUse = cleanPhone.startsWith('0') ? '62' + cleanPhone.slice(1) : cleanPhone;
+    const clientName = proj.client || proj.clientName || 'Klien';
+
+    const text = `Halo Kak *${clientName}*! 👋☀️
+
+Untuk memulai pengerjaan proyek *"${proj.title || 'Proyek'}"*, silakan kirimkan materi brand (logo vektor, foto produk HD, dokumen brief) melalui portal serah terima materi resmi sumr.day berikut:
+
+🔗 ${dropUrl}
+
+(Bisa langsung drag & drop file ukuran besar tanpa repot login). Terima kasih! 🙏✨`;
+
+    if (phoneToUse) {
+      window.open(`https://wa.me/${phoneToUse}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+      notify?.(`Tautan /drop disalin & membuka WhatsApp klien (${clientName})`, 'success');
+    } else {
+      notify?.(`Tautan serah terima berkas disalin: ${dropUrl}`, 'success');
+    }
+  };
+
   const removeProject = (id: any, direct = false) => {
     const doRemove = async () => {
       const currentList = Array.isArray(projects) ? projects : [];
-      const updated = currentList.map(p => 
+      const updated = currentList.map(p =>
         String(p.id) === String(id) ? { ...p, isDeleted: true, isTrash: true, deletedAt: new Date().toISOString() } : p
       );
       await saveProjects(updated);
@@ -2757,7 +2763,7 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
 
   const restoreProject = async (id: any) => {
     const currentList = Array.isArray(projects) ? projects : [];
-    const updated = currentList.map(p => 
+    const updated = currentList.map(p =>
       String(p.id) === String(id) ? { ...p, isDeleted: false, isTrash: false, deletedAt: null } : p
     );
     await saveProjects(updated);
@@ -2817,6 +2823,14 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
     }
     return (projects || []).filter(p => {
       if (p.isDeleted || p.isTrash) return false;
+      const isPendingAcc = p.status === 'pending_acc' || (p.requiresAcc && !p.isApproved);
+      if (activeBoardFilter === 'pending_acc') {
+        return isPendingAcc;
+      }
+      // "manajemen proyek baru muncul kalau aku acc":
+      // Hide pending ACC projects from regular active Kanban board/table/gallery/list views
+      if (isPendingAcc) return false;
+
       const isSearchActive = searchQuery.length > 0;
       if (!isSearchActive && p.parentId) return false;
       const title = getSafeString(p.title).toLowerCase();
@@ -2866,7 +2880,7 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
     const mainProjects = projects.filter(p => !p.parentId && !p.isDeleted);
     const total = mainProjects.length;
     if (total === 0) return { total: 0, completed: 0, avgProgress: 0, atRisk: 0 };
-    
+
     const normalizeStatusLocal = (s) => {
       if (!s || typeof s !== 'string') return 'todo';
       const norm = s.toLowerCase().replace(/[^a-z]/g, '');
@@ -2940,7 +2954,7 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
   );
 
   return (
-    <div className="projects-pro-module cms-projects-module" style={{ 
+    <div className="projects-pro-module cms-projects-module" style={{
       ...(isModuleFullscreen ? {
         position: 'fixed',
         top: isMobile ? '8px' : '14px',
@@ -2966,16 +2980,16 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
         WebkitOverflowScrolling: 'touch',
         touchAction: 'pan-y'
       } : {
-        padding: isMobile ? '10px 8px 60px 8px' : '16px 20px 12px 20px', 
+        padding: isMobile ? '10px 8px 60px 8px' : '16px 20px 12px 20px',
         height: '100%', minHeight: '100%', width: '100%', boxSizing: 'border-box',
-        display: 'flex', flexDirection: 'column', 
-        background: 'var(--cms-bg)', color: 'var(--cms-text)', 
+        display: 'flex', flexDirection: 'column',
+        background: 'var(--cms-bg)', color: 'var(--cms-text)',
         overflowX: 'hidden', overflowY: 'auto',
         WebkitOverflowScrolling: 'touch',
         touchAction: 'pan-y'
       })
     }}>
-      
+
       {/* ── Top Navigation & Analytics (Baris 1: Stat Cards + 4 Circular Actions) ── */}
       <div className="projects-top-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10, width: '100%', flexShrink: 0, flexWrap: 'wrap' }}>
         {/* Sisi Kiri / Center: Stat Cards (Interactive Quick Filters) */}
@@ -3035,18 +3049,18 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
         <div className="projects-primary-actions hide-tablet hide-mobile" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'nowrap', flexShrink: 0 }}>
 
           {/* Undo Action Button */}
-          <button 
+          <button
             type="button"
             onClick={handleUndo}
             disabled={undoStack.length === 0}
             title="Undo / Batalkan Perubahan Proyek (Ctrl+Z)"
-            style={{ 
+            style={{
               height: 38, width: 38, minWidth: 38, minHeight: 38, maxWidth: 38, maxHeight: 38, aspectRatio: '1/1', padding: 0, boxSizing: 'border-box',
-              borderRadius: '50%', border: '1.5px solid var(--glass-border)', 
-              background: 'var(--cms-card-bg)', 
+              borderRadius: '50%', border: '1.5px solid var(--glass-border)',
+              background: 'var(--cms-card-bg)',
               color: undoStack.length > 0 ? 'var(--cms-text)' : 'var(--cms-text-muted)',
               opacity: undoStack.length > 0 ? 1 : 0.4,
-              cursor: undoStack.length > 0 ? 'pointer' : 'not-allowed', 
+              cursor: undoStack.length > 0 ? 'pointer' : 'not-allowed',
               display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease', flexShrink: 0,
               boxShadow: 'var(--cms-shadow-sm)'
             }}
@@ -3057,18 +3071,18 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
           </button>
 
           {/* Redo Action Button */}
-          <button 
+          <button
             type="button"
             onClick={handleRedo}
             disabled={redoStack.length === 0}
             title="Redo / Kembalikan Perubahan Proyek (Ctrl+Y atau Ctrl+Shift+Z)"
-            style={{ 
+            style={{
               height: 38, width: 38, minWidth: 38, minHeight: 38, maxWidth: 38, maxHeight: 38, aspectRatio: '1/1', padding: 0, boxSizing: 'border-box',
-              borderRadius: '50%', border: '1.5px solid var(--glass-border)', 
-              background: 'var(--cms-card-bg)', 
+              borderRadius: '50%', border: '1.5px solid var(--glass-border)',
+              background: 'var(--cms-card-bg)',
               color: redoStack.length > 0 ? 'var(--cms-text)' : 'var(--cms-text-muted)',
               opacity: redoStack.length > 0 ? 1 : 0.4,
-              cursor: redoStack.length > 0 ? 'pointer' : 'not-allowed', 
+              cursor: redoStack.length > 0 ? 'pointer' : 'not-allowed',
               display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease', flexShrink: 0,
               boxShadow: 'var(--cms-shadow-sm)'
             }}
@@ -3079,15 +3093,15 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
           </button>
 
           {/* 1. AI Planner Circular Icon */}
-          <button 
+          <button
             type="button"
             onClick={() => setIsAiModalOpen(true)}
             title="Rancang & Buat Proyek dengan AI"
-            style={{ 
+            style={{
               height: 38, width: 38, minWidth: 38, minHeight: 38, maxWidth: 38, maxHeight: 38, aspectRatio: '1/1', padding: 0, boxSizing: 'border-box',
-              borderRadius: '50%', border: '1.5px solid var(--glass-border)', 
-              background: 'var(--cms-card-bg)', 
-              color: 'var(--cms-accent)', cursor: 'pointer', 
+              borderRadius: '50%', border: '1.5px solid var(--glass-border)',
+              background: 'var(--cms-card-bg)',
+              color: 'var(--cms-accent)', cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease', flexShrink: 0,
               boxShadow: 'var(--cms-shadow-sm)'
             }}
@@ -3098,15 +3112,15 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
           </button>
 
           {/* 2. Settings Circular Icon */}
-          <button 
+          <button
             type="button"
             onClick={() => setIsScheduleSettingsOpen(true)}
             title="Pengaturan Kalender & Jadwal Booking"
-            style={{ 
+            style={{
               height: 38, width: 38, minWidth: 38, minHeight: 38, maxWidth: 38, maxHeight: 38, aspectRatio: '1/1', padding: 0, boxSizing: 'border-box',
-              borderRadius: '50%', border: '1.5px solid var(--glass-border)', 
-              background: 'var(--cms-card-bg)', 
-              color: 'var(--cms-text-muted)', cursor: 'pointer', 
+              borderRadius: '50%', border: '1.5px solid var(--glass-border)',
+              background: 'var(--cms-card-bg)',
+              color: 'var(--cms-text-muted)', cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease', flexShrink: 0,
               boxShadow: 'var(--cms-shadow-sm)'
             }}
@@ -3117,44 +3131,82 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
           </button>
 
           {/* 3. Multi-Select Checkbox Circular Icon */}
-          <button 
+          <button
             onClick={() => { setIsSelectionMode(!isSelectionMode); if (isSelectionMode) setSelectedIds([]); }}
             title={isSelectionMode ? "Batal Mode Pilih" : "Mode Pilih (Multi-Select)"}
             className="selection-mode-btn"
-            style={{ 
+            style={{
               height: 38, width: 38, minWidth: 38, minHeight: 38, maxWidth: 38, maxHeight: 38, aspectRatio: '1/1', padding: 0, boxSizing: 'border-box',
-              borderRadius: '50%', border: isSelectionMode ? '2px solid var(--cms-accent)' : '1.5px solid var(--glass-border)', 
-              background: isSelectionMode ? 'rgba(var(--cms-accent-rgb), 0.12)' : 'var(--cms-card-bg)', 
-              color: isSelectionMode ? 'var(--cms-accent)' : 'var(--cms-text-muted)', cursor: 'pointer', 
+              borderRadius: '50%', border: isSelectionMode ? '2px solid var(--cms-accent)' : '1.5px solid var(--glass-border)',
+              background: isSelectionMode ? 'rgba(var(--cms-accent-rgb), 0.12)' : 'var(--cms-card-bg)',
+              color: isSelectionMode ? 'var(--cms-accent)' : 'var(--cms-text-muted)', cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease', flexShrink: 0,
               boxShadow: 'var(--cms-shadow-sm)'
             }}
             onMouseEnter={e => { e.currentTarget.style.color = 'var(--cms-text)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
             onMouseLeave={e => { e.currentTarget.style.color = isSelectionMode ? 'var(--cms-accent)' : 'var(--cms-text-muted)'; e.currentTarget.style.transform = 'translateY(0)'; }}
           >
-            <CheckSquare size={16} strokeWidth={isSelectionMode ? 2.8 : 2} /> 
+            <CheckSquare size={16} strokeWidth={isSelectionMode ? 2.8 : 2} />
+          </button>
+
+          {/* 3.5. Service / Custom Order (ACC) Circular Icon */}
+          <button
+            type="button"
+            onClick={() => setIsServiceOrderModalOpen(true)}
+            title="Antrian & Pesanan Baru (Sistem ACC)"
+            style={{
+              height: 38, width: 38, minWidth: 38, minHeight: 38, maxWidth: 38, maxHeight: 38, aspectRatio: '1/1', padding: 0, boxSizing: 'border-box',
+              borderRadius: '50%', border: '1.5px solid rgba(16,185,129,0.35)',
+              background: 'rgba(16,185,129,0.1)',
+              color: '#10b981', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease', flexShrink: 0,
+              boxShadow: 'var(--cms-shadow-sm)'
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(16,185,129,0.2)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(16,185,129,0.1)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+          >
+            <Sparkles size={16} />
+          </button>
+
+          {/* 3.6. Visual Design Proofing & Review Launcher */}
+          <button
+            type="button"
+            onClick={() => handleOpenProofingManager()}
+            title="Kelola & Kirim Gambar Proofing ke Klien"
+            style={{
+              height: 38, width: 38, minWidth: 38, minHeight: 38, maxWidth: 38, maxHeight: 38, aspectRatio: '1/1', padding: 0, boxSizing: 'border-box',
+              borderRadius: '50%', border: '1.5px solid rgba(6,182,212,0.35)',
+              background: 'rgba(6,182,212,0.1)',
+              color: '#06b6d4', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease', flexShrink: 0,
+              boxShadow: 'var(--cms-shadow-sm)'
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(6,182,212,0.2)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(6,182,212,0.1)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+          >
+            <ShieldCheck size={16} />
           </button>
 
           {/* 4. Universal Plus Button with Popup Menu */}
           <div ref={addMenuRef} style={{ position: 'relative' }}>
-            <button 
-              onClick={() => setIsAddMenuOpen(!isAddMenuOpen)} 
-              className="add-project-btn" 
+            <button
+              onClick={() => setIsAddMenuOpen(!isAddMenuOpen)}
+              className="add-project-btn"
               title="Tambah Proyek, Konten, atau Janji Temu"
-              style={{ 
+              style={{
                 height: 38, width: 38, minWidth: 38, minHeight: 38, maxWidth: 38, maxHeight: 38, padding: 0, boxSizing: 'border-box',
-                borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', 
-                background: 'var(--cms-accent)', color: '#fff', border: 'none', cursor: 'pointer', 
-                boxShadow: '0 4px 14px rgba(var(--cms-accent-rgb), 0.3)', transition: 'all 0.2s ease', flexShrink: 0 
+                borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: 'var(--cms-accent)', color: '#fff', border: 'none', cursor: 'pointer',
+                boxShadow: '0 4px 14px rgba(var(--cms-accent-rgb), 0.3)', transition: 'all 0.2s ease', flexShrink: 0
               }}
               onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px) scale(1.04)'; }}
               onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0) scale(1)'; }}
             >
-              <Plus size={20} strokeWidth={2.8} style={{ width: 20, height: 20, minWidth: 20, minHeight: 20, display: 'block', flexShrink: 0 }} /> 
+              <Plus size={20} strokeWidth={2.8} style={{ width: 20, height: 20, minWidth: 20, minHeight: 20, display: 'block', flexShrink: 0 }} />
             </button>
 
             {isAddMenuOpen && (
-              <div 
+              <div
                 onPointerDown={(e) => e.stopPropagation()}
                 onMouseDown={(e) => e.stopPropagation()}
                 onTouchStart={(e) => e.stopPropagation()}
@@ -3180,6 +3232,34 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
                 <button
                   type="button"
                   onClick={() => {
+                    setIsServiceOrderModalOpen(true);
+                    setIsAddMenuOpen(false);
+                  }}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: 10,
+                    border: 'none',
+                    background: 'rgba(var(--cms-accent-rgb), 0.1)',
+                    color: 'var(--cms-accent)',
+                    fontSize: 12,
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    transition: 'all 0.15s ease',
+                    textAlign: 'left'
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(var(--cms-accent-rgb), 0.2)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'rgba(var(--cms-accent-rgb), 0.1)'}
+                >
+                  <Sparkles size={15} color="var(--cms-accent)" />
+                  <span>Pesanan Jasa</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
                     addProject(null, true, { type: 'project' });
                     setIsAddMenuOpen(false);
                   }}
@@ -3202,7 +3282,7 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
                   <Target size={15} color="var(--cms-accent)" />
-                  <span>Proyek Regular</span>
+                  <span>Proyek Baru</span>
                 </button>
 
                 <button
@@ -3230,7 +3310,7 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
                   <Sparkles size={15} color="#ec4899" />
-                  <span>Rencana Konten</span>
+                  <span>Konten Baru</span>
                 </button>
 
                 <button
@@ -3415,10 +3495,38 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
           .projects-actions-row {
             display: flex !important; flex-direction: row !important;
             align-items: center !important; justify-content: space-between !important;
-            gap: 8px !important; width: 100% !important; margin-bottom: 10px !important; flex-wrap: nowrap !important;
+            gap: 4px !important; width: 100% !important; max-width: 100% !important; margin-bottom: 10px !important; flex-wrap: nowrap !important;
           }
-          .projects-view-mode-group { display: flex !important; align-items: center !important; gap: 6px !important; flex-shrink: 0 !important; }
-          .projects-primary-actions-mobile { display: flex !important; align-items: center !important; justify-content: flex-end !important; gap: 6px !important; flex-shrink: 0 !important; }
+          .projects-view-mode-group { display: flex !important; align-items: center !important; gap: 4px !important; flex-shrink: 0 !important; }
+          .projects-view-mode-group > div > button {
+            height: 30px !important; padding: 0 9px !important; font-size: 11px !important; gap: 4px !important;
+          }
+          .projects-view-mode-group > button {
+            width: 30px !important; height: 30px !important; min-width: 30px !important; min-height: 30px !important;
+            max-width: 30px !important; max-height: 30px !important; padding: 0 !important; aspect-ratio: 1/1 !important; flex-shrink: 0 !important;
+          }
+          .projects-primary-actions-mobile { display: flex !important; align-items: center !important; justify-content: flex-end !important; gap: 4px !important; flex-shrink: 0 !important; }
+          .projects-primary-actions-mobile > button,
+          .projects-primary-actions-mobile > div > button {
+            width: 30px !important; height: 30px !important; min-width: 30px !important; min-height: 30px !important;
+            max-width: 30px !important; max-height: 30px !important; padding: 0 !important; aspect-ratio: 1/1 !important; flex-shrink: 0 !important;
+          }
+          .projects-primary-actions-mobile > button svg,
+          .projects-primary-actions-mobile > div > button svg {
+            width: 14px !important; height: 14px !important; min-width: 14px !important; min-height: 14px !important;
+          }
+          @media (max-width: 360px) {
+            .projects-actions-row { gap: 3px !important; }
+            .projects-view-mode-group { gap: 3px !important; }
+            .projects-view-mode-group > div > button { height: 28px !important; padding: 0 7px !important; font-size: 10.5px !important; }
+            .projects-view-mode-group > button,
+            .projects-primary-actions-mobile > button,
+            .projects-primary-actions-mobile > div > button {
+              width: 28px !important; height: 28px !important; min-width: 28px !important; min-height: 28px !important;
+              max-width: 28px !important; max-height: 28px !important;
+            }
+            .projects-primary-actions-mobile { gap: 3px !important; }
+          }
           .projects-search-filters-wrapper {
             display: flex !important; flex-direction: column !important;
             align-items: stretch !important; width: 100% !important; gap: 8px !important; margin-bottom: 10px !important;
@@ -3519,7 +3627,7 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
         <div className="projects-view-mode-group" style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           {isMobile ? (
             <div style={{ position: 'relative' }}>
-              <button 
+              <button
                 ref={viewModeButtonRef}
                 onClick={() => {
                   const rect = viewModeButtonRef.current?.getBoundingClientRect();
@@ -3539,13 +3647,14 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
                 style={{ display: 'flex', alignItems: 'center', gap: 5, height: 36, padding: '0 12px', borderRadius: 100, background: 'var(--cms-card-bg)', border: '1.5px solid var(--glass-border)', cursor: 'pointer', transition: '0.2s', color: 'var(--cms-text)', fontSize: 11.5, fontWeight: 900 }}
               >
                 {viewMode === 'board' ? <LayoutGrid size={14} color="var(--cms-accent)" /> :
-                 viewMode === 'table' ? <Table size={14} color="var(--cms-accent)" /> :
-                 viewMode === 'gallery' ? <ImageIcon size={14} color="var(--cms-accent)" /> :
-                 viewMode === 'list' ? <List size={14} color="var(--cms-accent)" /> :
-                 viewMode === 'schedule' ? <Calendar size={14} color="var(--cms-accent)" /> :
-                 viewMode === 'analytics' ? <PieChart size={14} color="var(--cms-accent)" /> :
-                 <Trash2 size={14} color="var(--cms-accent)" />}
-                <span style={{ textTransform: 'capitalize' }}>{viewMode === 'schedule' ? 'Jadwal' : viewMode}</span>
+                  viewMode === 'table' ? <Table size={14} color="var(--cms-accent)" /> :
+                    viewMode === 'gallery' ? <ImageIcon size={14} color="var(--cms-accent)" /> :
+                      viewMode === 'list' ? <List size={14} color="var(--cms-accent)" /> :
+                        viewMode === 'schedule' ? <Calendar size={14} color="var(--cms-accent)" /> :
+                          viewMode === 'timeline' ? <TrendingUp size={14} color="var(--cms-accent)" /> :
+                            viewMode === 'analytics' ? <PieChart size={14} color="var(--cms-accent)" /> :
+                              <Trash2 size={14} color="var(--cms-accent)" />}
+                <span style={{ textTransform: 'capitalize' }}>{viewMode === 'schedule' ? 'Jadwal' : viewMode === 'timeline' ? 'Timeline' : viewMode}</span>
                 <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
               </button>
 
@@ -3578,13 +3687,14 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
                     }}
                   >
                     {[
-                      { id: 'board',     icon: <LayoutGrid size={16} />, label: 'Board' },
-                      { id: 'table',     icon: <Table      size={16} />, label: 'Table' },
-                      { id: 'gallery',   icon: <ImageIcon  size={16} />, label: 'Gallery' },
-                      { id: 'list',      icon: <List       size={16} />, label: 'List' },
-                      { id: 'schedule',  icon: <Calendar   size={16} />, label: 'Jadwal' },
-                      { id: 'analytics', icon: <PieChart   size={16} />, label: 'Analytics' },
-                      { id: 'trash',     icon: <Trash2     size={16} />, label: 'Trash' }
+                      { id: 'board', icon: <LayoutGrid size={16} />, label: 'Board' },
+                      { id: 'table', icon: <Table size={16} />, label: 'Table' },
+                      { id: 'gallery', icon: <ImageIcon size={16} />, label: 'Galeri' },
+                      { id: 'list', icon: <List size={16} />, label: 'List' },
+                      { id: 'schedule', icon: <Calendar size={16} />, label: 'Jadwal' },
+                      { id: 'timeline', icon: <TrendingUp size={16} />, label: 'Timeline' },
+                      { id: 'analytics', icon: <PieChart size={16} />, label: 'Analisis' },
+                      { id: 'trash', icon: <Trash2 size={16} />, label: 'Sampah' }
                     ].map(v => (
                       <button
                         key={v.id}
@@ -3620,13 +3730,14 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
               boxShadow: 'var(--cms-shadow-sm)'
             }}>
               {[
-                { id: 'board',     icon: <LayoutGrid size={14} />, label: 'Board' },
-                { id: 'table',     icon: <Table      size={14} />, label: 'Table' },
-                { id: 'gallery',   icon: <ImageIcon  size={14} />, label: 'Gallery' },
-                { id: 'list',      icon: <List       size={14} />, label: 'List' },
-                { id: 'schedule',  icon: <Calendar   size={14} />, label: 'Jadwal' },
-                { id: 'analytics', icon: <PieChart   size={14} />, label: 'Analytics' },
-                { id: 'trash',     icon: <Trash2     size={14} />, label: 'Trash' }
+                { id: 'board', icon: <LayoutGrid size={14} />, label: 'Board' },
+                { id: 'table', icon: <Table size={14} />, label: 'Table' },
+                { id: 'gallery', icon: <ImageIcon size={14} />, label: 'Galeri' },
+                { id: 'list', icon: <List size={14} />, label: 'List' },
+                { id: 'schedule', icon: <Calendar size={14} />, label: 'Jadwal' },
+                { id: 'timeline', icon: <TrendingUp size={14} />, label: 'Timeline' },
+                { id: 'analytics', icon: <PieChart size={14} />, label: 'Analisis' },
+                { id: 'trash', icon: <Trash2 size={14} />, label: 'Sampah' }
               ].map(v => (
                 <button
                   key={v.id}
@@ -3635,22 +3746,21 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '5px',
+                    justifyContent: 'center',
+                    width: '30px',
                     height: '30px',
-                    padding: '0 10px',
-                    borderRadius: '100px',
+                    padding: 0,
+                    borderRadius: '50%',
                     border: 'none',
                     background: v.id === viewMode ? 'var(--cms-accent)' : 'transparent',
                     color: v.id === viewMode ? '#fff' : 'var(--cms-text-muted)',
-                    fontSize: '11px',
-                    fontWeight: '900',
                     cursor: 'pointer',
                     transition: 'all 0.2s ease',
-                    whiteSpace: 'nowrap'
+                    flexShrink: 0
                   }}
                   onMouseEnter={e => {
                     if (v.id !== viewMode) {
-                      e.currentTarget.style.background = 'rgba(var(--cms-accent-rgb), 0.06)';
+                      e.currentTarget.style.background = 'rgba(var(--cms-accent-rgb), 0.08)';
                       e.currentTarget.style.color = 'var(--cms-text)';
                     }
                   }}
@@ -3662,7 +3772,6 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
                   }}
                 >
                   {v.icon}
-                  <span className="view-mode-label" style={{ fontSize: '11px' }}>{v.label}</span>
                 </button>
               ))}
             </div>
@@ -3671,8 +3780,8 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
             onClick={() => { localStorage.setItem('porto_pm_view_mode', viewMode); notify(`📌 ${viewMode.toUpperCase()} set as default`); }}
             title="Set as Default View"
             style={{ width: 36, height: 36, border: '1.5px solid var(--glass-border)', borderRadius: '50%', background: 'var(--cms-card-bg)', color: 'var(--cms-text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: '0.2s', flexShrink: 0 }}
-            onMouseEnter={e=>e.currentTarget.style.color='var(--cms-text)'}
-            onMouseLeave={e=>e.currentTarget.style.color='var(--cms-text-muted)'}
+            onMouseEnter={e => e.currentTarget.style.color = 'var(--cms-text)'}
+            onMouseLeave={e => e.currentTarget.style.color = 'var(--cms-text-muted)'}
           >
             <Pin size={14} />
           </button>
@@ -3683,19 +3792,19 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
           <div className="projects-search-filters-wrapper" style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
             <div style={{ width: 200, position: 'relative' }}>
               <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--cms-text-muted)', opacity: 0.6, pointerEvents: 'none' }} />
-              <input 
-                placeholder="Cari project..." 
-                style={{ 
-                  paddingLeft: 30, paddingRight: searchQuery ? 26 : 10, borderRadius: 100, height: 32, 
-                  background: 'var(--cms-input-bg, rgba(255,255,255,0.05))', border: '1px solid var(--glass-border)', 
+              <input
+                placeholder="Cari project..."
+                style={{
+                  paddingLeft: 30, paddingRight: searchQuery ? 26 : 10, borderRadius: 100, height: 32,
+                  background: 'var(--cms-input-bg, rgba(255,255,255,0.05))', border: '1px solid var(--glass-border)',
                   width: '100%', color: 'var(--cms-text)', fontSize: 11.5, fontWeight: 600, outline: 'none',
                   boxSizing: 'border-box', transition: 'border-color 0.2s, box-shadow 0.2s'
-                }} 
-                value={searchQuery} 
-                onChange={e => setSearchQuery(e.target.value)} 
+                }}
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
               />
               {searchQuery && (
-                <button 
+                <button
                   onClick={() => setSearchQuery('')}
                   style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--cms-text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 2 }}
                 >
@@ -3703,13 +3812,14 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
                 </button>
               )}
             </div>
-            <div className="projects-filter-pills" style={{ 
-              display: 'inline-flex', alignItems: 'center', gap: 3, 
-              background: 'var(--cms-input-bg, rgba(255,255,255,0.04))', 
-              padding: '3px 4px', borderRadius: 100, border: '1px solid var(--glass-border)' 
+            <div className="projects-filter-pills" style={{
+              display: 'inline-flex', alignItems: 'center', gap: 3,
+              background: 'var(--cms-input-bg, rgba(255,255,255,0.04))',
+              padding: '3px 4px', borderRadius: 100, border: '1px solid var(--glass-border)'
             }}>
               {[
                 { id: 'all', label: 'Semua', icon: Layers },
+                ...(pendingAccCount > 0 ? [{ id: 'pending_acc', label: `ACC (${pendingAccCount})`, icon: Clock, isAcc: true }] : []),
                 { id: 'todo', label: 'Todo', icon: Clock },
                 { id: 'progress', label: 'Proses', icon: Zap },
                 { id: 'review', label: 'Review', icon: Eye },
@@ -3717,21 +3827,28 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
               ].map(tab => {
                 const IconComp = tab.icon;
                 const isActive = activeBoardFilter === tab.id;
+                const isAccTab = (tab as any).isAcc;
                 return (
-                  <button 
+                  <button
                     key={tab.id}
-                    onClick={() => setActiveBoardFilter(tab.id)} 
-                    style={{ 
-                      padding: '0 10px', height: 28, borderRadius: 100, border: isActive ? '1px solid var(--glass-border)' : '1px solid transparent', 
-                      background: isActive ? 'var(--cms-card-bg)' : 'transparent', 
-                      color: isActive ? 'var(--cms-text)' : 'var(--cms-text-muted)', 
-                      fontSize: 11, fontWeight: isActive ? 850 : 650, transition: 'all 0.15s ease', cursor: 'pointer', whiteSpace: 'nowrap',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4.5,
-                      boxShadow: isActive ? 'var(--cms-shadow-sm)' : 'none'
+                    onClick={() => setActiveBoardFilter(tab.id)}
+                    title={tab.label}
+                    aria-label={tab.label}
+                    style={{
+                      width: isAccTab && pendingAccCount > 0 ? 'auto' : 32,
+                      padding: isAccTab && pendingAccCount > 0 ? '0 8px' : 0,
+                      height: 28, borderRadius: 100, border: isActive ? '1px solid var(--glass-border)' : '1px solid transparent',
+                      background: isActive ? (isAccTab ? '#f59e0b' : 'var(--cms-card-bg)') : (isAccTab ? 'rgba(245, 158, 11, 0.15)' : 'transparent'),
+                      color: isActive ? (isAccTab ? '#fff' : 'var(--cms-text)') : (isAccTab ? '#b45309' : 'var(--cms-text-muted)'),
+                      fontSize: 11, fontWeight: isActive || isAccTab ? 850 : 650, transition: 'all 0.15s ease', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                      boxShadow: isActive ? 'var(--cms-shadow-sm)' : 'none', flexShrink: 0
                     }}
                   >
-                    <IconComp size={14} style={{ color: isActive ? 'var(--cms-accent)' : 'inherit', opacity: isActive ? 1 : 0.75, flexShrink: 0 }} />
-                    <span>{tab.label}</span>
+                    <IconComp size={14} style={{ color: isAccTab ? (isActive ? '#fff' : '#f59e0b') : (isActive ? 'var(--cms-accent)' : 'inherit'), opacity: isActive ? 1 : 0.75, flexShrink: 0 }} />
+                    {isAccTab && pendingAccCount > 0 && (
+                      <span style={{ fontSize: 10, fontWeight: 900 }}>{pendingAccCount}</span>
+                    )}
                   </button>
                 );
               })}
@@ -3744,15 +3861,15 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
 
 
           {/* 1. AI Planner Icon */}
-          <button 
+          <button
             type="button"
             onClick={() => setIsAiModalOpen(true)}
             title="Rancang Proyek dengan AI"
-            style={{ 
+            style={{
               height: 36, width: 36, minWidth: 36, minHeight: 36, maxWidth: 36, maxHeight: 36, padding: 0, boxSizing: 'border-box',
-              borderRadius: '50%', border: '1.5px solid var(--glass-border)', 
-              background: 'var(--cms-card-bg)', 
-              color: 'var(--cms-accent)', cursor: 'pointer', 
+              borderRadius: '50%', border: '1.5px solid var(--glass-border)',
+              background: 'var(--cms-card-bg)',
+              color: 'var(--cms-accent)', cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease', flexShrink: 0,
               boxShadow: 'var(--cms-shadow-sm)'
             }}
@@ -3761,15 +3878,15 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
           </button>
 
           {/* 2. Settings Icon */}
-          <button 
+          <button
             type="button"
             onClick={() => setIsScheduleSettingsOpen(true)}
             title="Pengaturan Kalender & Jadwal"
-            style={{ 
+            style={{
               height: 36, width: 36, minWidth: 36, minHeight: 36, maxWidth: 36, maxHeight: 36, padding: 0, boxSizing: 'border-box',
-              borderRadius: '50%', border: '1.5px solid var(--glass-border)', 
-              background: 'var(--cms-card-bg)', 
-              color: 'var(--cms-text-muted)', cursor: 'pointer', 
+              borderRadius: '50%', border: '1.5px solid var(--glass-border)',
+              background: 'var(--cms-card-bg)',
+              color: 'var(--cms-text-muted)', cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease', flexShrink: 0,
               boxShadow: 'var(--cms-shadow-sm)'
             }}
@@ -3778,40 +3895,74 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
           </button>
 
           {/* 3. Multi-Select Checkbox Icon */}
-          <button 
+          <button
             onClick={() => { setIsSelectionMode(!isSelectionMode); if (isSelectionMode) setSelectedIds([]); }}
             title={isSelectionMode ? "Batal Mode Pilih" : "Mode Pilih (Multi-Select)"}
             className="selection-mode-btn"
-            style={{ 
+            style={{
               height: 36, width: 36, minWidth: 36, minHeight: 36, maxWidth: 36, maxHeight: 36, aspectRatio: '1/1', padding: 0, boxSizing: 'border-box',
-              borderRadius: '50%', border: isSelectionMode ? '2px solid var(--cms-accent)' : '1.5px solid var(--glass-border)', 
-              background: isSelectionMode ? 'rgba(var(--cms-accent-rgb), 0.12)' : 'var(--cms-card-bg)', 
-              color: isSelectionMode ? 'var(--cms-accent)' : 'var(--cms-text-muted)', cursor: 'pointer', 
+              borderRadius: '50%', border: isSelectionMode ? '2px solid var(--cms-accent)' : '1.5px solid var(--glass-border)',
+              background: isSelectionMode ? 'rgba(var(--cms-accent-rgb), 0.12)' : 'var(--cms-card-bg)',
+              color: isSelectionMode ? 'var(--cms-accent)' : 'var(--cms-text-muted)', cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease', flexShrink: 0,
               boxShadow: 'var(--cms-shadow-sm)'
             }}
           >
-            <CheckSquare size={15} strokeWidth={isSelectionMode ? 2.8 : 2} /> 
+            <CheckSquare size={15} strokeWidth={isSelectionMode ? 2.8 : 2} />
+          </button>
+
+          {/* 3.5. Service / Custom Order (ACC) Circular Icon */}
+          <button
+            type="button"
+            onClick={() => setIsServiceOrderModalOpen(true)}
+            title="Antrian & Pesanan Baru (Sistem ACC)"
+            style={{
+              height: 36, width: 36, minWidth: 36, minHeight: 36, maxWidth: 36, maxHeight: 36, aspectRatio: '1/1', padding: 0, boxSizing: 'border-box',
+              borderRadius: '50%', border: '1.5px solid rgba(16,185,129,0.35)',
+              background: 'rgba(16,185,129,0.1)',
+              color: '#10b981', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease', flexShrink: 0,
+              boxShadow: 'var(--cms-shadow-sm)'
+            }}
+          >
+            <Sparkles size={15} />
+          </button>
+
+          {/* 3.6. Visual Design Proofing Launcher */}
+          <button
+            type="button"
+            onClick={() => handleOpenProofingManager()}
+            title="Kelola & Kirim Gambar Proofing ke Klien"
+            style={{
+              height: 36, width: 36, minWidth: 36, minHeight: 36, maxWidth: 36, maxHeight: 36, aspectRatio: '1/1', padding: 0, boxSizing: 'border-box',
+              borderRadius: '50%', border: '1.5px solid rgba(6,182,212,0.35)',
+              background: 'rgba(6,182,212,0.1)',
+              color: '#06b6d4', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease', flexShrink: 0,
+              boxShadow: 'var(--cms-shadow-sm)'
+            }}
+          >
+            <ShieldCheck size={15} />
           </button>
 
           {/* 4. Universal Plus Button with Popup Menu */}
           <div ref={addMenuMobileRef} style={{ position: 'relative' }}>
-            <button 
-              onClick={() => setIsAddMenuOpen(!isAddMenuOpen)} 
-              className="add-project-btn" 
+            <button
+              onClick={() => setIsAddMenuOpen(!isAddMenuOpen)}
+              className="add-project-btn"
               title="Tambah Proyek, Konten, atau Janji Temu"
-              style={{ 
+              style={{
                 height: 36, width: 36, minWidth: 36, minHeight: 36, maxWidth: 36, maxHeight: 36, padding: 0, boxSizing: 'border-box',
-                borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', 
-                background: 'var(--cms-accent)', color: '#fff', border: 'none', cursor: 'pointer', 
-                boxShadow: '0 4px 14px rgba(var(--cms-accent-rgb), 0.3)', transition: 'all 0.2s ease', flexShrink: 0 
+                borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: 'var(--cms-accent)', color: '#fff', border: 'none', cursor: 'pointer',
+                boxShadow: '0 4px 14px rgba(var(--cms-accent-rgb), 0.3)', transition: 'all 0.2s ease', flexShrink: 0
               }}
             >
-              <Plus size={20} strokeWidth={2.8} style={{ width: 20, height: 20, minWidth: 20, minHeight: 20, display: 'block', flexShrink: 0 }} /> 
+              <Plus size={20} strokeWidth={2.8} style={{ width: 20, height: 20, minWidth: 20, minHeight: 20, display: 'block', flexShrink: 0 }} />
             </button>
 
             {isAddMenuOpen && (
-              <div 
+              <div
                 onPointerDown={(e) => e.stopPropagation()}
                 onMouseDown={(e) => e.stopPropagation()}
                 onTouchStart={(e) => e.stopPropagation()}
@@ -3820,7 +3971,7 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
                   top: 'calc(100% + 8px)',
                   right: 0,
                   zIndex: 9999,
-                  minWidth: 180,
+                  minWidth: 200,
                   background: 'var(--cms-card-bg)',
                   backdropFilter: 'blur(20px)',
                   WebkitBackdropFilter: 'blur(20px)',
@@ -3834,6 +3985,36 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
                   animation: 'pmModalIn 0.2s ease'
                 }}
               >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsServiceOrderModalOpen(true);
+                    setIsAddMenuOpen(false);
+                  }}
+                  style={{
+                    padding: '9px 12px',
+                    borderRadius: 10,
+                    border: 'none',
+                    background: 'rgba(16,185,129,0.12)',
+                    color: '#10b981',
+                    fontSize: 12.5,
+                    fontWeight: 850,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    transition: 'all 0.15s ease',
+                    textAlign: 'left'
+                  }}
+                >
+                  <Sparkles size={15} color="#10b981" />
+                  <div>
+                    <div>+ Pesanan Jasa / Custom</div>
+                    <div style={{ fontSize: 10, color: 'var(--cms-text-muted)', fontWeight: 500 }}>Form brief, Doc/WA & ACC</div>
+                  </div>
+                </button>
+
+                <div style={{ height: 1, background: 'var(--glass-border)', margin: '2px 0' }} />
                 <button
                   type="button"
                   onClick={() => {
@@ -3911,6 +4092,37 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
                   <Users size={15} color="#3b82f6" />
                   <span>Janji Temu</span>
                 </button>
+
+                <div style={{ height: 1, background: 'var(--glass-border)', margin: '2px 0' }} />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAddMenuOpen(false);
+                    if (projects && projects.length > 0) {
+                      handleOpenProofingManager(projects[0]);
+                    } else {
+                      window.open('/proofing', '_blank');
+                    }
+                  }}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: 10,
+                    border: 'none',
+                    background: 'rgba(6,182,212,0.1)',
+                    color: '#06b6d4',
+                    fontSize: 12,
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    transition: 'all 0.15s ease',
+                    textAlign: 'left'
+                  }}
+                >
+                  <ShieldCheck size={15} color="#06b6d4" />
+                  <span>Pratinjau Proofing Desain</span>
+                </button>
               </div>
             )}
           </div>
@@ -3922,18 +4134,18 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
         <div className="projects-search-filters-wrapper" style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 6, width: '100%', marginBottom: 8, alignItems: isTablet ? 'center' : 'stretch' }}>
           <div style={{ flex: isTablet ? 1 : 'none', width: isTablet ? 'auto' : '100%', position: 'relative' }}>
             <Search size={13} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--cms-text-muted)', opacity: 0.6, pointerEvents: 'none' }} />
-            <input 
-              placeholder="Cari project..." 
-              style={{ 
-                paddingLeft: 32, paddingRight: searchQuery ? 28 : 12, borderRadius: 100, height: 32, 
-                background: 'var(--cms-input-bg, rgba(255,255,255,0.05))', border: '1px solid var(--glass-border)', 
-                width: '100%', color: 'var(--cms-text)', fontSize: 11.5, fontWeight: 600, outline: 'none', boxSizing: 'border-box' 
-              }} 
-              value={searchQuery} 
-              onChange={e => setSearchQuery(e.target.value)} 
+            <input
+              placeholder="Cari project..."
+              style={{
+                paddingLeft: 32, paddingRight: searchQuery ? 28 : 12, borderRadius: 100, height: 32,
+                background: 'var(--cms-input-bg, rgba(255,255,255,0.05))', border: '1px solid var(--glass-border)',
+                width: '100%', color: 'var(--cms-text)', fontSize: 11.5, fontWeight: 600, outline: 'none', boxSizing: 'border-box'
+              }}
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
             />
             {searchQuery && (
-              <button 
+              <button
                 onClick={() => setSearchQuery('')}
                 style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--cms-text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 2 }}
               >
@@ -3941,14 +4153,15 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
               </button>
             )}
           </div>
-          <div className="projects-filter-pills" style={{ 
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, 
-            background: 'var(--cms-input-bg, rgba(255,255,255,0.04))', 
+          <div className="projects-filter-pills" style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+            background: 'var(--cms-input-bg, rgba(255,255,255,0.04))',
             padding: '4px 6px', borderRadius: 100, border: '1px solid var(--glass-border)',
             overflowX: 'auto', flexShrink: 0, scrollbarWidth: 'none', width: '100%', boxSizing: 'border-box'
           }}>
             {[
               { id: 'all', label: 'Semua Status', icon: Layers },
+              ...(pendingAccCount > 0 ? [{ id: 'pending_acc', label: `ACC (${pendingAccCount})`, icon: Clock, isAcc: true }] : []),
               { id: 'todo', label: 'Todo', icon: Clock },
               { id: 'progress', label: 'Proses', icon: Zap },
               { id: 'review', label: 'Review', icon: Eye },
@@ -3956,23 +4169,24 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
             ].map(tab => {
               const IconComp = tab.icon;
               const isActive = activeBoardFilter === tab.id;
+              const isAccTab = (tab as any).isAcc;
               return (
-                <button 
+                <button
                   key={tab.id}
                   type="button"
-                  onClick={() => setActiveBoardFilter(tab.id)} 
+                  onClick={() => setActiveBoardFilter(tab.id)}
                   title={tab.label}
-                  style={{ 
-                    flex: 1, height: 34, borderRadius: 100, border: isActive ? '1px solid var(--glass-border)' : '1px solid transparent', 
-                    background: isActive ? 'var(--cms-card-bg)' : 'transparent', 
-                    color: isActive ? 'var(--cms-accent)' : 'var(--cms-text-muted)', 
+                  style={{
+                    flex: 1, height: 34, borderRadius: 100, border: isActive ? '1px solid var(--glass-border)' : '1px solid transparent',
+                    background: isActive ? (isAccTab ? '#f59e0b' : 'var(--cms-card-bg)') : (isAccTab ? 'rgba(245, 158, 11, 0.15)' : 'transparent'),
+                    color: isActive ? (isAccTab ? '#fff' : 'var(--cms-accent)') : (isAccTab ? '#b45309' : 'var(--cms-text-muted)'),
                     transition: 'all 0.15s ease', cursor: 'pointer',
                     display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                     boxShadow: isActive ? 'var(--cms-shadow-sm)' : 'none',
                     padding: 0
                   }}
                 >
-                  <IconComp size={16} style={{ color: isActive ? 'var(--cms-accent)' : 'inherit', opacity: isActive ? 1 : 0.65, strokeWidth: isActive ? 2.6 : 2, flexShrink: 0 }} />
+                  <IconComp size={16} style={{ color: isAccTab ? (isActive ? '#fff' : '#f59e0b') : (isActive ? 'var(--cms-accent)' : 'inherit'), opacity: isActive ? 1 : 0.65, strokeWidth: isActive ? 2.6 : 2, flexShrink: 0 }} />
                 </button>
               );
             })}
@@ -3982,10 +4196,24 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}>
 
+        {/* ── Smart Reminders & Action Bar for Service Orders, ACC & Deadlines ── */}
+        <ProjectRemindersBar
+          projects={projects}
+          onProjectUpdated={() => {
+            storage.getItem('porto_projects', []).then(saved => {
+              if (Array.isArray(saved)) setProjects(saved);
+            });
+          }}
+          notify={notify}
+          confirm={confirmFn}
+          onOpenServiceOrderModal={() => setIsServiceOrderModalOpen(true)}
+          onSelectProject={proj => setSelectedProject(proj)}
+        />
+
         <div className="projects-board-wrapper" style={{ flex: 1, display: 'flex', gap: 16, margin: 0, minHeight: 0, width: '100%', height: '100%' }}>
           <div className="projects-scroll-area" style={{ flex: 1, height: '100%', overflow: 'auto', padding: isMobile ? '4px 2px calc(95px + env(safe-area-inset-bottom, 24px)) 2px' : '4px 2px 2px 2px', width: '100%', display: 'flex', flexDirection: 'column' }}>
             {viewMode === 'board' ? (
-              <BoardView projects={filteredProjects} draggingId={draggingId} dragOverCol={dragOverCol} onSelect={setSelectedProject} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop} addProject={addProject} isSelectionMode={isSelectionMode} selectedIds={selectedIds} toggleSelection={toggleSelection} updateProject={updateProject} removeProject={removeProject} />
+              <BoardView projects={filteredProjects} draggingId={draggingId} dragOverCol={dragOverCol} onSelect={setSelectedProject} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop} addProject={addProject} isSelectionMode={isSelectionMode} selectedIds={selectedIds} toggleSelection={toggleSelection} updateProject={updateProject} removeProject={removeProject} handleSendAssetDropLinkForProject={handleSendAssetDropLinkForProject} handleCreateInvoiceForProject={handleCreateInvoiceForProject} />
             ) : viewMode === 'table' ? (
               <TableView projects={filteredProjects} onSelect={setSelectedProject} updateProject={updateProject} toggleSelection={toggleSelection} selectedIds={selectedIds} bulkDelete={bulkDelete} bulkStatusUpdate={bulkStatusUpdate} isSelectionMode={isSelectionMode} setIsSelectionMode={setIsSelectionMode} />
             ) : viewMode === 'gallery' ? (
@@ -3994,16 +4222,18 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
               <ListView projects={filteredProjects} onSelect={setSelectedProject} isSelectionMode={isSelectionMode} selectedIds={selectedIds} toggleSelection={toggleSelection} updateProject={updateProject} addProject={addProject} removeProject={removeProject} />
             ) : viewMode === 'schedule' ? (
               <ScheduleAndBookingView projects={projects} onSelect={setSelectedProject} notify={notify} addProject={addProject} saveProjects={saveProjects} />
+            ) : viewMode === 'timeline' ? (
+              <TimelineGanttView projects={filteredProjects} onSelect={setSelectedProject} updateProject={updateProject} />
             ) : viewMode === 'notes' ? (
               <StickyNotesBoard stickyNotes={stickyNotes} saveNotes={saveNotes} />
             ) : viewMode === 'trash' ? (
-              <TrashView 
-                projects={filteredProjects} 
-                restoreProject={restoreProject} 
-                permanentDeleteProject={permanentDeleteProject} 
-                bulkDelete={bulkDelete} 
-                toggleSelection={toggleSelection} 
-                selectedIds={selectedIds} 
+              <TrashView
+                projects={filteredProjects}
+                restoreProject={restoreProject}
+                permanentDeleteProject={permanentDeleteProject}
+                bulkDelete={bulkDelete}
+                toggleSelection={toggleSelection}
+                selectedIds={selectedIds}
               />
             ) : (
               <AnalyticsView projects={filteredProjects} onSelect={setSelectedProject} updateProject={updateProject} />
@@ -4043,7 +4273,7 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
       )}
 
       {selectedProject && (
-        <ProjectPillModal 
+        <ProjectPillModal
           project={selectedProject} onClose={() => setSelectedProject(null)}
           updateProject={updateProject} removeProject={removeProject}
           activeTab={modalTab} setActiveTab={setModalTab}
@@ -4051,6 +4281,29 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
           handleCreateInvoiceForProject={handleCreateInvoiceForProject}
           notify={notify} projects={projects}
           addProject={addProject} setSelectedProject={setSelectedProject}
+        />
+      )}
+
+      {/* ── CLIENT PROOFING & WATERMARK MODAL (GLOBAL LAUNCHER) ── */}
+      {isGlobalProofingOpen && proofingTargetProject && (
+        <ProjectProofingModal
+          isOpen={isGlobalProofingOpen}
+          onClose={() => setIsGlobalProofingOpen(false)}
+          project={proofingTargetProject}
+          updateProject={(id, data) => {
+            updateProject(id, data);
+            setProofingTargetProject((prev: any) => prev ? { ...prev, ...data } : null);
+          }}
+          notify={notify}
+        />
+      )}
+
+      {/* ── SERVICE ORDER (JASA & CUSTOM) MODAL ── */}
+      {isServiceOrderModalOpen && (
+        <ServiceOrderModal
+          isOpen={isServiceOrderModalOpen}
+          onClose={() => setIsServiceOrderModalOpen(false)}
+          notify={notify}
         />
       )}
 
@@ -4066,13 +4319,15 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
       {/* ── AI PROJECT PLANNER MODAL ── */}
       {/* ── REDESIGNED UNIFIED AI & TEMPLATE PLANNER MODAL ── */}
       {isAiModalOpen && createPortal(
-        <div 
+        <div
           onClick={() => !isAiGenerating && setIsAiModalOpen(false)}
           style={{
             position: 'fixed',
             inset: 0,
             zIndex: 2147483640,
-            background: isMobile ? 'var(--cms-panel-bg, var(--cms-bg))' : 'rgba(0, 0, 0, 0.75)',
+            background: isMobile ? 'var(--cms-panel-bg, var(--cms-bg))' : 'rgba(0, 0, 0, 0.8)',
+            backdropFilter: 'none',
+            WebkitBackdropFilter: 'none',
             display: 'flex',
             alignItems: isMobile ? 'stretch' : 'center',
             justifyContent: 'center',
@@ -4081,7 +4336,7 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
             animation: 'cmsFadeIn 0.2s ease both'
           }}
         >
-          <div 
+          <div
             onClick={e => e.stopPropagation()}
             style={{
               width: isMobile ? '100vw' : '900px',
@@ -4129,8 +4384,8 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
                     {plannerMode === 'ai' ? 'AI Smart Project & Content Planner' : 'Template Library Instan (100+ Template)'}
                   </div>
                   <div style={{ fontSize: 10, color: 'var(--cms-text-muted)', marginTop: 1 }}>
-                    {plannerMode === 'ai' 
-                      ? 'Kombinasi AI Gemini online & 100+ Preset lokal 0ms offline' 
+                    {plannerMode === 'ai'
+                      ? 'Kombinasi AI Gemini online & 100+ Preset lokal 0ms offline'
                       : 'Generate struktur proyek & naskah konten lengkap tanpa kuota'}
                   </div>
                 </div>
@@ -4421,8 +4676,8 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
                           } else if (aiCategoryFilter !== 'all') {
                             matchesCategory = tmpl.category === aiCategoryFilter;
                           }
-                          const matchesSearch = !aiSearchQuery.trim() || 
-                            tmpl.label.toLowerCase().includes(aiSearchQuery.toLowerCase()) || 
+                          const matchesSearch = !aiSearchQuery.trim() ||
+                            tmpl.label.toLowerCase().includes(aiSearchQuery.toLowerCase()) ||
                             tmpl.title.toLowerCase().includes(aiSearchQuery.toLowerCase()) ||
                             (tmpl.tags || []).some(t => t.toLowerCase().includes(aiSearchQuery.toLowerCase()));
                           return matchesCategory && matchesSearch;
@@ -4704,7 +4959,9 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
             position: 'fixed',
             inset: 0,
             zIndex: 2147483645,
-            background: 'rgba(0, 0, 0, 0.75)',
+            background: 'rgba(0, 0, 0, 0.8)',
+            backdropFilter: 'none',
+            WebkitBackdropFilter: 'none',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -4915,7 +5172,7 @@ const ProjectsModule: React.FC<ProjectsModuleProps> = ({ notify, confirm: confir
 // VIEWS
 // ---------------------------------------------------------
 
-const BoardView = ({ projects, draggingId, dragOverCol, onSelect, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop, addProject, isSelectionMode, selectedIds, toggleSelection, updateProject, removeProject }) => {
+const BoardView = ({ projects, draggingId, dragOverCol, onSelect, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop, addProject, isSelectionMode, selectedIds, toggleSelection, updateProject, removeProject, handleSendAssetDropLinkForProject, handleCreateInvoiceForProject }: any) => {
   const isDraggingRef = useRef(false);
   const [statusMenuProjId, setStatusMenuProjId] = useState(null);
   const { bindContextMenu } = useContextMenu();
@@ -4989,31 +5246,31 @@ const BoardView = ({ projects, draggingId, dragOverCol, onSelect, onDragStart, o
       {STATUSES.map(col => {
         const colProjects = projects.filter(p => p.status === col.id);
         const isColumnActive = dragOverCol === col.id;
-        
+
         return (
-          <div 
+          <div
             key={col.id}
             className="pm-board-col"
             onDragOver={(e) => {
               e.preventDefault();
               e.dataTransfer.dropEffect = 'move';
               onDragOver(e, col.id);
-            }} 
+            }}
             onDragEnter={(e) => {
               e.preventDefault();
               onDragOver(e, col.id);
             }}
-            onDragLeave={(e) => onDragLeave(e, col.id)} 
+            onDragLeave={(e) => onDragLeave(e, col.id)}
             onDrop={(e) => {
               e.preventDefault();
               e.stopPropagation();
               onDrop(e, col.id);
             }}
-            style={{ 
-              flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', 
-              background: isColumnActive ? `${col.color}12` : 'var(--cms-input-bg)', 
+            style={{
+              flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column',
+              background: isColumnActive ? `${col.color}12` : 'var(--cms-input-bg)',
               borderRadius: 22, padding: '16px 14px 16px 14px',
-              border: isColumnActive ? `2px dashed ${col.color}` : `1.5px solid ${col.color}28`, 
+              border: isColumnActive ? `2px dashed ${col.color}` : `1.5px solid ${col.color}28`,
               borderTop: `3.5px solid ${col.color}`,
               transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
               height: '100%',
@@ -5050,7 +5307,7 @@ const BoardView = ({ projects, draggingId, dragOverCol, onSelect, onDragStart, o
             </div>
 
             {/* Column Content */}
-            <div 
+            <div
               onDragOver={(e) => {
                 e.preventDefault();
                 e.dataTransfer.dropEffect = 'move';
@@ -5068,16 +5325,16 @@ const BoardView = ({ projects, draggingId, dragOverCol, onSelect, onDragStart, o
                 const isStatusMenuOpen = statusMenuProjId === proj.id;
 
                 return (
-                  <div 
-                    key={proj.id} 
-                    draggable={!isSelectionMode} 
-                    onDragStart={(e) => handleCardDragStart(e, proj.id)} 
-                    onDragEnd={handleCardDragEnd} 
-                    onClick={() => handleCardClick(proj, isSelected)} 
+                  <div
+                    key={proj.id}
+                    draggable={!isSelectionMode}
+                    onDragStart={(e) => handleCardDragStart(e, proj.id)}
+                    onDragEnd={handleCardDragEnd}
+                    onClick={() => handleCardClick(proj, isSelected)}
                     {...bindContextMenu(() => getProjectMenu(proj))}
-                    style={{ 
+                    style={{
                       position: 'relative',
-                      background: 'var(--cms-card-bg)', borderRadius: 16, padding: '14px 14px 14px 14px', 
+                      background: 'var(--cms-card-bg)', borderRadius: 16, padding: '14px 14px 14px 14px',
                       cursor: isSelectionMode ? 'pointer' : 'grab', display: 'flex', flexDirection: 'column', gap: 10,
                       border: draggingId === proj.id ? `3px solid ${col.color}` : isSelected ? '2px solid var(--cms-accent)' : '1.5px solid var(--glass-border)',
                       boxShadow: draggingId === proj.id ? 'none !important' : isSelected ? '0 12px 30px rgba(var(--cms-accent-rgb), 0.15)' : '0 4px 16px rgba(0,0,0,0.04)',
@@ -5089,17 +5346,17 @@ const BoardView = ({ projects, draggingId, dragOverCol, onSelect, onDragStart, o
                       zIndex: isStatusMenuOpen ? 50 : 1,
                       boxSizing: 'border-box'
                     }}
-                    onMouseEnter={e => { 
+                    onMouseEnter={e => {
                       if (draggingId || isSelected) return;
-                      e.currentTarget.style.transform = 'translateY(-2px)'; 
-                      e.currentTarget.style.boxShadow = '0 10px 24px rgba(0,0,0,0.07)'; 
-                      e.currentTarget.style.borderColor = col.color; 
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                      e.currentTarget.style.boxShadow = '0 10px 24px rgba(0,0,0,0.07)';
+                      e.currentTarget.style.borderColor = col.color;
                     }}
-                    onMouseLeave={e => { 
+                    onMouseLeave={e => {
                       if (draggingId || isSelected) return;
-                      e.currentTarget.style.transform = 'none'; 
-                      e.currentTarget.style.boxShadow = '0 6px 20px rgba(0,0,0,0.03)'; 
-                      e.currentTarget.style.borderColor = 'var(--glass-border)'; 
+                      e.currentTarget.style.transform = 'none';
+                      e.currentTarget.style.boxShadow = '0 6px 20px rgba(0,0,0,0.03)';
+                      e.currentTarget.style.borderColor = 'var(--glass-border)';
                     }}
                   >
                     {isSelectionMode && (
@@ -5139,6 +5396,70 @@ const BoardView = ({ projects, draggingId, dragOverCol, onSelect, onDragStart, o
                         >
                           <div style={{ width: 6, height: 6, borderRadius: '50%', background: col.color }} />
                           <span>{col.label}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSendAssetDropLinkForProject(proj);
+                          }}
+                          title="Kirim Magic Link Asset Drop (/drop) via WhatsApp"
+                          style={{
+                            width: 22,
+                            height: 22,
+                            borderRadius: 6,
+                            border: 'none',
+                            background: 'transparent',
+                            color: 'var(--cms-text-muted)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.15s ease'
+                          }}
+                          onMouseEnter={e => {
+                            e.currentTarget.style.color = '#0ea5e9';
+                            e.currentTarget.style.background = 'rgba(14, 165, 233, 0.15)';
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.color = 'var(--cms-text-muted)';
+                            e.currentTarget.style.background = 'transparent';
+                          }}
+                        >
+                          <Upload size={12} />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCreateInvoiceForProject(proj);
+                          }}
+                          title="Buat Invoice DP / Pelunasan"
+                          style={{
+                            width: 22,
+                            height: 22,
+                            borderRadius: 6,
+                            border: 'none',
+                            background: 'transparent',
+                            color: 'var(--cms-text-muted)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.15s ease'
+                          }}
+                          onMouseEnter={e => {
+                            e.currentTarget.style.color = '#8b5cf6';
+                            e.currentTarget.style.background = 'rgba(139, 92, 246, 0.15)';
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.color = 'var(--cms-text-muted)';
+                            e.currentTarget.style.background = 'transparent';
+                          }}
+                        >
+                          <Receipt size={12} />
                         </button>
 
                         <button
@@ -5244,6 +5565,39 @@ const BoardView = ({ projects, draggingId, dragOverCol, onSelect, onDragStart, o
                       </h4>
                     </div>
 
+                    {/* Client & Service/Brief Badges */}
+                    {(proj.client || proj.googleDocUrl || proj.briefMode || proj.clientType) && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', marginTop: 4 }}>
+                        {proj.client && (
+                          <span style={{ fontSize: 10.5, color: 'var(--cms-text-muted)', fontWeight: 700 }}>
+                            👤 {proj.client}
+                          </span>
+                        )}
+                        {proj.clientType === 'reseller' && (
+                          <span style={{ fontSize: 9, fontWeight: 900, padding: '1px 5px', borderRadius: 4, background: '#f3e8ff', color: '#7e22ce' }}>
+                            🤝 RESELLER
+                          </span>
+                        )}
+                        {proj.googleDocUrl && (
+                          <a
+                            href={normalizeGoogleDocUrl(proj.googleDocUrl)}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={e => e.stopPropagation()}
+                            title="Buka Dokumen Google Doc"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 9.5, fontWeight: 800, padding: '1px 6px', borderRadius: 4, background: 'rgba(59,130,246,0.12)', color: '#3b82f6', textDecoration: 'none' }}
+                          >
+                            <FileText size={10} /> Doc
+                          </a>
+                        )}
+                        {proj.briefMode === 'whatsapp' && (
+                          <span title="Opsi penjelasan brief via WhatsApp" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 9.5, fontWeight: 800, padding: '1px 6px', borderRadius: 4, background: 'rgba(34,197,94,0.12)', color: '#15803d' }}>
+                            <MessageCircle size={10} /> WA Brief
+                          </span>
+                        )}
+                      </div>
+                    )}
+
                     {/* Card Footer: Progress Ring + Countdown + Team */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, paddingTop: 10, borderTop: '1px dashed var(--glass-border)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 7, flex: 1, minWidth: 0, overflow: 'hidden' }}>
@@ -5290,11 +5644,11 @@ const BoardView = ({ projects, draggingId, dragOverCol, onSelect, onDragStart, o
               {colProjects.length === 0 && (
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '36px 16px', color: 'var(--cms-text-muted)', minHeight: 120 }}>
                   <div style={{ width: 44, height: 44, borderRadius: 14, background: `${col.color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: col.color, marginBottom: 10 }}>
-                    {col.id === 'todo' ? <ListTodo size={22} strokeWidth={2.2} /> : 
-                     col.id === 'progress' ? <Zap size={22} strokeWidth={2.2} /> : 
-                     col.id === 'review' ? <Eye size={22} strokeWidth={2.2} /> : 
-                     col.id === 'hold' ? <Clock size={22} strokeWidth={2.2} /> : 
-                     <CheckCircle2 size={22} strokeWidth={2.2} />}
+                    {col.id === 'todo' ? <ListTodo size={22} strokeWidth={2.2} /> :
+                      col.id === 'progress' ? <Zap size={22} strokeWidth={2.2} /> :
+                        col.id === 'review' ? <Eye size={22} strokeWidth={2.2} /> :
+                          col.id === 'hold' ? <Clock size={22} strokeWidth={2.2} /> :
+                            <CheckCircle2 size={22} strokeWidth={2.2} />}
                   </div>
                   <div style={{ fontSize: 11, fontWeight: 800, color: col.color, marginBottom: 3 }}>
                     {col.id === 'done' ? 'All complete!' : `No ${col.label}`}
@@ -5355,30 +5709,30 @@ const GalleryView = ({ projects, onSelect, isSelectionMode, selectedIds, toggleS
       {projects.map(proj => {
         const isSelected = selectedIds && selectedIds.includes(proj.id);
         return (
-          <div 
-            key={proj.id} 
-            onClick={() => isSelectionMode ? toggleSelection(proj.id, !isSelected) : onSelect(proj)} 
+          <div
+            key={proj.id}
+            onClick={() => isSelectionMode ? toggleSelection(proj.id, !isSelected) : onSelect(proj)}
             {...bindContextMenu(() => getProjectMenu(proj))}
             style={{
               position: 'relative',
-              background: 'var(--cms-card-bg)', borderRadius: 20, 
+              background: 'var(--cms-card-bg)', borderRadius: 20,
               border: isSelected ? '2.5px solid var(--cms-accent)' : '1.5px solid var(--glass-border)',
               boxShadow: isSelected ? '0 16px 40px rgba(var(--cms-accent-rgb), 0.15)' : '0 10px 30px rgba(0,0,0,0.05)',
               overflow: 'hidden', cursor: 'pointer', transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
               display: 'flex', flexDirection: 'column'
             }}
-            onMouseEnter={(e) => { 
+            onMouseEnter={(e) => {
               if (!isSelected) {
-                e.currentTarget.style.transform = 'translateY(-6px)'; 
-                e.currentTarget.style.boxShadow = '0 20px 40px rgba(0,0,0,0.12)'; 
-                e.currentTarget.style.borderColor = 'var(--cms-accent)'; 
+                e.currentTarget.style.transform = 'translateY(-6px)';
+                e.currentTarget.style.boxShadow = '0 20px 40px rgba(0,0,0,0.12)';
+                e.currentTarget.style.borderColor = 'var(--cms-accent)';
               }
             }}
-            onMouseLeave={(e) => { 
+            onMouseLeave={(e) => {
               if (!isSelected) {
-                e.currentTarget.style.transform = 'translateY(0)'; 
-                e.currentTarget.style.boxShadow = '0 10px 30px rgba(0,0,0,0.05)'; 
-                e.currentTarget.style.borderColor = 'var(--glass-border)'; 
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 10px 30px rgba(0,0,0,0.05)';
+                e.currentTarget.style.borderColor = 'var(--glass-border)';
               }
             }}
           >
@@ -5404,17 +5758,17 @@ const GalleryView = ({ projects, onSelect, isSelectionMode, selectedIds, toggleS
                 <div style={{ position: 'absolute', top: 20, right: 20, background: '#ef4444', color: '#fff', padding: '8px 16px', borderRadius: 100, fontSize: 12, fontWeight: 900, letterSpacing: '0.05em', boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)' }}>URGENT</div>
               )}
             </div>
-            
+
             <div style={{ padding: '56px 32px 32px', flex: 1, display: 'flex', flexDirection: 'column' }}>
               <h4 style={{ fontSize: 20, fontWeight: 900, color: 'var(--cms-text)', margin: '0 0 16px 0', lineHeight: 1.3 }}>{getSafeString(proj.title) || 'Untitled'}</h4>
               <p style={{ fontSize: 15, color: 'var(--cms-text-muted)', lineHeight: 1.6, margin: '0 0 32px 0', flex: 1, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                 {getSafeString(proj.description) || 'No description provided.'}
               </p>
-              
+
               <div style={{ borderTop: '1.5px solid var(--glass-border)', paddingTop: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center' }}>
                   {getSafeArray(proj.team).slice(0, 3).map((tm, idx) => (
-                    <div key={idx} style={{ width: 36, height: 36, borderRadius: '50%', background: tm?.color || 'var(--cms-accent, #8b5cf6)', border: '2.5px solid var(--cms-card-bg)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 900, marginLeft: idx > 0 ? -12 : 0, zIndex: 3-idx }}>
+                    <div key={idx} style={{ width: 36, height: 36, borderRadius: '50%', background: tm?.color || 'var(--cms-accent, #8b5cf6)', border: '2.5px solid var(--cms-card-bg)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 900, marginLeft: idx > 0 ? -12 : 0, zIndex: 3 - idx }}>
                       {tm?.name ? tm.name.charAt(0).toUpperCase() : '?'}
                     </div>
                   ))}
@@ -5444,47 +5798,47 @@ const ListView = ({ projects, onSelect, isSelectionMode, selectedIds, toggleSele
           return (
             <tr key={proj.id} onClick={() => isSelectionMode ? toggleSelection(proj.id, !isSelected) : onSelect(proj)} style={{ cursor: 'pointer' }}>
               <td style={{ padding: 0 }}>
-                 <div className="projects-list-card" style={{ 
-                   display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 60px', 
-                   alignItems: 'center', padding: '24px 40px', 
-                   background: 'var(--cms-card-bg)', borderRadius: 24, 
-                   border: isSelected ? '2px solid var(--cms-accent)' : '1.5px solid var(--glass-border)', 
-                   boxShadow: isSelected ? '0 12px 30px rgba(var(--cms-accent-rgb), 0.12)' : 'none',
-                   transition: '0.3s' 
-                 }} 
-                 onMouseEnter={e=>{ if(!isSelected) { e.currentTarget.style.transform='translateX(8px)'; e.currentTarget.style.borderColor='var(--cms-accent)'; } }} 
-                 onMouseLeave={e=>{ if(!isSelected) { e.currentTarget.style.transform='none'; e.currentTarget.style.borderColor='var(--glass-border)'; } }}>
-                    <div className="list-card-col" style={{ display: 'flex', alignItems: 'center', gap: 24, fontWeight: 900, color: 'var(--cms-text)', fontSize: 17 }}>
-                      <div style={{ width: 44, height: 44, borderRadius: 14, background: 'var(--cms-input-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--cms-accent)', flexShrink: 0 }}>
-                        {renderProjectIcon(proj.icon, 20)}
+                <div className="projects-list-card" style={{
+                  display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 60px',
+                  alignItems: 'center', padding: '24px 40px',
+                  background: 'var(--cms-card-bg)', borderRadius: 24,
+                  border: isSelected ? '2px solid var(--cms-accent)' : '1.5px solid var(--glass-border)',
+                  boxShadow: isSelected ? '0 12px 30px rgba(var(--cms-accent-rgb), 0.12)' : 'none',
+                  transition: '0.3s'
+                }}
+                  onMouseEnter={e => { if (!isSelected) { e.currentTarget.style.transform = 'translateX(8px)'; e.currentTarget.style.borderColor = 'var(--cms-accent)'; } }}
+                  onMouseLeave={e => { if (!isSelected) { e.currentTarget.style.transform = 'none'; e.currentTarget.style.borderColor = 'var(--glass-border)'; } }}>
+                  <div className="list-card-col" style={{ display: 'flex', alignItems: 'center', gap: 24, fontWeight: 900, color: 'var(--cms-text)', fontSize: 17 }}>
+                    <div style={{ width: 44, height: 44, borderRadius: 14, background: 'var(--cms-input-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--cms-accent)', flexShrink: 0 }}>
+                      {renderProjectIcon(proj.icon, 20)}
+                    </div>
+                    <span>{getSafeString(proj.title) || 'Untitled'}</span>
+                  </div>
+                  <div className="list-card-col">
+                    <span style={{ background: st.bg, color: st.color, padding: '8px 16px', borderRadius: 100, fontSize: 13, fontWeight: 900 }}>{st.label}</span>
+                  </div>
+                  <div className="list-card-col" style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                    <div style={{ flex: 1, height: 8, background: 'var(--cms-input-bg)', borderRadius: 100, overflow: 'hidden' }}><div style={{ width: `${getSafeProgress(proj.progress)}%`, height: '100%', background: 'var(--cms-accent)', borderRadius: 100 }} /></div>
+                    <span style={{ fontSize: 15, fontWeight: 900, width: 40 }}>{getSafeProgress(proj.progress)}%</span>
+                  </div>
+                  <div className="list-card-col">
+                    <span style={{ background: proj.priority === 'high' ? 'rgba(239, 68, 68, 0.1)' : 'var(--cms-input-bg)', color: proj.priority === 'high' ? '#ef4444' : 'var(--cms-text-muted)', padding: '8px 16px', borderRadius: 100, fontSize: 13, fontWeight: 900, textTransform: 'capitalize' }}>{proj.priority}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    {isSelectionMode ? (
+                      <div style={{
+                        width: 28, height: 28, borderRadius: 8,
+                        border: isSelected ? '2px solid var(--cms-accent)' : '2px solid var(--glass-border)',
+                        background: isSelected ? 'var(--cms-accent)' : 'var(--cms-input-bg)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                      }}>
+                        {isSelected && <Check size={18} color="#fff" strokeWidth={3} />}
                       </div>
-                      <span>{getSafeString(proj.title) || 'Untitled'}</span>
-                    </div>
-                    <div className="list-card-col">
-                      <span style={{ background: st.bg, color: st.color, padding: '8px 16px', borderRadius: 100, fontSize: 13, fontWeight: 900 }}>{st.label}</span>
-                    </div>
-                    <div className="list-card-col" style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                       <div style={{ flex: 1, height: 8, background: 'var(--cms-input-bg)', borderRadius: 100, overflow: 'hidden' }}><div style={{ width: `${getSafeProgress(proj.progress)}%`, height: '100%', background: 'var(--cms-accent)', borderRadius: 100 }} /></div>
-                       <span style={{ fontSize: 15, fontWeight: 900, width: 40 }}>{getSafeProgress(proj.progress)}%</span>
-                    </div>
-                    <div className="list-card-col">
-                       <span style={{ background: proj.priority === 'high' ? 'rgba(239, 68, 68, 0.1)' : 'var(--cms-input-bg)', color: proj.priority === 'high' ? '#ef4444' : 'var(--cms-text-muted)', padding: '8px 16px', borderRadius: 100, fontSize: 13, fontWeight: 900, textTransform: 'capitalize' }}>{proj.priority}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                       {isSelectionMode ? (
-                         <div style={{
-                           width: 28, height: 28, borderRadius: 8,
-                           border: isSelected ? '2px solid var(--cms-accent)' : '2px solid var(--glass-border)',
-                           background: isSelected ? 'var(--cms-accent)' : 'var(--cms-input-bg)',
-                           display: 'flex', alignItems: 'center', justifyContent: 'center'
-                         }}>
-                           {isSelected && <Check size={18} color="#fff" strokeWidth={3} />}
-                         </div>
-                       ) : (
-                         <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--cms-input-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ChevronRight size={20} color="var(--cms-text-muted)" /></div>
-                       )}
-                    </div>
-                 </div>
+                    ) : (
+                      <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--cms-input-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ChevronRight size={20} color="var(--cms-text-muted)" /></div>
+                    )}
+                  </div>
+                </div>
               </td>
             </tr>
           );
@@ -5564,7 +5918,7 @@ const AnalyticsView = ({ projects, onSelect, updateProject }) => {
     setAiReport('');
     setTimeout(() => {
       let insights = [];
-      
+
       if (avgProgress > 75) {
         insights.push(`🚀 **Sinergi Kecepatan Tinggi**: Kemajuan portofolio rata-rata berada pada level superior (${avgProgress}%). Eksekusi operasional tim dinilai sangat tangkas dan efisien.`);
       } else if (avgProgress < 40 && totalRaw > 0) {
@@ -5623,7 +5977,7 @@ const AnalyticsView = ({ projects, onSelect, updateProject }) => {
       }
       if (typeof aVal === 'string') aVal = aVal.toLowerCase();
       if (typeof bVal === 'string') bVal = bVal.toLowerCase();
-      
+
       if (aVal < bVal) return sortAsc ? -1 : 1;
       if (aVal > bVal) return sortAsc ? 1 : -1;
       return 0;
@@ -5633,7 +5987,7 @@ const AnalyticsView = ({ projects, onSelect, updateProject }) => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, width: '100%', padding: '0 8px 24px 8px' }}>
-      
+
       {/* Grid Utama Grid Metrics */}
       <div style={{
         display: 'grid',
@@ -5826,16 +6180,16 @@ const AnalyticsView = ({ projects, onSelect, updateProject }) => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--cms-text-muted)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span>Analisis kecerdasan portofolio terhadap</span>
-                <span style={{ 
-                  background: 'rgba(var(--cms-accent-rgb), 0.1)', 
-                  color: 'var(--cms-accent)', 
-                  padding: '2px 8px', 
-                  borderRadius: 100, 
-                  fontSize: 11, 
-                  fontWeight: 900 
+                <span style={{
+                  background: 'rgba(var(--cms-accent-rgb), 0.1)',
+                  color: 'var(--cms-accent)',
+                  padding: '2px 8px',
+                  borderRadius: 100,
+                  fontSize: 11,
+                  fontWeight: 900
                 }}>{totalRaw} Proyek Aktif</span>
               </div>
-              
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {aiReport.split('\n').map((line, lIdx) => {
                   let cleaned = line.replace('-', '').trim();
@@ -5844,7 +6198,7 @@ const AnalyticsView = ({ projects, onSelect, updateProject }) => {
                   let isWarning = cleaned.includes('🚨') || cleaned.includes('⚠️') || cleaned.includes('🔥');
                   let isSuccess = cleaned.includes('✅') || cleaned.includes('🚀') || cleaned.includes('📈');
                   let isInfo = cleaned.includes('🔍') || cleaned.includes('📊');
-                  
+
                   let accentColor = 'var(--cms-text-muted)';
                   let itemBg = 'var(--cms-input-bg)';
                   if (isWarning) {
@@ -5870,13 +6224,13 @@ const AnalyticsView = ({ projects, onSelect, updateProject }) => {
                   });
 
                   return (
-                    <div 
-                      key={lIdx} 
-                      style={{ 
-                        display: 'flex', 
-                        gap: 12, 
+                    <div
+                      key={lIdx}
+                      style={{
+                        display: 'flex',
+                        gap: 12,
                         background: itemBg,
-                        padding: '12px 16px', 
+                        padding: '12px 16px',
                         borderRadius: 12,
                         border: '1px solid var(--glass-border)',
                         borderLeft: `4px solid ${accentColor}`,
@@ -5901,7 +6255,7 @@ const AnalyticsView = ({ projects, onSelect, updateProject }) => {
                   );
                 })}
               </div>
-              
+
               <style>{`
                 @keyframes cmsLivePing {
                   0% { transform: scale(0.9); opacity: 0.5; }
@@ -5913,28 +6267,28 @@ const AnalyticsView = ({ projects, onSelect, updateProject }) => {
                 }
               `}</style>
 
-              <div style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: 8, 
-                fontSize: 10.5, 
-                color: 'var(--cms-text-muted)', 
-                marginTop: 12, 
-                borderTop: '1px solid var(--glass-border)', 
-                paddingTop: 12, 
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                fontSize: 10.5,
+                color: 'var(--cms-text-muted)',
+                marginTop: 12,
+                borderTop: '1px solid var(--glass-border)',
+                paddingTop: 12,
                 fontWeight: 800,
-                opacity: 0.7 
+                opacity: 0.7
               }}>
-                <span 
+                <span
                   className="cms-live-ping"
-                  style={{ 
-                    display: 'inline-block', 
-                    width: 6, 
-                    height: 6, 
-                    borderRadius: '50%', 
-                    background: '#10b981', 
-                    boxShadow: '0 0 8px #10b981' 
-                  }} 
+                  style={{
+                    display: 'inline-block',
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    background: '#10b981',
+                    boxShadow: '0 0 8px #10b981'
+                  }}
                 />
                 Diagnostik AI disinkronkan secara real-time dengan status database CMS Anda
               </div>
@@ -5994,17 +6348,17 @@ const AnalyticsView = ({ projects, onSelect, updateProject }) => {
                 const tasks = getSafeArray(proj.tasks);
                 const completed = tasks.filter(t => t.done).length;
                 return (
-                  <tr 
+                  <tr
                     key={proj.id}
                     onClick={() => onSelect(proj)}
-                    style={{ 
-                      borderBottom: '1px solid var(--glass-border)', 
-                      transition: 'all 0.15s ease', 
+                    style={{
+                      borderBottom: '1px solid var(--glass-border)',
+                      transition: 'all 0.15s ease',
                       cursor: 'pointer',
                       background: 'transparent',
                       position: 'relative',
                       zIndex: sortedList.length - idx
-                    }} 
+                    }}
                     onMouseEnter={e => e.currentTarget.style.background = 'rgba(var(--cms-accent-rgb), 0.02)'}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                   >
@@ -6025,15 +6379,15 @@ const AnalyticsView = ({ projects, onSelect, updateProject }) => {
                       </div>
                     </td>
                     <td style={{ padding: '16px 24px' }} onClick={e => e.stopPropagation()}>
-                      <TableSelect 
-                        value={proj.status} 
+                      <TableSelect
+                        value={proj.status}
                         onChange={(val) => updateProject(proj.id, { status: val })}
                         options={STATUSES}
                       />
                     </td>
                     <td style={{ padding: '16px 24px' }} onClick={e => e.stopPropagation()}>
-                      <TableSelect 
-                        value={proj.priority} 
+                      <TableSelect
+                        value={proj.priority}
                         onChange={(val) => updateProject(proj.id, { priority: val })}
                         options={PRIORITIES}
                       />
@@ -6047,12 +6401,12 @@ const AnalyticsView = ({ projects, onSelect, updateProject }) => {
                       </div>
                     </td>
                     <td style={{ padding: '16px 24px', color: 'var(--cms-text-muted)', fontSize: 12, fontWeight: 800 }}>
-                      {proj.deadline ? new Date(proj.deadline).toLocaleDateString(undefined, {month:'short', day:'numeric', year:'numeric'}) : '-'}
+                      {proj.deadline ? new Date(proj.deadline).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '-'}
                     </td>
                     <td style={{ padding: '16px 24px', textAlign: 'right' }}>
-                      <button 
+                      <button
                         onClick={(e) => { e.stopPropagation(); onSelect(proj); }}
-                        style={{ 
+                        style={{
                           padding: '5px 10px', borderRadius: 8, background: 'var(--cms-input-bg)', border: '1.5px solid var(--glass-border)', color: 'var(--cms-text)', fontSize: 11, fontWeight: 900, cursor: 'pointer', transition: '0.2s'
                         }}
                         onMouseEnter={e => { e.currentTarget.style.background = 'var(--cms-accent)'; e.currentTarget.style.color = '#fff'; }}
@@ -6093,16 +6447,16 @@ const TableSelect = ({ value, onChange, options }) => {
 
   return (
     <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
-      <button 
+      <button
         type="button"
         onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
-        style={{ 
+        style={{
           display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', textAlign: 'left',
-          background: selectedOption.bg || 'var(--cms-accent-soft)', 
-          border: '1px solid var(--glass-border)', 
-          color: selectedOption.color || 'var(--cms-text)', 
+          background: selectedOption.bg || 'var(--cms-accent-soft)',
+          border: '1px solid var(--glass-border)',
+          color: selectedOption.color || 'var(--cms-text)',
           width: '100%', outline: 'none',
-          fontSize: 11, fontWeight: 800, padding: '6px 12px', borderRadius: 100, 
+          fontSize: 11, fontWeight: 800, padding: '6px 12px', borderRadius: 100,
           transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
         }}
         onMouseEnter={e => {
@@ -6120,11 +6474,11 @@ const TableSelect = ({ value, onChange, options }) => {
       </button>
 
       {isOpen && (
-        <div 
+        <div
           onClick={e => e.stopPropagation()}
-          style={{ 
+          style={{
             position: 'absolute', top: '110%', left: 0, width: '130px', zIndex: 9999,
-            background: 'var(--cms-panel-bg, rgba(255,255,255,0.95))', 
+            background: 'var(--cms-panel-bg, rgba(255,255,255,0.95))',
             border: '1px solid var(--glass-border)',
             borderRadius: 14, boxShadow: '0 16px 40px rgba(0,0,0,0.18)', padding: 6,
             backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
@@ -6132,10 +6486,10 @@ const TableSelect = ({ value, onChange, options }) => {
             transformOrigin: 'top center'
           }}>
           {options.map(opt => (
-            <div 
+            <div
               key={opt.id}
               onClick={() => { onChange(opt.id); setIsOpen(false); }}
-              style={{ 
+              style={{
                 padding: '6px 10px', borderRadius: 8, fontSize: 11, fontWeight: 800,
                 cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
                 background: value === opt.id ? 'rgba(var(--cms-accent-rgb), 0.1)' : 'transparent',
@@ -6269,9 +6623,9 @@ const ProjectAndScheduleSettingsModal = ({
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(0, 0, 0, 0.65)',
-        backdropFilter: 'blur(16px)',
-        WebkitBackdropFilter: 'blur(16px)',
+        background: 'rgba(0, 0, 0, 0.8)',
+        backdropFilter: 'none',
+        WebkitBackdropFilter: 'none',
         zIndex: 999999,
         display: 'flex',
         alignItems: 'center',
@@ -6744,10 +7098,10 @@ const ScheduleAndBookingView = ({ projects = [], onSelect, notify, addProject, s
     // 1. Projects Deadlines
     if (activeFilter === 'all' || activeFilter === 'projects') {
       validProjectsWithDeadline.forEach(p => {
-        const matchesSearch = !searchQuery || 
+        const matchesSearch = !searchQuery ||
           (p.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
           (p.client || '').toLowerCase().includes(searchQuery.toLowerCase());
-        
+
         if (matchesSearch) {
           items.push({
             itemType: 'project',
@@ -6770,7 +7124,7 @@ const ScheduleAndBookingView = ({ projects = [], onSelect, notify, addProject, s
     if (activeFilter === 'all' || activeFilter === 'bookings') {
       bookings.forEach(b => {
         const matchStatus = statusFilter === 'all' || b.status === statusFilter;
-        const matchesSearch = !searchQuery || 
+        const matchesSearch = !searchQuery ||
           (b.clientName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
           (b.serviceName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
           (b.clientPhone || '').includes(searchQuery);
@@ -6867,7 +7221,7 @@ const ScheduleAndBookingView = ({ projects = [], onSelect, notify, addProject, s
           onClick={() => setIsSettingsOpen(false)}
           style={{
             position: 'fixed', inset: 0, zIndex: 99999,
-            background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(10px)',
+            background: 'rgba(0,0,0,0.8)', backdropFilter: 'none', WebkitBackdropFilter: 'none',
             display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
           }}
         >
@@ -7030,7 +7384,7 @@ const ScheduleAndBookingView = ({ projects = [], onSelect, notify, addProject, s
           onClick={() => setIsNewBookingOpen(false)}
           style={{
             position: 'fixed', inset: 0, zIndex: 99999,
-            background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(10px)',
+            background: 'rgba(0,0,0,0.8)', backdropFilter: 'none', WebkitBackdropFilter: 'none',
             display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
           }}
         >
@@ -7189,19 +7543,19 @@ const TableView = ({ projects, onSelect, updateProject, toggleSelection, selecte
       sortableItems.sort((a, b) => {
         let aValue = a[sortConfig.key];
         let bValue = b[sortConfig.key];
-        
+
         if (sortConfig.key === 'progress') {
-           aValue = getSafeProgress(aValue);
-           bValue = getSafeProgress(bValue);
+          aValue = getSafeProgress(aValue);
+          bValue = getSafeProgress(bValue);
         } else if (sortConfig.key === 'status') {
-           aValue = STATUSES.findIndex(s => s.id === a.status);
-           bValue = STATUSES.findIndex(s => s.id === b.status);
+          aValue = STATUSES.findIndex(s => s.id === a.status);
+          bValue = STATUSES.findIndex(s => s.id === b.status);
         } else if (sortConfig.key === 'priority') {
-           aValue = PRIORITIES.findIndex(p => p.id === a.priority);
-           bValue = PRIORITIES.findIndex(p => p.id === b.priority);
+          aValue = PRIORITIES.findIndex(p => p.id === a.priority);
+          bValue = PRIORITIES.findIndex(p => p.id === b.priority);
         } else if (sortConfig.key === 'title') {
-           aValue = getSafeString(a.title).toLowerCase();
-           bValue = getSafeString(b.title).toLowerCase();
+          aValue = getSafeString(a.title).toLowerCase();
+          bValue = getSafeString(b.title).toLowerCase();
         }
 
         if (aValue < bValue) {
@@ -7231,332 +7585,332 @@ const TableView = ({ projects, onSelect, updateProject, toggleSelection, selecte
 
   return (
     <div style={{ width: '100%' }}>
-       {/* Actions Bar */}
-       <div style={{ background: 'var(--cms-card-bg)', borderRadius: 24, border: '1.5px solid var(--glass-border)', padding: '16px 24px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, width: '100%', flexWrap: 'wrap' }}>
-             <span style={{ fontSize: 13, fontWeight: 900, color: 'var(--cms-text-muted)' }}>{projects.length} Projects</span>
-             {selectedIds && selectedIds.length > 0 && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingLeft: 16, borderLeft: '1.5px solid var(--glass-border)' }}>
-                   <span style={{ fontSize: 13, fontWeight: 900, color: 'var(--cms-accent)' }}>{selectedIds.length} Selected</span>
-                   
-                   <div style={{ display: 'flex', gap: 8 }}>
-                     <select 
-                       onChange={(e) => {
-                         if (e.target.value) bulkStatusUpdate(e.target.value);
-                         e.target.value = '';
-                       }}
-                       style={{ background: 'var(--cms-input-bg)', color: 'var(--cms-text)', border: '1.5px solid var(--glass-border)', padding: '6px 12px', borderRadius: 100, fontSize: 12, fontWeight: 800, outline: 'none' }}
-                     >
-                       <option value="">Update Status...</option>
-                       {STATUSES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-                     </select>
-                     <button onClick={bulkDelete} style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: 'none', padding: '6px 12px', borderRadius: 100, fontSize: 12, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                       <Trash2 size={14} /> Trash
-                     </button>
-                   </div>
+      {/* Actions Bar */}
+      <div style={{ background: 'var(--cms-card-bg)', borderRadius: 24, border: '1.5px solid var(--glass-border)', padding: '16px 24px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, width: '100%', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 13, fontWeight: 900, color: 'var(--cms-text-muted)' }}>{projects.length} Projects</span>
+          {selectedIds && selectedIds.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingLeft: 16, borderLeft: '1.5px solid var(--glass-border)' }}>
+              <span style={{ fontSize: 13, fontWeight: 900, color: 'var(--cms-accent)' }}>{selectedIds.length} Selected</span>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <select
+                  onChange={(e) => {
+                    if (e.target.value) bulkStatusUpdate(e.target.value);
+                    e.target.value = '';
+                  }}
+                  style={{ background: 'var(--cms-input-bg)', color: 'var(--cms-text)', border: '1.5px solid var(--glass-border)', padding: '6px 12px', borderRadius: 100, fontSize: 12, fontWeight: 800, outline: 'none' }}
+                >
+                  <option value="">Update Status...</option>
+                  {STATUSES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                </select>
+                <button onClick={bulkDelete} style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: 'none', padding: '6px 12px', borderRadius: 100, fontSize: 12, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Trash2 size={14} /> Trash
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {isMobile ? (
+        /* Mobile Card View optimized specifically for screens < 768px */
+        <div className="pm-mobile-table-list" style={{ display: 'flex', flexDirection: 'column', gap: 16, width: '100%', paddingBottom: 'calc(130px + env(safe-area-inset-bottom, 32px))' }}>
+          {sortedProjects.map((proj, idx) => {
+            const isSelected = selectedIds && selectedIds.includes(proj.id);
+            return (
+              <div
+                key={proj.id}
+                onClick={() => {
+                  if (isSelectionMode) toggleSelection(proj.id, !isSelected);
+                  else onSelect(proj);
+                }}
+                style={{
+                  background: isSelected ? 'rgba(var(--cms-accent-rgb), 0.08)' : 'var(--cms-card-bg)',
+                  backdropFilter: 'blur(20px)',
+                  WebkitBackdropFilter: 'blur(20px)',
+                  borderRadius: 24,
+                  border: isSelected ? '2px solid var(--cms-accent)' : '1px solid var(--glass-border)',
+                  padding: 16,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 12,
+                  transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                  boxShadow: '0 8px 30px rgba(0,0,0,0.03)',
+                  position: 'relative',
+                  zIndex: sortedProjects.length - idx
+                }}
+              >
+                {/* Top Header: Icon, Title & Open action */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {toggleSelection && isSelectionMode && (
+                    <div
+                      onClick={(e) => { e.stopPropagation(); toggleSelection(proj.id, !isSelected); }}
+                      style={{
+                        width: 28, height: 28, borderRadius: 8, border: isSelected ? '2px solid var(--cms-accent)' : '2px solid var(--glass-border)',
+                        background: isSelected ? 'var(--cms-accent)' : 'transparent',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0
+                      }}>
+                      {isSelected && <Check size={18} color="#fff" strokeWidth={3} />}
+                    </div>
+                  )}
+
+                  <div style={{ width: 34, height: 34, borderRadius: 10, background: 'var(--cms-input-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--cms-accent)', flexShrink: 0 }}>
+                    {renderProjectIcon(proj.icon, 16)}
+                  </div>
+
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <input
+                      value={getSafeString(proj.title)}
+                      onClick={e => e.stopPropagation()}
+                      onChange={(e) => updateProject(proj.id, { title: e.target.value })}
+                      style={{ background: 'transparent', border: 'none', color: 'var(--cms-text)', fontSize: 14, fontWeight: 800, width: '100%', outline: 'none' }}
+                      placeholder="Untitled"
+                    />
+                  </div>
+
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onSelect(proj); }}
+                    style={{
+                      padding: '6px 12px', borderRadius: 100,
+                      background: 'var(--cms-input-bg)', border: '1px solid var(--glass-border)',
+                      color: 'var(--cms-text)', fontSize: 11, fontWeight: 900, cursor: 'pointer'
+                    }}
+                  >
+                    Open
+                  </button>
                 </div>
-             )}
-          </div>
-       </div>
 
-       {isMobile ? (
-          /* Mobile Card View optimized specifically for screens < 768px */
-          <div className="pm-mobile-table-list" style={{ display: 'flex', flexDirection: 'column', gap: 16, width: '100%', paddingBottom: 'calc(130px + env(safe-area-inset-bottom, 32px))' }}>
-             {sortedProjects.map((proj, idx) => {
-               const isSelected = selectedIds && selectedIds.includes(proj.id);
-               return (
-                 <div 
-                   key={proj.id}
-                   onClick={() => {
-                     if (isSelectionMode) toggleSelection(proj.id, !isSelected);
-                     else onSelect(proj);
-                   }}
-                   style={{
-                     background: isSelected ? 'rgba(var(--cms-accent-rgb), 0.08)' : 'var(--cms-card-bg)',
-                     backdropFilter: 'blur(20px)',
-                     WebkitBackdropFilter: 'blur(20px)',
-                     borderRadius: 24,
-                     border: isSelected ? '2px solid var(--cms-accent)' : '1px solid var(--glass-border)',
-                     padding: 16,
-                     display: 'flex',
-                     flexDirection: 'column',
-                     gap: 12,
-                     transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-                     boxShadow: '0 8px 30px rgba(0,0,0,0.03)',
-                     position: 'relative',
-                     zIndex: sortedProjects.length - idx
-                   }}
-                 >
-                   {/* Top Header: Icon, Title & Open action */}
-                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                     {toggleSelection && isSelectionMode && (
-                       <div 
-                         onClick={(e) => { e.stopPropagation(); toggleSelection(proj.id, !isSelected); }}
-                         style={{
-                           width: 28, height: 28, borderRadius: 8, border: isSelected ? '2px solid var(--cms-accent)' : '2px solid var(--glass-border)',
-                           background: isSelected ? 'var(--cms-accent)' : 'transparent',
-                           display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0
-                         }}>
-                         {isSelected && <Check size={18} color="#fff" strokeWidth={3} />}
-                       </div>
-                     )}
-                     
-                     <div style={{ width: 34, height: 34, borderRadius: 10, background: 'var(--cms-input-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--cms-accent)', flexShrink: 0 }}>
-                        {renderProjectIcon(proj.icon, 16)}
+                {/* Dropdowns: Status & Priority */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 9, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', marginBottom: 4, letterSpacing: '0.05em' }}>Status</div>
+                    <TableSelect
+                      value={proj.status}
+                      onChange={(val) => updateProject(proj.id, { status: val })}
+                      options={STATUSES}
+                    />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 9, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', marginBottom: 4, letterSpacing: '0.05em' }}>Priority</div>
+                    <TableSelect
+                      value={proj.priority}
+                      onChange={(val) => updateProject(proj.id, { priority: val })}
+                      options={PRIORITIES}
+                    />
+                  </div>
+                </div>
+
+                {/* Progress bar */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <span style={{ fontSize: 10, fontWeight: 900, color: 'var(--cms-text-muted)' }}>Progress</span>
+                    <span style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text)' }}>{getSafeProgress(proj.progress)}%</span>
+                  </div>
+                  <div style={{ height: 6, background: 'var(--cms-input-bg)', borderRadius: 100, overflow: 'hidden' }}>
+                    <div style={{ width: `${getSafeProgress(proj.progress)}%`, height: '100%', background: 'var(--cms-accent)', borderRadius: 100 }} />
+                  </div>
+                </div>
+
+                {/* Footer info: Deadline & Tags */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px dashed var(--glass-border)', paddingTop: 10, marginTop: 2 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: 'var(--cms-text-muted)' }}>
+                    <Clock size={12} />
+                    {proj.deadline ? new Date(proj.deadline).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '-'}
+                  </div>
+
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {getSafeArray(proj.tags).slice(0, 1).map((tag, i) => (
+                      <span key={i} style={{ background: 'var(--cms-input-bg)', color: 'var(--cms-text)', fontSize: 10, fontWeight: 800, padding: '3px 8px', borderRadius: 100 }}>{tag}</span>
+                    ))}
+                    {getSafeArray(proj.tags).length > 1 && <span style={{ color: 'var(--cms-text-muted)', fontSize: 10, fontWeight: 800 }}>+{getSafeArray(proj.tags).length - 1}</span>}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {projects.length === 0 && (
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--cms-text-muted)', fontSize: 14, fontWeight: 800 }}>No projects found in this view.</div>
+          )}
+        </div>
+      ) : (
+        /* Desktop Fluid Glassmorphic Table */
+        <div style={{ background: 'var(--cms-card-bg)', borderRadius: 24, border: '1.5px solid var(--glass-border)', overflow: 'clip' }}>
+          <div style={{ overflowX: 'auto', borderRadius: '0 0 24px 24px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: 1000 }}>
+              <thead>
+                <tr style={{ borderBottom: '1.5px solid var(--glass-border)', background: 'var(--cms-input-bg)' }}>
+                  {toggleSelection && isSelectionMode && (
+                    <th style={{ padding: '16px 24px', borderBottom: '1.5px solid var(--glass-border)', width: 40 }}>
+                      <div
+                        onClick={(e) => { e.stopPropagation(); toggleSelection('all', !(selectedIds && projects.length > 0 && selectedIds.length === projects.length)); }}
+                        style={{
+                          width: 28, height: 28, borderRadius: 8, border: (selectedIds && projects.length > 0 && selectedIds.length === projects.length) ? '2px solid var(--cms-accent)' : '2px solid var(--glass-border)',
+                          background: (selectedIds && projects.length > 0 && selectedIds.length === projects.length) ? 'var(--cms-accent)' : 'transparent',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: '0.2s'
+                        }}>
+                        {(selectedIds && projects.length > 0 && selectedIds.length === projects.length) && <Check size={18} color="#fff" strokeWidth={3} />}
                       </div>
-                     
-                     <div style={{ flex: 1, minWidth: 0 }}>
-                       <input 
-                         value={getSafeString(proj.title)} 
-                         onClick={e => e.stopPropagation()}
-                         onChange={(e) => updateProject(proj.id, { title: e.target.value })}
-                         style={{ background: 'transparent', border: 'none', color: 'var(--cms-text)', fontSize: 14, fontWeight: 800, width: '100%', outline: 'none' }}
-                         placeholder="Untitled"
-                       />
-                     </div>
-                     
-                     <button 
-                       onClick={(e) => { e.stopPropagation(); onSelect(proj); }} 
-                       style={{ 
-                         padding: '6px 12px', borderRadius: 100, 
-                         background: 'var(--cms-input-bg)', border: '1px solid var(--glass-border)', 
-                         color: 'var(--cms-text)', fontSize: 11, fontWeight: 900, cursor: 'pointer' 
-                       }}
-                     >
-                       Open
-                     </button>
-                   </div>
-                   
-                   {/* Dropdowns: Status & Priority */}
-                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                     <div>
-                       <div style={{ fontSize: 9, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', marginBottom: 4, letterSpacing: '0.05em' }}>Status</div>
-                       <TableSelect 
-                         value={proj.status} 
-                         onChange={(val) => updateProject(proj.id, { status: val })}
-                         options={STATUSES}
-                       />
-                     </div>
-                     <div>
-                       <div style={{ fontSize: 9, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', marginBottom: 4, letterSpacing: '0.05em' }}>Priority</div>
-                       <TableSelect 
-                         value={proj.priority} 
-                         onChange={(val) => updateProject(proj.id, { priority: val })}
-                         options={PRIORITIES}
-                       />
-                     </div>
-                   </div>
-                   
-                   {/* Progress bar */}
-                   <div>
-                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                       <span style={{ fontSize: 10, fontWeight: 900, color: 'var(--cms-text-muted)' }}>Progress</span>
-                       <span style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text)' }}>{getSafeProgress(proj.progress)}%</span>
-                     </div>
-                     <div style={{ height: 6, background: 'var(--cms-input-bg)', borderRadius: 100, overflow: 'hidden' }}>
-                       <div style={{ width: `${getSafeProgress(proj.progress)}%`, height: '100%', background: 'var(--cms-accent)', borderRadius: 100 }} />
-                     </div>
-                   </div>
-                   
-                   {/* Footer info: Deadline & Tags */}
-                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px dashed var(--glass-border)', paddingTop: 10, marginTop: 2 }}>
-                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: 'var(--cms-text-muted)' }}>
-                       <Clock size={12} />
-                       {proj.deadline ? new Date(proj.deadline).toLocaleDateString(undefined, {month:'short', day:'numeric'}) : '-'}
-                     </div>
-                     
-                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                       {getSafeArray(proj.tags).slice(0, 1).map((tag, i) => (
-                         <span key={i} style={{ background: 'var(--cms-input-bg)', color: 'var(--cms-text)', fontSize: 10, fontWeight: 800, padding: '3px 8px', borderRadius: 100 }}>{tag}</span>
-                       ))}
-                       {getSafeArray(proj.tags).length > 1 && <span style={{ color: 'var(--cms-text-muted)', fontSize: 10, fontWeight: 800 }}>+{getSafeArray(proj.tags).length - 1}</span>}
-                     </div>
-                   </div>
-                 </div>
-               );
-             })}
-             {projects.length === 0 && (
-                <div style={{ padding: 40, textAlign: 'center', color: 'var(--cms-text-muted)', fontSize: 14, fontWeight: 800 }}>No projects found in this view.</div>
-             )}
-          </div>
-       ) : (
-          /* Desktop Fluid Glassmorphic Table */
-          <div style={{ background: 'var(--cms-card-bg)', borderRadius: 24, border: '1.5px solid var(--glass-border)', overflow: 'clip' }}>
-             <div style={{ overflowX: 'auto', borderRadius: '0 0 24px 24px' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: 1000 }}>
-                  <thead>
-                     <tr style={{ borderBottom: '1.5px solid var(--glass-border)', background: 'var(--cms-input-bg)' }}>
-                       {toggleSelection && isSelectionMode && (
-                          <th style={{ padding: '16px 24px', borderBottom: '1.5px solid var(--glass-border)', width: 40 }}>
-                             <div 
-                               onClick={(e) => { e.stopPropagation(); toggleSelection('all', !(selectedIds && projects.length > 0 && selectedIds.length === projects.length)); }}
-                               style={{
-                                 width: 28, height: 28, borderRadius: 8, border: (selectedIds && projects.length > 0 && selectedIds.length === projects.length) ? '2px solid var(--cms-accent)' : '2px solid var(--glass-border)',
-                                 background: (selectedIds && projects.length > 0 && selectedIds.length === projects.length) ? 'var(--cms-accent)' : 'transparent',
-                                 display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: '0.2s'
-                               }}>
-                               {(selectedIds && projects.length > 0 && selectedIds.length === projects.length) && <Check size={18} color="#fff" strokeWidth={3} />}
-                             </div>
-                          </th>
-                       )}
-                        <th style={{ padding: '16px 24px', cursor: 'pointer', fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }} onClick={() => requestSort('title')}>Project Name {getSortIcon('title')}</th>
-                        <th style={{ padding: '16px 24px', cursor: 'pointer', fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', width: 160 }} onClick={() => requestSort('status')}>Status {getSortIcon('status')}</th>
-                        <th style={{ padding: '16px 24px', cursor: 'pointer', fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', width: 140 }} onClick={() => requestSort('priority')}>Priority {getSortIcon('priority')}</th>
-                        <th style={{ padding: '16px 24px', cursor: 'pointer', fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', width: 180 }} onClick={() => requestSort('progress')}>Progress {getSortIcon('progress')}</th>
-                        <th style={{ padding: '16px 24px', cursor: 'pointer', fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', width: 140 }} onClick={() => requestSort('deadline')}>Deadline {getSortIcon('deadline')}</th>
-                        <th style={{ padding: '16px 24px', fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Tags</th>
-                        <th style={{ padding: '16px 24px', width: 100 }}></th>
-                     </tr>
-                  </thead>
-                  <tbody>
-                     {sortedProjects.map(proj => {
-                       const isSelected = selectedIds && selectedIds.includes(proj.id);
-                       let pressTimer = null;
-                       return (
-                         <tr key={proj.id} 
-                             onClick={() => {
-                               if (isSelectionMode) toggleSelection(proj.id, !isSelected);
-                               else onSelect(proj);
-                             }} 
+                    </th>
+                  )}
+                  <th style={{ padding: '16px 24px', cursor: 'pointer', fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }} onClick={() => requestSort('title')}>Project Name {getSortIcon('title')}</th>
+                  <th style={{ padding: '16px 24px', cursor: 'pointer', fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', width: 160 }} onClick={() => requestSort('status')}>Status {getSortIcon('status')}</th>
+                  <th style={{ padding: '16px 24px', cursor: 'pointer', fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', width: 140 }} onClick={() => requestSort('priority')}>Priority {getSortIcon('priority')}</th>
+                  <th style={{ padding: '16px 24px', cursor: 'pointer', fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', width: 180 }} onClick={() => requestSort('progress')}>Progress {getSortIcon('progress')}</th>
+                  <th style={{ padding: '16px 24px', cursor: 'pointer', fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', width: 140 }} onClick={() => requestSort('deadline')}>Deadline {getSortIcon('deadline')}</th>
+                  <th style={{ padding: '16px 24px', fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Tags</th>
+                  <th style={{ padding: '16px 24px', width: 100 }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedProjects.map(proj => {
+                  const isSelected = selectedIds && selectedIds.includes(proj.id);
+                  let pressTimer = null;
+                  return (
+                    <tr key={proj.id}
+                      onClick={() => {
+                        if (isSelectionMode) toggleSelection(proj.id, !isSelected);
+                        else onSelect(proj);
+                      }}
 
-                             onPointerDown={(e) => {
-                               if (isSelectionMode) return;
-                               pressTimer = setTimeout(() => { setIsSelectionMode(true); toggleSelection(proj.id, true); }, 500);
-                             }}
-                             onPointerUp={() => clearTimeout(pressTimer)}
-                             onPointerLeave={() => clearTimeout(pressTimer)}
-                             style={{ borderBottom: '1px solid var(--glass-border)', background: isSelected ? 'rgba(var(--cms-accent-rgb), 0.05)' : 'transparent', transition: '0.2s', cursor: 'pointer' }} onMouseEnter={e=>e.currentTarget.style.background='rgba(var(--cms-accent-rgb), 0.02)'} onMouseLeave={e=>e.currentTarget.style.background=isSelected ? 'rgba(var(--cms-accent-rgb), 0.05)' : 'transparent'}>
-                            {toggleSelection && isSelectionMode && (
-                               <td className="td-normal" style={{ padding: '16px 24px' }}>
-                                   <div 
-                                     onClick={(e) => { e.stopPropagation(); toggleSelection(proj.id, !isSelected); }}
-                                     style={{
-                                       width: 28, height: 28, borderRadius: 8, border: isSelected ? '2px solid var(--cms-accent)' : '2px solid var(--glass-border)',
-                                       background: isSelected ? 'var(--cms-accent)' : 'transparent',
-                                       display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: '0.2s'
-                                     }}>
-                                     {isSelected && <Check size={18} color="#fff" strokeWidth={3} />}
-                                   </div>
-                               </td>
-                            )}
-                            <td className="td-normal" style={{ padding: '16px 24px' }}>
-                               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                  <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--cms-input-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--cms-accent)', flexShrink: 0 }}>
-                                    {renderProjectIcon(proj.icon, 15)}
-                                  </div>
-                                  <input 
-                                     value={getSafeString(proj.title)} 
-                                     onClick={e => e.stopPropagation()}
-                                     onChange={(e) => updateProject(proj.id, { title: e.target.value })}
-                                     style={{ background: 'transparent', border: 'none', color: 'var(--cms-text)', fontSize: 15, fontWeight: 800, width: '100%', outline: 'none' }}
-                                     placeholder="Untitled"
-                                  />
-                               </div>
-                            </td>
-                            <td className="td-normal" style={{ padding: '16px 24px' }}>
-                               <TableSelect 
-                                  value={proj.status} 
-                                  onChange={(val) => updateProject(proj.id, { status: val })}
-                                  options={STATUSES}
-                               />
-                            </td>
-                            <td className="td-normal" style={{ padding: '16px 24px' }}>
-                               <TableSelect 
-                                  value={proj.priority} 
-                                  onChange={(val) => updateProject(proj.id, { priority: val })}
-                                  options={PRIORITIES}
-                               />
-                            </td>
-                            <td className="td-normal" style={{ padding: '16px 24px' }}>
-                               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                  <div style={{ flex: 1, minWidth: 80, height: 6, background: 'var(--cms-input-bg)', borderRadius: 100, overflow: 'hidden' }}><div style={{ width: `${getSafeProgress(proj.progress)}%`, height: '100%', background: 'var(--cms-accent)', borderRadius: 100 }} /></div>
-                                  <span style={{ fontSize: 13, fontWeight: 800, width: 32 }}>{getSafeProgress(proj.progress)}%</span>
-                               </div>
-                            </td>
-                            <td style={{ padding: '16px 24px', color: 'var(--cms-text-muted)', fontSize: 13, fontWeight: 700 }}>
-                               {proj.deadline ? new Date(proj.deadline).toLocaleDateString(undefined, {month:'short', day:'numeric', year:'numeric'}) : '-'}
-                            </td>
-                            <td className="td-normal" style={{ padding: '16px 24px' }}>
-                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                  {getSafeArray(proj.tags).length === 0 && <span style={{ color: 'var(--cms-text-muted)', fontSize: 11, fontWeight: 800 }}>-</span>}
-                                  {getSafeArray(proj.tags).slice(0, 2).map((tag, i) => (
-                                     <span key={i} style={{ background: 'var(--cms-input-bg)', color: 'var(--cms-text)', fontSize: 11, fontWeight: 800, padding: '4px 8px', borderRadius: 6, whiteSpace: 'nowrap' }}>{tag}</span>
-                                  ))}
-                                  {getSafeArray(proj.tags).length > 2 && <span style={{ color: 'var(--cms-text-muted)', fontSize: 11, fontWeight: 800 }}>+{getSafeArray(proj.tags).length - 2}</span>}
-                               </div>
-                            </td>
-                            <td style={{ padding: '16px 24px', textAlign: 'right' }}>
-                               <button onClick={(e) => { e.stopPropagation(); onSelect(proj); }} style={{ padding: '6px 12px', borderRadius: 8, background: 'var(--cms-input-bg)', border: '1.5px solid var(--glass-border)', color: 'var(--cms-text)', fontSize: 12, fontWeight: 800, cursor: 'pointer', transition: '0.2s' }} onMouseEnter={e=>{e.currentTarget.style.background='var(--cms-accent)'; e.currentTarget.style.color='#fff';}}>Open</button>
-                            </td>
-                         </tr>
-                       );
-                     })}
-                  </tbody>
-                </table>
-             </div>
-             {projects.length === 0 && (
-                <div style={{ padding: 40, textAlign: 'center', color: 'var(--cms-text-muted)', fontSize: 15, fontWeight: 800 }}>No projects found in this view.</div>
-             )}
+                      onPointerDown={(e) => {
+                        if (isSelectionMode) return;
+                        pressTimer = setTimeout(() => { setIsSelectionMode(true); toggleSelection(proj.id, true); }, 500);
+                      }}
+                      onPointerUp={() => clearTimeout(pressTimer)}
+                      onPointerLeave={() => clearTimeout(pressTimer)}
+                      style={{ borderBottom: '1px solid var(--glass-border)', background: isSelected ? 'rgba(var(--cms-accent-rgb), 0.05)' : 'transparent', transition: '0.2s', cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(var(--cms-accent-rgb), 0.02)'} onMouseLeave={e => e.currentTarget.style.background = isSelected ? 'rgba(var(--cms-accent-rgb), 0.05)' : 'transparent'}>
+                      {toggleSelection && isSelectionMode && (
+                        <td className="td-normal" style={{ padding: '16px 24px' }}>
+                          <div
+                            onClick={(e) => { e.stopPropagation(); toggleSelection(proj.id, !isSelected); }}
+                            style={{
+                              width: 28, height: 28, borderRadius: 8, border: isSelected ? '2px solid var(--cms-accent)' : '2px solid var(--glass-border)',
+                              background: isSelected ? 'var(--cms-accent)' : 'transparent',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: '0.2s'
+                            }}>
+                            {isSelected && <Check size={18} color="#fff" strokeWidth={3} />}
+                          </div>
+                        </td>
+                      )}
+                      <td className="td-normal" style={{ padding: '16px 24px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--cms-input-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--cms-accent)', flexShrink: 0 }}>
+                            {renderProjectIcon(proj.icon, 15)}
+                          </div>
+                          <input
+                            value={getSafeString(proj.title)}
+                            onClick={e => e.stopPropagation()}
+                            onChange={(e) => updateProject(proj.id, { title: e.target.value })}
+                            style={{ background: 'transparent', border: 'none', color: 'var(--cms-text)', fontSize: 15, fontWeight: 800, width: '100%', outline: 'none' }}
+                            placeholder="Untitled"
+                          />
+                        </div>
+                      </td>
+                      <td className="td-normal" style={{ padding: '16px 24px' }}>
+                        <TableSelect
+                          value={proj.status}
+                          onChange={(val) => updateProject(proj.id, { status: val })}
+                          options={STATUSES}
+                        />
+                      </td>
+                      <td className="td-normal" style={{ padding: '16px 24px' }}>
+                        <TableSelect
+                          value={proj.priority}
+                          onChange={(val) => updateProject(proj.id, { priority: val })}
+                          options={PRIORITIES}
+                        />
+                      </td>
+                      <td className="td-normal" style={{ padding: '16px 24px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <div style={{ flex: 1, minWidth: 80, height: 6, background: 'var(--cms-input-bg)', borderRadius: 100, overflow: 'hidden' }}><div style={{ width: `${getSafeProgress(proj.progress)}%`, height: '100%', background: 'var(--cms-accent)', borderRadius: 100 }} /></div>
+                          <span style={{ fontSize: 13, fontWeight: 800, width: 32 }}>{getSafeProgress(proj.progress)}%</span>
+                        </div>
+                      </td>
+                      <td style={{ padding: '16px 24px', color: 'var(--cms-text-muted)', fontSize: 13, fontWeight: 700 }}>
+                        {proj.deadline ? new Date(proj.deadline).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '-'}
+                      </td>
+                      <td className="td-normal" style={{ padding: '16px 24px' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {getSafeArray(proj.tags).length === 0 && <span style={{ color: 'var(--cms-text-muted)', fontSize: 11, fontWeight: 800 }}>-</span>}
+                          {getSafeArray(proj.tags).slice(0, 2).map((tag, i) => (
+                            <span key={i} style={{ background: 'var(--cms-input-bg)', color: 'var(--cms-text)', fontSize: 11, fontWeight: 800, padding: '4px 8px', borderRadius: 6, whiteSpace: 'nowrap' }}>{tag}</span>
+                          ))}
+                          {getSafeArray(proj.tags).length > 2 && <span style={{ color: 'var(--cms-text-muted)', fontSize: 11, fontWeight: 800 }}>+{getSafeArray(proj.tags).length - 2}</span>}
+                        </div>
+                      </td>
+                      <td style={{ padding: '16px 24px', textAlign: 'right' }}>
+                        <button onClick={(e) => { e.stopPropagation(); onSelect(proj); }} style={{ padding: '6px 12px', borderRadius: 8, background: 'var(--cms-input-bg)', border: '1.5px solid var(--glass-border)', color: 'var(--cms-text)', fontSize: 12, fontWeight: 800, cursor: 'pointer', transition: '0.2s' }} onMouseEnter={e => { e.currentTarget.style.background = 'var(--cms-accent)'; e.currentTarget.style.color = '#fff'; }}>Open</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-       )}
+          {projects.length === 0 && (
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--cms-text-muted)', fontSize: 15, fontWeight: 800 }}>No projects found in this view.</div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
 const TrashView = ({ projects, restoreProject, permanentDeleteProject, bulkDelete, toggleSelection, selectedIds }) => {
   return (
     <div style={{ background: 'var(--cms-card-bg)', borderRadius: 24, border: '1.5px solid var(--glass-border)', overflow: 'hidden', display: 'flex', flexDirection: 'column', height: '100%' }}>
-       <div style={{ padding: '16px 24px', borderBottom: '1.5px solid var(--glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-             <input type="checkbox" checked={selectedIds.length === projects.length && projects.length > 0} onChange={(e) => toggleSelection('all', e.target.checked)} style={{ width: 18, height: 18, accentColor: 'var(--cms-accent)' }} />
-             <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--cms-text-muted)' }}>{selectedIds.length} Selected</span>
-             {selectedIds.length > 0 && (
-                <button onClick={bulkDelete} style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: 'none', padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Trash2 size={14} /> Delete Forever
-                </button>
-             )}
-          </div>
-       </div>
-       <div style={{ flex: 1, overflow: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-            <thead>
-               <tr style={{ borderBottom: '1.5px solid var(--glass-border)', background: 'var(--cms-input-bg)' }}>
-                  <th style={{ padding: '16px 24px', width: 40 }}></th>
-                  <th style={{ padding: '16px 24px', fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Project Name</th>
-                  <th style={{ padding: '16px 24px', fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Deleted At</th>
-                  <th style={{ padding: '16px 24px', width: 200 }}></th>
-               </tr>
-            </thead>
-            <tbody>
-               {projects.map(proj => (
-                 <tr key={proj.id} style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                    <td className="td-normal" style={{ padding: '16px 24px' }}>
-                       <input type="checkbox" checked={selectedIds.includes(proj.id)} onChange={(e) => toggleSelection(proj.id, e.target.checked)} style={{ width: 18, height: 18, accentColor: 'var(--cms-accent)' }} />
-                    </td>
-                    <td className="td-normal" style={{ padding: '16px 24px' }}>
-                       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                          <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--cms-input-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--cms-text-muted)', flexShrink: 0 }}>
-                             {renderProjectIcon(proj.icon, 15)}
-                          </div>
-                          <div style={{ color: 'var(--cms-text)', fontSize: 15, fontWeight: 800 }}>{getSafeString(proj.title) || 'Untitled'}</div>
-                       </div>
-                    </td>
-                    <td style={{ padding: '16px 24px', color: 'var(--cms-text-muted)', fontSize: 13, fontWeight: 700 }}>
-                       {proj.deletedAt ? new Date(proj.deletedAt).toLocaleDateString() : '-'}
-                    </td>
-                    <td style={{ padding: '16px 24px', textAlign: 'right' }}>
-                       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                         <button onClick={() => restoreProject(proj.id)} style={{ padding: '6px 12px', borderRadius: 8, background: 'rgba(16, 185, 129, 0.1)', border: 'none', color: '#10b981', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>Restore</button>
-                         <button onClick={() => permanentDeleteProject(proj.id)} style={{ padding: '6px 12px', borderRadius: 8, background: 'rgba(239, 68, 68, 0.1)', border: 'none', color: '#ef4444', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>Delete</button>
-                       </div>
-                    </td>
-                 </tr>
-               ))}
-            </tbody>
-          </table>
-          {projects.length === 0 && (
-             <div style={{ padding: 40, textAlign: 'center', color: 'var(--cms-text-muted)', fontSize: 15, fontWeight: 800 }}>Trash is empty.</div>
+      <div style={{ padding: '16px 24px', borderBottom: '1.5px solid var(--glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <input type="checkbox" checked={selectedIds.length === projects.length && projects.length > 0} onChange={(e) => toggleSelection('all', e.target.checked)} style={{ width: 18, height: 18, accentColor: 'var(--cms-accent)' }} />
+          <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--cms-text-muted)' }}>{selectedIds.length} Selected</span>
+          {selectedIds.length > 0 && (
+            <button onClick={bulkDelete} style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: 'none', padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Trash2 size={14} /> Delete Forever
+            </button>
           )}
-       </div>
+        </div>
+      </div>
+      <div style={{ flex: 1, overflow: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+          <thead>
+            <tr style={{ borderBottom: '1.5px solid var(--glass-border)', background: 'var(--cms-input-bg)' }}>
+              <th style={{ padding: '16px 24px', width: 40 }}></th>
+              <th style={{ padding: '16px 24px', fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Project Name</th>
+              <th style={{ padding: '16px 24px', fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Deleted At</th>
+              <th style={{ padding: '16px 24px', width: 200 }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {projects.map(proj => (
+              <tr key={proj.id} style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                <td className="td-normal" style={{ padding: '16px 24px' }}>
+                  <input type="checkbox" checked={selectedIds.includes(proj.id)} onChange={(e) => toggleSelection(proj.id, e.target.checked)} style={{ width: 18, height: 18, accentColor: 'var(--cms-accent)' }} />
+                </td>
+                <td className="td-normal" style={{ padding: '16px 24px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--cms-input-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--cms-text-muted)', flexShrink: 0 }}>
+                      {renderProjectIcon(proj.icon, 15)}
+                    </div>
+                    <div style={{ color: 'var(--cms-text)', fontSize: 15, fontWeight: 800 }}>{getSafeString(proj.title) || 'Untitled'}</div>
+                  </div>
+                </td>
+                <td style={{ padding: '16px 24px', color: 'var(--cms-text-muted)', fontSize: 13, fontWeight: 700 }}>
+                  {proj.deletedAt ? new Date(proj.deletedAt).toLocaleDateString() : '-'}
+                </td>
+                <td style={{ padding: '16px 24px', textAlign: 'right' }}>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <button onClick={() => restoreProject(proj.id)} style={{ padding: '6px 12px', borderRadius: 8, background: 'rgba(16, 185, 129, 0.1)', border: 'none', color: '#10b981', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>Restore</button>
+                    <button onClick={() => permanentDeleteProject(proj.id)} style={{ padding: '6px 12px', borderRadius: 8, background: 'rgba(239, 68, 68, 0.1)', border: 'none', color: '#ef4444', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>Delete</button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {projects.length === 0 && (
+          <div style={{ padding: 40, textAlign: 'center', color: 'var(--cms-text-muted)', fontSize: 15, fontWeight: 800 }}>Trash is empty.</div>
+        )}
+      </div>
     </div>
   );
 };
@@ -7658,6 +8012,14 @@ const ProjectPillModal = ({ project, onClose, updateProject, removeProject, acti
   const [isCalendarMenuOpen, setIsCalendarMenuOpen] = useState(false);
   const [isModalFullscreen, setIsModalFullscreen] = useState(false);
   const [isHeaderActionsMenuOpen, setIsHeaderActionsMenuOpen] = useState(false);
+  const [isProofingModalOpen, setIsProofingModalOpen] = useState(false);
+  const [proofingWatermarkStyle, setProofingWatermarkStyle] = useState<'grid' | 'center' | 'bottom'>('grid');
+  const [proofingWatermarkTheme, setProofingWatermarkTheme] = useState<'frosted' | 'gold' | 'crimson'>('frosted');
+  const [isPipelineMenuOpen, setIsPipelineMenuOpen] = useState(false);
+  const [isZippingFiles, setIsZippingFiles] = useState(false);
+  const [zippingProgressText, setZippingProgressText] = useState('');
+  const [isAnnotating, setIsAnnotating] = useState(false);
+  const [selectedPinId, setSelectedPinId] = useState<string | null>(null);
   const [activeEditingNoteId, setActiveEditingNoteId] = useState<string | null>(null);
   const [isNoteAiMenuOpen, setIsNoteAiMenuOpen] = useState(false);
   const [isNoteColorPickerOpen, setIsNoteColorPickerOpen] = useState(false);
@@ -7758,10 +8120,10 @@ const ProjectPillModal = ({ project, onClose, updateProject, removeProject, acti
     const cleanAlt = (altText || 'Gambar').replace(/[\r\n|[\]()]/g, ' ').trim();
     const { blockIdx, caretPos } = lastNoteCaretPosRef.current;
     const blocks = parseContentToBlocks(currentActiveNote.content || '');
-    
+
     const targetIdx = Math.min(Math.max(0, blockIdx), blocks.length - 1);
     const targetBlock = blocks[targetIdx];
-    
+
     if (targetBlock && targetBlock.type === 'p') {
       const text = targetBlock.text || '';
       const textBefore = text.slice(0, caretPos);
@@ -8078,7 +8440,7 @@ const ProjectPillModal = ({ project, onClose, updateProject, removeProject, acti
       const instruction = isContent
         ? `Susun naskah lengkap dan copywriting konten media sosial (${project.platform || 'Instagram'} - ${project.format || 'Reels/Post'}). Sertakan: 1. Hook / Opening, 2. Poin Inti (Scene breakdown / Carousel slides), 3. Call to Action (CTA), 4. Rekomendasi Visual & Caption. JANGAN gunakan emoji.`
         : `Susun studi kasus (case study) & brief proyek profesional. Sertakan: 1. Latar Belakang & Problem Statement, 2. Pendekatan Solusi, 3. Tahapan Eksekusi, 4. Hasil Akhir & Dampak. JANGAN gunakan emoji.`;
-      
+
       const res = await callGemini(prompt, instruction);
       if (res && !res.startsWith('API Key belum') && !res.startsWith('Koneksi AI Terkendala') && !res.startsWith('⚠️')) {
         const newDocTitle = isContent ? `Naskah AI (${projectNotes.length + 1})` : `Studi Kasus AI (${projectNotes.length + 1})`;
@@ -8255,7 +8617,7 @@ JANGAN gunakan emoji. Gunakan format teks bersih dan profesional.`;
       // 2. Ambil catatan eksisting
       const existingNotes = await storage.getItem('porto_memo_notes', []);
       const safeNotes = Array.isArray(existingNotes) ? existingNotes : [];
-      
+
       let note = safeNotes.find((n: any) => n.projectId === project.id);
       let noteId = note?.id;
 
@@ -8341,6 +8703,153 @@ JANGAN gunakan emoji. Gunakan format teks bersih dan profesional.`;
   const status = STATUSES.find(s => s.id === project.status) || STATUSES[0];
   const priority = PRIORITIES.find(p => p.id === project.priority) || PRIORITIES[0];
 
+  // ── 1-CLICK PIPELINE: PUBLISH TO PORTFOLIO ──
+  const handlePublishToPortfolio = async (proj: any) => {
+    try {
+      const existingPorto = await storage.getItem('porto_portfolio', []);
+      const safePorto = Array.isArray(existingPorto) ? existingPorto : [];
+
+      const exists = safePorto.some((p: any) => p.projectId === proj.id || (p.title && p.title.toLowerCase() === (proj.title || '').toLowerCase()));
+      if (exists) {
+        notify?.('Karya ini sudah ada di Portofolio Publik ⭐', 'info');
+        return;
+      }
+
+      const files = Array.isArray(proj.files) ? proj.files : Array.isArray(proj.attachments) ? proj.attachments : [];
+      const coverUrl = proj.coverImage || (files[0] && files[0].url) || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80';
+
+      const newPortoItem = {
+        id: `portfolio-${Date.now()}`,
+        projectId: proj.id,
+        title: proj.title || 'Proyek Desain & Kreatif',
+        category: proj.category || 'Branding & Desain',
+        client: proj.client || proj.clientName || 'Klien sumr.day',
+        year: new Date().getFullYear().toString(),
+        description: proj.description || proj.notes || 'Karya desain dan pengembangan proyek oleh sumr.day Studio.',
+        coverImage: coverUrl,
+        gallery: files.map((f: any) => f.url).filter(Boolean),
+        tags: Array.isArray(proj.tags) && proj.tags.length > 0 ? proj.tags : ['Design', 'Agency', 'Creative'],
+        featured: false,
+        createdAt: new Date().toISOString()
+      };
+
+      const updated = [newPortoItem, ...safePorto];
+      await storage.setItem('porto_portfolio', updated);
+      notify?.(`⭐ "${proj.title}" berhasil dipublikasikan ke Portofolio Publik!`, 'success');
+    } catch (err) {
+      console.error('Error publishing to portfolio:', err);
+      notify?.('Gagal mempublikasikan ke portofolio', 'error');
+    }
+  };
+
+  // ── 1-CLICK PIPELINE: PUBLISH TO SHOP CATALOG ──
+  const handlePublishToShopCatalog = async (proj: any) => {
+    try {
+      const existingProducts = await storage.getItem('porto_catalog_products', []);
+      const safeProducts = Array.isArray(existingProducts) ? existingProducts : [];
+
+      const files = Array.isArray(proj.files) ? proj.files : Array.isArray(proj.attachments) ? proj.attachments : [];
+      const coverUrl = proj.coverImage || (files[0] && files[0].url) || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80';
+
+      const newProduct = {
+        id: `prod-${Date.now()}`,
+        productCode: `PRJ-${Math.floor(1000 + Math.random() * 9000)}`,
+        name: proj.title || 'Template & Aset Digital',
+        category: proj.category || 'Digital',
+        type: 'Digital',
+        price: 0,
+        originalPrice: 0,
+        stock: 999,
+        description: proj.description || proj.notes || 'Aset dan template digital siap pakai dari sumr.day Studio.',
+        gallery: [coverUrl, ...files.map((f: any) => f.url).filter(Boolean)].slice(0, 5),
+        isPublished: true,
+        isDigitalAsset: true,
+        accessModel: 'lifetime',
+        downloadUrl: (files[0] && files[0].url) || '',
+        createdAt: new Date().toISOString()
+      };
+
+      const updated = [newProduct, ...safeProducts];
+      await storage.setItem('porto_catalog_products', updated);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('porto_catalog_updated', { detail: updated }));
+      }
+      notify?.(`🛍️ "${proj.title}" berhasil dijadikan Template di Katalog Toko!`, 'success');
+    } catch (err) {
+      console.error('Error publishing to shop:', err);
+      notify?.('Gagal menyimpan ke katalog toko', 'error');
+    }
+  };
+
+  // ── SMART WHATSAPP STATUS NOTIFICATION ──
+  const handleSendWaStatusUpdate = () => {
+    const rawPhone = project.clientPhone || project.phone || '';
+    const cleanPhone = rawPhone.replace(/\D/g, '');
+    const phoneToUse = cleanPhone.startsWith('0') ? '62' + cleanPhone.slice(1) : cleanPhone;
+
+    const clientName = project.client || project.clientName || 'Klien';
+    const statusLabel = status.label || 'Dalam Pengerjaan';
+    const deadlineStr = project.deadline ? new Date(project.deadline).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-';
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://sumr.day';
+    const proofingLink = `${origin}/client/account?order=${encodeURIComponent(project.id)}&tab=proofing`;
+
+    const text = `Halo Kak *${clientName}*! 👋
+
+Update terbaru pengerjaan proyek dari *sumr.day Studio*:
+📌 Proyek: *${project.title || 'Proyek'}*
+📊 Status Terkini: *${statusLabel}*
+📅 Target Deadline: *${deadlineStr}*
+
+🔗 Cek perkembangan dan pratinjau desain Anda melalui Portal Klien:
+${proofingLink}
+
+Silakan kabari kami jika ada masukan atau pertanyaan ya Kak. Terima kasih! 🙏✨`;
+
+    if (!phoneToUse) {
+      const inputPhone = window.prompt('Masukkan nomor WhatsApp Klien (contoh: 08123456789):', '');
+      if (!inputPhone) return;
+      const cleanInput = inputPhone.replace(/\D/g, '');
+      const formatted = cleanInput.startsWith('0') ? '62' + cleanInput.slice(1) : cleanInput;
+      updateProject(project.id, { clientPhone: formatted });
+      window.open(`https://wa.me/${formatted}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+      notify?.('Membuka WhatsApp untuk update status', 'success');
+      return;
+    }
+
+    window.open(`https://wa.me/${phoneToUse}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+    notify?.('Membuka WhatsApp untuk update status', 'success');
+  };
+
+  // ── SMART ASSET DROP LINK GENERATOR & SENDER ──
+  const handleSendAssetDropLink = () => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://sumr.day';
+    const dropUrl = `${origin}/drop/${encodeURIComponent(project.id)}`;
+
+    try {
+      navigator.clipboard.writeText(dropUrl);
+    } catch { }
+
+    const rawPhone = project.clientPhone || project.phone || '';
+    const cleanPhone = rawPhone.replace(/\D/g, '');
+    const phoneToUse = cleanPhone.startsWith('0') ? '62' + cleanPhone.slice(1) : cleanPhone;
+    const clientName = project.client || project.clientName || 'Klien';
+
+    const text = `Halo Kak *${clientName}*! 👋☀️
+
+Untuk memulai pengerjaan proyek *"${project.title || 'Proyek'}"*, silakan kirimkan materi brand (logo vektor, foto produk HD, dokumen brief) melalui portal serah terima materi resmi sumr.day berikut:
+
+🔗 ${dropUrl}
+
+(Bisa langsung drag & drop file ukuran besar tanpa repot login). Terima kasih! 🙏✨`;
+
+    if (phoneToUse) {
+      window.open(`https://wa.me/${phoneToUse}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+      notify?.(`Tautan /drop disalin & membuka WhatsApp klien (${clientName})`, 'success');
+    } else {
+      notify?.(`Tautan serah terima berkas disalin: ${dropUrl}`, 'success');
+    }
+  };
+
   const addTask = (e: any) => {
     e?.preventDefault?.();
     if (!newTask.trim()) return;
@@ -8395,7 +8904,7 @@ JANGAN gunakan emoji. Gunakan format teks bersih dan profesional.`;
           if (Array.isArray(settings?.adminUsers) && settings.adminUsers.length > 0) {
             setAdminUsers(settings.adminUsers);
           }
-        }).catch(() => {});
+        }).catch(() => { });
       }
     });
     return () => unsub();
@@ -8444,8 +8953,8 @@ JANGAN gunakan emoji. Gunakan format teks bersih dan profesional.`;
       }}
     >
       {/* Modal Container */}
-      <div 
-        className="project-pill-modal-inner" 
+      <div
+        className="project-pill-modal-inner"
         onClick={(e) => e.stopPropagation()}
         style={isMobile ? {
           position: 'fixed',
@@ -8724,7 +9233,7 @@ JANGAN gunakan emoji. Gunakan format teks bersih dan profesional.`;
               </div>
 
               {/* ── 2. PURE ICON-ONLY TOOLBAR (SCROLLABLE ON MOBILE) ── */}
-              <div 
+              <div
                 style={{
                   padding: isMobile ? '5px 10px' : '6px 14px',
                   borderBottom: '1px solid var(--glass-border)',
@@ -8798,12 +9307,13 @@ JANGAN gunakan emoji. Gunakan format teks bersih dan profesional.`;
                 className="memo-canvas-container"
                 style={{
                   flex: 1,
+                  minHeight: 0,
                   overflowY: 'auto',
                   background: 'transparent',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  padding: isMobile ? '12px 10px calc(100px + env(safe-area-inset-bottom, 20px))' : '24px 32px 100px',
+                  padding: isMobile ? '12px 10px 20px 10px' : '24px 32px 100px',
                   scrollbarWidth: 'thin',
                   boxSizing: 'border-box'
                 }}
@@ -8815,7 +9325,8 @@ JANGAN gunakan emoji. Gunakan format teks bersih dan profesional.`;
                     maxWidth: 840,
                     display: 'flex',
                     flexDirection: 'column',
-                    minHeight: '100%'
+                    minHeight: '100%',
+                    paddingBottom: isMobile ? 'calc(84px + env(safe-area-inset-bottom, 12px))' : '100px'
                   }}
                 >
                   <ProjectRichBlockNotepad
@@ -8830,6 +9341,8 @@ JANGAN gunakan emoji. Gunakan format teks bersih dan profesional.`;
                     }}
                     onOpenLightbox={(img) => setNoteLightboxImage(img)}
                   />
+                  {/* Generous bottom clearance spacer */}
+                  <div style={{ height: isMobile ? 220 : 100, width: '100%', flexShrink: 0, pointerEvents: 'none' }} />
                 </div>
               </div>
 
@@ -8877,8 +9390,9 @@ JANGAN gunakan emoji. Gunakan format teks bersih dan profesional.`;
               position: 'fixed',
               inset: 0,
               zIndex: 2147483647,
-              background: 'rgba(0,0,0,0.88)',
-              backdropFilter: 'blur(8px)',
+              background: 'rgba(4, 4, 8, 0.92)',
+              backdropFilter: 'none',
+              WebkitBackdropFilter: 'none',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -8943,7 +9457,7 @@ JANGAN gunakan emoji. Gunakan format teks bersih dan profesional.`;
         {/* Header */}
         <div style={{ padding: isMobile ? '16px 16px 0' : '24px 24px 0', paddingTop: isMobile ? 'max(16px, env(safe-area-inset-top))' : '24px', display: 'flex', alignItems: 'flex-start', gap: 14, flexShrink: 0 }}>
           <div style={{ position: 'relative' }}>
-            <button 
+            <button
               type="button"
               onClick={() => setIsIconPickerOpen(!isIconPickerOpen)}
               title="Klik untuk ganti icon proyek"
@@ -9004,9 +9518,9 @@ JANGAN gunakan emoji. Gunakan format teks bersih dan profesional.`;
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             {parentProject && (
-              <button 
+              <button
                 onClick={() => { setSelectedProject(parentProject); setActiveTab('overview'); }}
-                style={{ 
+                style={{
                   display: 'inline-flex', alignItems: 'center', gap: 6,
                   background: 'rgba(var(--cms-accent-rgb), 0.08)', color: 'var(--cms-accent)',
                   border: 'none', padding: '5px 12px', borderRadius: 100,
@@ -9068,23 +9582,38 @@ JANGAN gunakan emoji. Gunakan format teks bersih dan profesional.`;
                       borderRadius: 20, boxShadow: '0 20px 50px rgba(0,0,0,0.5)', padding: 8,
                       zIndex: 9998, animation: 'cmsPopIn 0.2s cubic-bezier(0.16,1,0.3,1) both'
                     }}>
-                      <button type="button" onClick={() => { const { googleUrl } = generateProjectCalendarEvent(project, 'deadline'); window.open(googleUrl, '_blank', 'noopener,noreferrer'); setIsHeaderActionsMenuOpen(false); notify('📅 Membuka Google Calendar', 'success'); }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 12, border: 'none', background: 'transparent', color: 'var(--cms-text)', fontSize: 13, fontWeight: 700, cursor: 'pointer', width: '100%', textAlign: 'left' }} onMouseEnter={e => e.currentTarget.style.background='var(--cms-switcher-bg)'} onMouseLeave={e => e.currentTarget.style.background='transparent'}>
-                        <Calendar size={15} color="#3b82f6" /> <span>Google Calendar (Deadline)</span>
+                      <button type="button" onClick={() => { const { googleUrl } = generateProjectCalendarEvent(project, 'deadline'); window.open(googleUrl, '_blank', 'noopener,noreferrer'); setIsHeaderActionsMenuOpen(false); notify('Membuka Google Calendar', 'success'); }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 12, border: 'none', background: 'transparent', color: 'var(--cms-text)', fontSize: 13, fontWeight: 700, cursor: 'pointer', width: '100%', textAlign: 'left' }} onMouseEnter={e => e.currentTarget.style.background = 'var(--cms-switcher-bg)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <Calendar size={15} color="#3b82f6" /> <span>Google Calendar</span>
                       </button>
-                      <button type="button" onClick={() => { const { googleUrl } = generateProjectCalendarEvent(project, 'review'); window.open(googleUrl, '_blank', 'noopener,noreferrer'); setIsHeaderActionsMenuOpen(false); notify('🤝 Membuka Google Calendar Meet', 'success'); }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 12, border: 'none', background: 'transparent', color: 'var(--cms-text)', fontSize: 13, fontWeight: 700, cursor: 'pointer', width: '100%', textAlign: 'left' }} onMouseEnter={e => e.currentTarget.style.background='var(--cms-switcher-bg)'} onMouseLeave={e => e.currentTarget.style.background='transparent'}>
-                        <Users size={15} color="#3b82f6" /> <span>Meeting Review (Google Meet)</span>
+                      <button type="button" onClick={() => { const { googleUrl } = generateProjectCalendarEvent(project, 'review'); window.open(googleUrl, '_blank', 'noopener,noreferrer'); setIsHeaderActionsMenuOpen(false); notify('Membuka Google Meet', 'success'); }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 12, border: 'none', background: 'transparent', color: 'var(--cms-text)', fontSize: 13, fontWeight: 700, cursor: 'pointer', width: '100%', textAlign: 'left' }} onMouseEnter={e => e.currentTarget.style.background = 'var(--cms-switcher-bg)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <Users size={15} color="#3b82f6" /> <span>Review Meet</span>
                       </button>
-                      <button type="button" onClick={() => { const { icsContent } = generateProjectCalendarEvent(project, 'deadline'); downloadIcsFile(`${project.title || 'proyek'}-deadline.ics`, icsContent); setIsHeaderActionsMenuOpen(false); notify('📥 Berkas iCal diunduh', 'success'); }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 12, border: 'none', background: 'transparent', color: 'var(--cms-text)', fontSize: 13, fontWeight: 700, cursor: 'pointer', width: '100%', textAlign: 'left' }} onMouseEnter={e => e.currentTarget.style.background='var(--cms-switcher-bg)'} onMouseLeave={e => e.currentTarget.style.background='transparent'}>
-                        <Download size={15} color="#10b981" /> <span>Unduh File iCal (.ics)</span>
+                      <button type="button" onClick={() => { const { icsContent } = generateProjectCalendarEvent(project, 'deadline'); downloadIcsFile(`${project.title || 'proyek'}-deadline.ics`, icsContent); setIsHeaderActionsMenuOpen(false); notify('Berkas iCal diunduh', 'success'); }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 12, border: 'none', background: 'transparent', color: 'var(--cms-text)', fontSize: 13, fontWeight: 700, cursor: 'pointer', width: '100%', textAlign: 'left' }} onMouseEnter={e => e.currentTarget.style.background = 'var(--cms-switcher-bg)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <Download size={15} color="#10b981" /> <span>Unduh iCal</span>
                       </button>
-                      <button type="button" onClick={() => { handleCreateInvoiceForProject(project); onClose(); setIsHeaderActionsMenuOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 12, border: 'none', background: 'transparent', color: 'var(--cms-text)', fontSize: 13, fontWeight: 700, cursor: 'pointer', width: '100%', textAlign: 'left' }} onMouseEnter={e => e.currentTarget.style.background='var(--cms-switcher-bg)'} onMouseLeave={e => e.currentTarget.style.background='transparent'}>
-                        <Receipt size={15} color="#8b5cf6" /> <span>Buat Invoice / Nota</span>
+                      <button type="button" onClick={() => { handleSendWaStatusUpdate(); setIsHeaderActionsMenuOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 12, border: 'none', background: 'transparent', color: '#22c55e', fontSize: 13, fontWeight: 700, cursor: 'pointer', width: '100%', textAlign: 'left' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(34,197,94,0.08)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <MessageCircle size={15} color="#22c55e" /> <span>Update WA</span>
+                      </button>
+                      <button type="button" onClick={() => { setIsProofingModalOpen(true); setIsHeaderActionsMenuOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 12, border: 'none', background: 'transparent', color: '#06b6d4', fontSize: 13, fontWeight: 700, cursor: 'pointer', width: '100%', textAlign: 'left' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(6,182,212,0.08)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <ShieldCheck size={15} color="#06b6d4" /> <span>Proofing Klien</span>
+                      </button>
+                      <button type="button" onClick={() => { handlePublishToPortfolio(project); setIsHeaderActionsMenuOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 12, border: 'none', background: 'transparent', color: '#f59e0b', fontSize: 13, fontWeight: 700, cursor: 'pointer', width: '100%', textAlign: 'left' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(245,158,11,0.08)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <Award size={15} color="#f59e0b" /> <span>Jadikan Portofolio</span>
+                      </button>
+                      <button type="button" onClick={() => { handlePublishToShopCatalog(project); setIsHeaderActionsMenuOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 12, border: 'none', background: 'transparent', color: '#10b981', fontSize: 13, fontWeight: 700, cursor: 'pointer', width: '100%', textAlign: 'left' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(16,185,129,0.08)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <Store size={15} color="#10b981" /> <span>Template Toko</span>
+                      </button>
+                      <button type="button" onClick={() => { handleSendAssetDropLink(); setIsHeaderActionsMenuOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 12, border: 'none', background: 'transparent', color: '#0ea5e9', fontSize: 13, fontWeight: 700, cursor: 'pointer', width: '100%', textAlign: 'left' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(14,165,233,0.08)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <Upload size={15} color="#0ea5e9" /> <span>Serah Terima</span>
+                      </button>
+                      <button type="button" onClick={() => { handleCreateInvoiceForProject(project); onClose(); setIsHeaderActionsMenuOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 12, border: 'none', background: 'transparent', color: 'var(--cms-text)', fontSize: 13, fontWeight: 700, cursor: 'pointer', width: '100%', textAlign: 'left' }} onMouseEnter={e => e.currentTarget.style.background = 'var(--cms-switcher-bg)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <Receipt size={15} color="#8b5cf6" /> <span>Buat Tagihan</span>
                       </button>
                       <div style={{ height: 1, background: 'var(--glass-border)', margin: '4px 0' }} />
-                      <button type="button" onClick={() => { const taskList = (project.subtasks || project.tasks || []).map((t: any) => typeof t === 'string' ? t : t.text || t.title).filter(Boolean); const newTmpl: OfflineProjectTemplate = { id: `custom_from_${project.id}_${Date.now()}`, label: project.title || 'Template Proyek', category: (project.category || 'design').toLowerCase().replace(/\s+/g, '_') as any, icon: project.icon || 'FolderKanban', title: project.title || 'Template Proyek', description: project.description || 'Disimpan dari proyek aktif', priority: project.priority || 'medium', tags: Array.isArray(project.tags) ? project.tags : ['Custom'], estimatedDays: 14, tasks: taskList.length > 0 ? taskList : ['Persiapan', 'Pengerjaan', 'Finalisasi'], notes: project.notes || '', prompt: project.description || project.title || '' }; saveCustomProjectTemplate(newTmpl); setIsHeaderActionsMenuOpen(false); notify?.(`Disimpan sebagai Template ⭐`, 'success'); }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 12, border: 'none', background: 'transparent', color: 'var(--cms-text)', fontSize: 13, fontWeight: 700, cursor: 'pointer', width: '100%', textAlign: 'left' }} onMouseEnter={e => e.currentTarget.style.background='var(--cms-switcher-bg)'} onMouseLeave={e => e.currentTarget.style.background='transparent'}>
-                        <Bookmark size={15} color="#10b981" /> <span>Simpan sebagai Template</span>
+                      <button type="button" onClick={() => { const taskList = (project.subtasks || project.tasks || []).map((t: any) => typeof t === 'string' ? t : t.text || t.title).filter(Boolean); const newTmpl: OfflineProjectTemplate = { id: `custom_from_${project.id}_${Date.now()}`, label: project.title || 'Template Proyek', category: (project.category || 'design').toLowerCase().replace(/\s+/g, '_') as any, icon: project.icon || 'FolderKanban', title: project.title || 'Template Proyek', description: project.description || 'Disimpan dari proyek aktif', priority: project.priority || 'medium', tags: Array.isArray(project.tags) ? project.tags : ['Custom'], estimatedDays: 14, tasks: taskList.length > 0 ? taskList : ['Persiapan', 'Pengerjaan', 'Finalisasi'], notes: project.notes || '', prompt: project.description || project.title || '' }; saveCustomProjectTemplate(newTmpl); setIsHeaderActionsMenuOpen(false); notify?.(`Disimpan sebagai Template ⭐`, 'success'); }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 12, border: 'none', background: 'transparent', color: 'var(--cms-text)', fontSize: 13, fontWeight: 700, cursor: 'pointer', width: '100%', textAlign: 'left' }} onMouseEnter={e => e.currentTarget.style.background = 'var(--cms-switcher-bg)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <Bookmark size={15} color="#10b981" /> <span>Simpan Template</span>
                       </button>
-                      <button type="button" onClick={async () => { await removeProject(project.id); onClose(); setIsHeaderActionsMenuOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 12, border: 'none', background: 'transparent', color: '#ef4444', fontSize: 13, fontWeight: 700, cursor: 'pointer', width: '100%', textAlign: 'left' }} onMouseEnter={e => e.currentTarget.style.background='rgba(239,68,68,0.08)'} onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+                      <button type="button" onClick={async () => { await removeProject(project.id); onClose(); setIsHeaderActionsMenuOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 12, border: 'none', background: 'transparent', color: '#ef4444', fontSize: 13, fontWeight: 700, cursor: 'pointer', width: '100%', textAlign: 'left' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,0.08)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                         <Trash2 size={15} /> <span>Hapus Proyek</span>
                       </button>
                     </div>
@@ -9121,20 +9650,20 @@ JANGAN gunakan emoji. Gunakan format teks bersih dan profesional.`;
                       <Calendar size={13} color="#3b82f6" /> Google Calendar Sync
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
-                      <button type="button" onClick={() => { const { googleUrl } = generateProjectCalendarEvent(project, 'deadline'); window.open(googleUrl, '_blank', 'noopener,noreferrer'); setIsCalendarMenuOpen(false); notify('📅 Membuka Google Calendar untuk Deadline Proyek', 'success'); }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 10, border: 'none', background: 'transparent', color: 'var(--cms-text)', fontSize: 12, fontWeight: 750, cursor: 'pointer', textAlign: 'left' }} onMouseEnter={e => e.currentTarget.style.background='var(--cms-switcher-bg)'} onMouseLeave={e => e.currentTarget.style.background='transparent'}>
-                        <Target size={14} color="#ef4444" /><span>Jadwalkan Target Deadline</span>
+                      <button type="button" onClick={() => { const { googleUrl } = generateProjectCalendarEvent(project, 'deadline'); window.open(googleUrl, '_blank', 'noopener,noreferrer'); setIsCalendarMenuOpen(false); notify('Membuka Google Calendar untuk target deadline', 'success'); }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 10, border: 'none', background: 'transparent', color: 'var(--cms-text)', fontSize: 12, fontWeight: 750, cursor: 'pointer', textAlign: 'left' }} onMouseEnter={e => e.currentTarget.style.background = 'var(--cms-switcher-bg)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <Target size={14} color="#ef4444" /><span>Target Deadline</span>
                       </button>
-                      <button type="button" onClick={() => { const { googleUrl } = generateProjectCalendarEvent(project, 'review'); window.open(googleUrl, '_blank', 'noopener,noreferrer'); setIsCalendarMenuOpen(false); notify('🤝 Membuka Google Calendar untuk Meeting Review Klien', 'success'); }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 10, border: 'none', background: 'transparent', color: 'var(--cms-text)', fontSize: 12, fontWeight: 750, cursor: 'pointer', textAlign: 'left' }} onMouseEnter={e => e.currentTarget.style.background='var(--cms-switcher-bg)'} onMouseLeave={e => e.currentTarget.style.background='transparent'}>
-                        <Users size={14} color="#3b82f6" /><span>Meeting Review (Google Meet)</span>
+                      <button type="button" onClick={() => { const { googleUrl } = generateProjectCalendarEvent(project, 'review'); window.open(googleUrl, '_blank', 'noopener,noreferrer'); setIsCalendarMenuOpen(false); notify('Membuka Google Calendar untuk review', 'success'); }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 10, border: 'none', background: 'transparent', color: 'var(--cms-text)', fontSize: 12, fontWeight: 750, cursor: 'pointer', textAlign: 'left' }} onMouseEnter={e => e.currentTarget.style.background = 'var(--cms-switcher-bg)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <Users size={14} color="#3b82f6" /><span>Review Meet</span>
                       </button>
-                      <button type="button" onClick={() => { const { icsContent } = generateProjectCalendarEvent(project, 'deadline'); downloadIcsFile(`${project.title || 'proyek'}-deadline.ics`, icsContent); setIsCalendarMenuOpen(false); notify('📥 Berkas Kalender (.ics) berhasil diunduh', 'success'); }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 10, border: 'none', background: 'transparent', color: 'var(--cms-text)', fontSize: 12, fontWeight: 750, cursor: 'pointer', textAlign: 'left' }} onMouseEnter={e => e.currentTarget.style.background='var(--cms-switcher-bg)'} onMouseLeave={e => e.currentTarget.style.background='transparent'}>
-                        <Download size={14} color="#10b981" /><span>Unduh File iCal (.ics)</span>
+                      <button type="button" onClick={() => { const { icsContent } = generateProjectCalendarEvent(project, 'deadline'); downloadIcsFile(`${project.title || 'proyek'}-deadline.ics`, icsContent); setIsCalendarMenuOpen(false); notify('Berkas iCal diunduh', 'success'); }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 10, border: 'none', background: 'transparent', color: 'var(--cms-text)', fontSize: 12, fontWeight: 750, cursor: 'pointer', textAlign: 'left' }} onMouseEnter={e => e.currentTarget.style.background = 'var(--cms-switcher-bg)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <Download size={14} color="#10b981" /><span>Unduh iCal</span>
                       </button>
                     </div>
                   </div>
                 )}
 
-                <button 
+                <button
                   type="button"
                   onClick={() => {
                     const taskList = (project.subtasks || project.tasks || []).map((t: any) => typeof t === 'string' ? t : t.text || t.title).filter(Boolean);
@@ -9154,12 +9683,96 @@ JANGAN gunakan emoji. Gunakan format teks bersih dan profesional.`;
                     };
                     saveCustomProjectTemplate(newTmpl);
                     notify?.(`Proyek "${project.title}" berhasil disimpan sebagai Template! ⭐`, 'success');
-                  }} 
+                  }}
                   title="Simpan Proyek Ini sebagai Template"
                   style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(16, 185, 129, 0.12)', border: 'none', color: '#10b981', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 >
                   <Bookmark size={15} />
                 </button>
+                {/* WhatsApp Status Update */}
+                <button
+                  type="button"
+                  onClick={handleSendWaStatusUpdate}
+                  title="Kirim Update Status via WhatsApp"
+                  style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(34, 197, 94, 0.15)', border: '1px solid rgba(34, 197, 94, 0.3)', color: '#22c55e', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease' }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(34, 197, 94, 0.25)'; e.currentTarget.style.transform = 'scale(1.05)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(34, 197, 94, 0.15)'; e.currentTarget.style.transform = 'none'; }}
+                >
+                  <MessageCircle size={15} />
+                </button>
+
+                {/* Proofing & Watermark */}
+                <button
+                  type="button"
+                  onClick={() => setIsProofingModalOpen(true)}
+                  title="Pratinjau Watermark & Proofing Klien"
+                  style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(6, 182, 212, 0.15)', border: '1px solid rgba(6, 182, 212, 0.3)', color: '#06b6d4', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease' }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(6, 182, 212, 0.25)'; e.currentTarget.style.transform = 'scale(1.05)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(6, 182, 212, 0.15)'; e.currentTarget.style.transform = 'none'; }}
+                >
+                  <ShieldCheck size={15} />
+                </button>
+
+                {/* 1-Click Pipeline (Portofolio & Toko) */}
+                <div style={{ position: 'relative' }}>
+                  <button
+                    type="button"
+                    onClick={() => setIsPipelineMenuOpen(!isPipelineMenuOpen)}
+                    title="Jadikan Portofolio atau Template Produk Toko"
+                    style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.3)', color: '#f59e0b', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease' }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(245, 158, 11, 0.25)'; e.currentTarget.style.transform = 'scale(1.05)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'rgba(245, 158, 11, 0.15)'; e.currentTarget.style.transform = 'none'; }}
+                  >
+                    <Share2 size={15} />
+                  </button>
+
+                  {isPipelineMenuOpen && (
+                    <div
+                      style={{
+                        position: 'absolute', top: '120%', right: 0, width: 220,
+                        background: 'var(--cms-card-bg)', border: '1.5px solid var(--glass-border)',
+                        borderRadius: 16, boxShadow: '0 20px 50px rgba(0,0,0,0.4)', padding: 8,
+                        zIndex: 9999, backdropFilter: 'blur(20px)', animation: 'cmsPopIn 0.2s ease both'
+                      }}
+                    >
+                      <div style={{ fontSize: 10, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '4px 8px' }}>
+                        1-Click Pipeline
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => { handlePublishToPortfolio(project); setIsPipelineMenuOpen(false); }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 10, border: 'none', background: 'transparent', color: 'var(--cms-text)', fontSize: 12, fontWeight: 700, cursor: 'pointer', width: '100%', textAlign: 'left' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--cms-switcher-bg)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <Award size={14} color="#f59e0b" />
+                        <span>Jadikan Portofolio</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { handlePublishToShopCatalog(project); setIsPipelineMenuOpen(false); }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 10, border: 'none', background: 'transparent', color: 'var(--cms-text)', fontSize: 12, fontWeight: 700, cursor: 'pointer', width: '100%', textAlign: 'left' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--cms-switcher-bg)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <Store size={14} color="#10b981" />
+                        <span>Template Toko</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleSendAssetDropLink}
+                  title="Kirim Magic Link Asset Drop (/drop) ke Klien via WhatsApp"
+                  style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(14, 165, 233, 0.15)', border: '1px solid rgba(14, 165, 233, 0.3)', color: '#0ea5e9', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease' }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(14, 165, 233, 0.25)'; e.currentTarget.style.transform = 'scale(1.05)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(14, 165, 233, 0.15)'; e.currentTarget.style.transform = 'none'; }}
+                >
+                  <Upload size={15} />
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {
@@ -9250,11 +9863,11 @@ JANGAN gunakan emoji. Gunakan format teks bersih dan profesional.`;
           {/* Left: Icon-Only Tabs with Count Badges */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             {TABS.map(tab => {
-              const badgeCount = 
+              const badgeCount =
                 tab.id === 'tasks' ? subProjects.length :
-                tab.id === 'team' ? getSafeArray(project.team).length :
-                tab.id === 'chat' ? (project.comments?.length || 0) :
-                tab.id === 'files' ? (project.files?.length || 0) : 0;
+                  tab.id === 'team' ? getSafeArray(project.team).length :
+                    tab.id === 'chat' ? (project.comments?.length || 0) :
+                      tab.id === 'files' ? (project.files?.length || 0) : 0;
 
               return (
                 <button
@@ -9389,1131 +10002,1202 @@ JANGAN gunakan emoji. Gunakan format teks bersih dan profesional.`;
             boxSizing: 'border-box'
           }}>
 
-          {/* OVERVIEW TAB */}
-          {activeTab === 'overview' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-              
-              {/* Parent Project Breadcrumb if this is a sub-module */}
-              {parentProject && (
-                <div style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '10px 14px', background: 'var(--cms-accent-soft)',
-                  borderRadius: 14, border: '1.5px solid rgba(var(--cms-accent-rgb), 0.25)'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 800, color: 'var(--cms-text)' }}>
-                    <span style={{ color: 'var(--cms-text-muted)', fontSize: 11 }}>Sub-modul dari:</span>
-                    <span style={{ color: 'var(--cms-accent)' }}>{parentProject.title}</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedProject(parentProject)}
-                    style={{
-                      background: 'var(--cms-accent)', border: 'none', color: '#fff',
-                      fontSize: 11, fontWeight: 850, padding: '5px 12px', borderRadius: 100,
-                      cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4
-                    }}
-                  >
-                    <span>Induk Proyek</span>
-                    <ChevronRight size={13} />
-                  </button>
-                </div>
-              )}
+            {/* OVERVIEW TAB */}
+            {activeTab === 'overview' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 
-              {project.type === 'content' ? (
-                <div key="mode-content" style={{ display: 'flex', flexDirection: 'column', gap: 16, animation: 'cmsFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) both' }}>
-                  {/* Status / Tahapan Produksi, Platform, Format, Priority Row */}
-                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: 10 }}>
-                    <div>
-                      <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Tahapan</div>
-                      <CustomSelect value={project.status || 'todo'} onChange={val => updateProject(project.id, { status: val })} options={CONTENT_STATUSES} />
+                {/* Parent Project Breadcrumb if this is a sub-module */}
+                {parentProject && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '10px 14px', background: 'var(--cms-accent-soft)',
+                    borderRadius: 14, border: '1.5px solid rgba(var(--cms-accent-rgb), 0.25)'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 800, color: 'var(--cms-text)' }}>
+                      <span style={{ color: 'var(--cms-text-muted)', fontSize: 11 }}>Sub-modul dari:</span>
+                      <span style={{ color: 'var(--cms-accent)' }}>{parentProject.title}</span>
                     </div>
-                    <div>
-                      <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Prioritas</div>
-                      <CustomSelect value={project.priority || 'medium'} onChange={val => updateProject(project.id, { priority: val })} options={PRIORITIES} />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Platform</div>
-                      <CustomSelect value={project.platform || 'instagram'} onChange={val => updateProject(project.id, { platform: val })} options={CONTENT_PLATFORMS} />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Format</div>
-                      <CustomSelect value={project.format || 'reels'} onChange={val => updateProject(project.id, { format: val })} options={CONTENT_FORMATS} />
-                    </div>
-                  </div>
-
-                  {/* Jadwal & Jam Publikasi */}
-                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr', gap: 10 }}>
-                    <div>
-                      <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <span>Jadwal Publikasi</span>
-                        <InfoTooltip content="Target tanggal tayang konten" />
-                      </div>
-                      <GlassDatePicker value={project.deadline || project.scheduledDate} onChange={val => updateProject(project.id, { deadline: val, scheduledDate: val })} />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Jam</div>
-                      <GlassTimePicker
-                        value={project.scheduledTime}
-                        onChange={val => updateProject(project.id, { scheduledTime: val })}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Caption & Copywriting */}
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Caption & Naskah</div>
-                    <textarea
-                      value={getSafeString(project.caption || project.description)}
-                      onChange={e => updateProject(project.id, { caption: e.target.value, description: e.target.value })}
-                      placeholder="Tuliskan naskah caption, hook, dan CTA..."
-                      rows={3}
-                      style={{ width: '100%', background: 'var(--cms-input-bg)', border: '1.5px solid var(--glass-border)', borderRadius: 14, padding: '12px 16px', fontSize: 14, fontWeight: 500, color: 'var(--cms-text)', outline: 'none', resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.6, boxSizing: 'border-box', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
-                    />
-                  </div>
-
-                  {/* Hashtags */}
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Hashtags</div>
-                    <input
-                      value={getSafeString(project.hashtags)}
-                      onChange={e => updateProject(project.id, { hashtags: e.target.value })}
-                      placeholder="#branding #desain #uiux"
-                      style={{ width: '100%', background: 'var(--cms-input-bg)', border: '1.5px solid var(--glass-border)', color: 'var(--cms-text)', fontSize: 13.5, fontWeight: 700, padding: '10px 16px', borderRadius: 12, outline: 'none', boxSizing: 'border-box', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
-                    />
-                  </div>
-
-                  {/* ── UNIFIED PROJECT NOTES & DOCUMENTS LIST (CONTENT) ── */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                          Naskah & Catatan ({projectNotes.length})
-                        </div>
-                        <InfoTooltip content="Naskah video, script scene by scene, dan arahan visual" />
-                      </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                        {/* Naskah AI — circle icon only */}
-                        <button
-                          type="button"
-                          onClick={() => handleGenerateAiDocument('script')}
-                          disabled={isAiBriefLoading}
-                          className="cms-circle-btn"
-                          style={{
-                            width: 30, height: 30, minWidth: 30, minHeight: 30,
-                            borderRadius: '50%',
-                            border: '1.5px solid var(--glass-border)',
-                            background: 'var(--cms-accent-soft)',
-                            color: 'var(--cms-accent)',
-                            cursor: isAiBriefLoading ? 'not-allowed' : 'pointer',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            flexShrink: 0, padding: 0
-                          }}
-                          title="Susun Naskah AI"
-                        >
-                          {isAiBriefLoading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-                        </button>
-
-                        {/* Tambah — circle icon only */}
-                        <button
-                          type="button"
-                          onClick={() => handleAddProjectNote('Naskah Baru', '', 'script')}
-                          className="cms-circle-btn"
-                          style={{
-                            width: 30, height: 30, minWidth: 30, minHeight: 30,
-                            borderRadius: '50%',
-                            border: 'none',
-                            background: 'var(--cms-accent)',
-                            color: '#fff',
-                            cursor: 'pointer',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            flexShrink: 0, padding: 0
-                          }}
-                          title="Tambah Naskah Baru"
-                        >
-                          <Plus size={14} strokeWidth={2.5} />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Notes Cards List with Color Theming */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {projectNotes.length === 0 ? (
-                        <div 
-                          onClick={() => handleAddProjectNote('Naskah Konten', '', 'script')}
-                          style={{
-                            padding: '16px',
-                            borderRadius: 14,
-                            background: 'var(--cms-input-bg)',
-                            border: '1.5px dashed var(--glass-border)',
-                            textAlign: 'center',
-                            cursor: 'pointer',
-                            transition: 'all 0.15s ease'
-                          }}
-                        >
-                          <FileText size={20} color="var(--cms-accent)" style={{ margin: '0 auto 4px', display: 'block', opacity: 0.6 }} />
-                          <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--cms-text)' }}>Belum ada naskah</div>
-                          <div style={{ fontSize: 11, color: 'var(--cms-text-muted)', marginTop: 2 }}>Klik untuk menulis naskah atau brief</div>
-                        </div>
-                      ) : (
-                        projectNotes.map((noteItem, nIdx) => {
-                          const snippet = (noteItem.content || '').replace(/^[#\s*>•\-]+/gm, '').trim();
-                          const cardTheme = NOTE_COLOR_THEMES[noteItem.color || 'default'] || NOTE_COLOR_THEMES.default;
-
-                          return (
-                            <div
-                              key={noteItem.id || nIdx}
-                              onClick={() => setActiveEditingNoteId(noteItem.id)}
-                              style={{
-                                padding: '10px 12px',
-                                borderRadius: 14,
-                                background: 'var(--cms-input-bg)',
-                                border: `1.5px solid ${cardTheme.border}`,
-                                borderLeft: `4px solid ${cardTheme.dot}`,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                gap: 10,
-                                cursor: 'pointer',
-                                transition: 'all 0.15s ease'
-                              }}
-                              onMouseEnter={e => {
-                                e.currentTarget.style.borderColor = cardTheme.dot;
-                                e.currentTarget.style.transform = 'translateY(-1px)';
-                              }}
-                              onMouseLeave={e => {
-                                e.currentTarget.style.borderColor = cardTheme.border;
-                                e.currentTarget.style.borderLeftColor = cardTheme.dot;
-                                e.currentTarget.style.transform = 'none';
-                              }}
-                            >
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
-                                <div style={{
-                                  width: 32, height: 32, borderRadius: 8,
-                                  background: cardTheme.bg,
-                                  color: cardTheme.text,
-                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                  flexShrink: 0
-                                }}>
-                                  <FileText size={15} />
-                                </div>
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                  <div style={{ fontSize: 12.5, fontWeight: 850, color: 'var(--cms-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {noteItem.title || 'Naskah'}
-                                  </div>
-                                  <div style={{ fontSize: 11, color: 'var(--cms-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 1 }}>
-                                    {snippet || 'Klik untuk membuka naskah...'}
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-                                <button
-                                  type="button"
-                                  onClick={() => setActiveEditingNoteId(noteItem.id)}
-                                  style={{
-                                    padding: '4px 8px',
-                                    borderRadius: 6,
-                                    border: '1px solid var(--glass-border)',
-                                    background: 'var(--cms-card-bg)',
-                                    color: cardTheme.text,
-                                    fontSize: 11,
-                                    fontWeight: 800,
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 3
-                                  }}
-                                  title="Buka"
-                                >
-                                  <Maximize2 size={11} />
-                                  <span>Buka</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteProjectNote(noteItem.id)}
-                                  style={{
-                                    width: 26, height: 26, borderRadius: 6,
-                                    border: 'none', background: 'transparent',
-                                    color: 'var(--cms-text-muted)', cursor: 'pointer',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                  }}
-                                  onMouseEnter={e => {
-                                    e.currentTarget.style.color = '#ef4444';
-                                    e.currentTarget.style.background = 'rgba(239,68,68,0.1)';
-                                  }}
-                                  onMouseLeave={e => {
-                                    e.currentTarget.style.color = 'var(--cms-text-muted)';
-                                    e.currentTarget.style.background = 'transparent';
-                                  }}
-                                  title="Hapus"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div key="mode-project" style={{ display: 'flex', flexDirection: 'column', gap: 16, animation: 'cmsFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) both' }}>
-                  {/* Status, Priority, Category & Featured Label Row */}
-                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: 10 }}>
-                    <div>
-                      <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Status</div>
-                      <CustomSelect value={project.status} onChange={val => updateProject(project.id, { status: val })} options={STATUSES} />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Prioritas</div>
-                      <CustomSelect value={project.priority} onChange={val => updateProject(project.id, { priority: val })} options={PRIORITIES} />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Kategori</div>
-                      <input 
-                        value={getSafeString(project.category)}
-                        onChange={e => updateProject(project.id, { category: e.target.value })}
-                        placeholder="Branding, UI/UX"
-                        style={{ width: '100%', background: 'var(--cms-input-bg)', border: '1.5px solid var(--glass-border)', color: 'var(--cms-text)', fontSize: 13.5, fontWeight: 700, padding: '10px 14px', borderRadius: 12, outline: 'none', boxSizing: 'border-box', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
-                      />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Label</div>
-                      <input 
-                        value={getSafeString(project.featuredLabel)}
-                        onChange={e => updateProject(project.id, { featuredLabel: e.target.value })}
-                        placeholder="Pilihan Editor"
-                        style={{ width: '100%', background: 'var(--cms-input-bg)', border: '1.5px solid var(--glass-border)', color: 'var(--cms-text)', fontSize: 13.5, fontWeight: 700, padding: '10px 14px', borderRadius: 12, outline: 'none', boxSizing: 'border-box', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Deadline & Target Waktu */}
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Target Deadline</div>
-                    <GlassDatePicker value={project.deadline} onChange={val => updateProject(project.id, { deadline: val })} />
-                  </div>
-
-                  {/* Description */}
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Deskripsi Proyek</div>
-                    <textarea
-                      value={getSafeString(project.description)}
-                      onChange={e => updateProject(project.id, { description: e.target.value })}
-                      placeholder="Deskripsi proyek..."
-                      rows={3}
-                      style={{ width: '100%', background: 'var(--cms-input-bg)', border: '1.5px solid var(--glass-border)', borderRadius: 14, padding: '12px 16px', fontSize: 14, fontWeight: 500, color: 'var(--cms-text)', outline: 'none', resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.6, boxSizing: 'border-box', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
-                    />
-                  </div>
-
-                  {/* Tags */}
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Tags</div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-                      {getSafeArray(project.tags).map((tag, i) => (
-                        <span key={i} style={{ 
-                          background: 'var(--cms-accent-soft)', color: 'var(--cms-accent)', 
-                          padding: '5px 8px 5px 12px', borderRadius: 100, 
-                          fontSize: 12, fontWeight: 800, 
-                          display: 'inline-flex', alignItems: 'center', gap: 6,
-                          lineHeight: 1
-                        }}>
-                          <span>{tag}</span>
-                          <button 
-                            type="button"
-                            onClick={() => updateProject(project.id, { tags: getSafeArray(project.tags).filter(t => t !== tag) })} 
-                            style={{ 
-                              background: 'rgba(var(--cms-accent-rgb), 0.15)', border: 'none', color: 'inherit', 
-                              cursor: 'pointer', padding: 0, width: 16, height: 16, minWidth: 16, minHeight: 16, 
-                              borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                              flexShrink: 0
-                            }}
-                            title="Hapus tag"
-                          >
-                            <X size={10} strokeWidth={2.5} />
-                          </button>
-                        </span>
-                      ))}
-                      <TagSelect project={project} projects={projects} updateProject={updateProject} />
-                    </div>
-                  </div>
-
-                  {/* Tim & Kolaborator Overview */}
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                          Tim ({getSafeArray(project.team).length})
-                        </div>
-                        <InfoTooltip content="Anggota tim & kolaborator yang ditag" />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab('team')}
-                        style={{ background: 'none', border: 'none', color: 'var(--cms-accent)', fontSize: 11, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
-                      >
-                        <UserCheck size={13} /> <span>Kelola</span>
-                      </button>
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-                      {getSafeArray(project.team).map((m: any, idx: number) => {
-                        const avatar = m.avatar || `https://api.dicebear.com/7.x/notionists/svg?seed=${encodeURIComponent(m.name || 'Admin')}`;
-                        return (
-                          <span
-                            key={m.id || idx}
-                            style={{
-                              display: 'inline-flex', alignItems: 'center', gap: 6,
-                              background: 'var(--cms-input-bg)', border: '1px solid var(--glass-border)',
-                              padding: '3px 8px 3px 5px', borderRadius: 100, fontSize: 11.5, fontWeight: 750, color: 'var(--cms-text)'
-                            }}
-                          >
-                            <img src={avatar} alt="" style={{ width: 16, height: 16, borderRadius: '50%', objectFit: 'cover' }} />
-                            <span>{m.name}</span>
-                          </span>
-                        );
-                      })}
-                      {getSafeArray(project.team).length === 0 && (
-                        <span style={{ fontSize: 11.5, color: 'var(--cms-text-muted)', fontStyle: 'italic' }}>Belum ada tim ditag.</span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab('team')}
-                        style={{
-                          padding: '3px 8px', borderRadius: 100, border: '1px dashed var(--glass-border)',
-                          background: 'transparent', color: 'var(--cms-accent)', fontSize: 11, fontWeight: 750,
-                          cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4
-                        }}
-                      >
-                        <Plus size={11} /> <span>Tag</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* ── UNIFIED PROJECT NOTES & DOCUMENTS LIST (REGULAR PROJECT) ── */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                          Catatan & Dokumen ({projectNotes.length})
-                        </div>
-                        <InfoTooltip content="Brief proyek, naskah, studi kasus, dan catatan internal" />
-                      </div>
-
-                      {/* Vertical (top-bottom) button stack */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                        {/* Studi Kasus AI — circle icon only */}
-                        <button
-                          type="button"
-                          onClick={() => handleGenerateAiDocument('casestudy')}
-                          disabled={isAiBriefLoading}
-                          className="cms-circle-btn"
-                          style={{
-                            width: 30, height: 30, minWidth: 30, minHeight: 30,
-                            borderRadius: '50%',
-                            border: '1.5px solid var(--glass-border)',
-                            background: 'var(--cms-accent-soft)',
-                            color: 'var(--cms-accent)',
-                            cursor: isAiBriefLoading ? 'not-allowed' : 'pointer',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            flexShrink: 0, padding: 0
-                          }}
-                          title="Susun Studi Kasus AI"
-                        >
-                          {isAiBriefLoading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-                        </button>
-
-                        {/* Tambah — circle icon only */}
-                        <button
-                          type="button"
-                          onClick={() => handleAddProjectNote('Catatan Baru', '', 'note')}
-                          className="cms-circle-btn"
-                          style={{
-                            width: 30, height: 30, minWidth: 30, minHeight: 30,
-                            borderRadius: '50%',
-                            border: 'none',
-                            background: 'var(--cms-accent)',
-                            color: '#fff',
-                            cursor: 'pointer',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            flexShrink: 0, padding: 0
-                          }}
-                          title="Tambah Catatan Baru"
-                        >
-                          <Plus size={14} strokeWidth={2.5} />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Notes Cards List with Color Theming */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {projectNotes.length === 0 ? (
-                        <div 
-                          onClick={() => handleAddProjectNote('Catatan Proyek', '', 'note')}
-                          style={{
-                            padding: '16px',
-                            borderRadius: 14,
-                            background: 'var(--cms-input-bg)',
-                            border: '1.5px dashed var(--glass-border)',
-                            textAlign: 'center',
-                            cursor: 'pointer',
-                            transition: 'all 0.15s ease'
-                          }}
-                        >
-                          <FileText size={20} color="var(--cms-accent)" style={{ margin: '0 auto 4px', display: 'block', opacity: 0.6 }} />
-                          <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--cms-text)' }}>Belum ada catatan</div>
-                          <div style={{ fontSize: 11, color: 'var(--cms-text-muted)', marginTop: 2 }}>Klik untuk membuat catatan atau brief baru</div>
-                        </div>
-                      ) : (
-                        projectNotes.map((noteItem, nIdx) => {
-                          const snippet = (noteItem.content || '').replace(/^[#\s*>•\-]+/gm, '').trim();
-                          const cardTheme = NOTE_COLOR_THEMES[noteItem.color || 'default'] || NOTE_COLOR_THEMES.default;
-
-                          return (
-                            <div
-                              key={noteItem.id || nIdx}
-                              onClick={() => setActiveEditingNoteId(noteItem.id)}
-                              style={{
-                                padding: '10px 12px',
-                                borderRadius: 14,
-                                background: 'var(--cms-input-bg)',
-                                border: `1.5px solid ${cardTheme.border}`,
-                                borderLeft: `4px solid ${cardTheme.dot}`,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                gap: 10,
-                                cursor: 'pointer',
-                                transition: 'all 0.15s ease'
-                              }}
-                              onMouseEnter={e => {
-                                e.currentTarget.style.borderColor = cardTheme.dot;
-                                e.currentTarget.style.transform = 'translateY(-1px)';
-                              }}
-                              onMouseLeave={e => {
-                                e.currentTarget.style.borderColor = cardTheme.border;
-                                e.currentTarget.style.borderLeftColor = cardTheme.dot;
-                                e.currentTarget.style.transform = 'none';
-                              }}
-                            >
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
-                                <div style={{
-                                  width: 32, height: 32, borderRadius: 8,
-                                  background: cardTheme.bg,
-                                  color: cardTheme.text,
-                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                  flexShrink: 0
-                                }}>
-                                  <FileText size={15} />
-                                </div>
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                  <div style={{ fontSize: 12.5, fontWeight: 850, color: 'var(--cms-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {noteItem.title || 'Catatan'}
-                                  </div>
-                                  <div style={{ fontSize: 11, color: 'var(--cms-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 1 }}>
-                                    {snippet || 'Klik untuk membuka catatan...'}
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-                                <button
-                                  type="button"
-                                  onClick={() => setActiveEditingNoteId(noteItem.id)}
-                                  style={{
-                                    padding: '4px 8px',
-                                    borderRadius: 6,
-                                    border: '1px solid var(--glass-border)',
-                                    background: 'var(--cms-card-bg)',
-                                    color: cardTheme.text,
-                                    fontSize: 11,
-                                    fontWeight: 800,
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 3
-                                  }}
-                                  title="Buka"
-                                >
-                                  <Maximize2 size={11} />
-                                  <span>Buka</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteProjectNote(noteItem.id)}
-                                  style={{
-                                    width: 26, height: 26, borderRadius: 6,
-                                    border: 'none', background: 'transparent',
-                                    color: 'var(--cms-text-muted)', cursor: 'pointer',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                  }}
-                                  onMouseEnter={e => {
-                                    e.currentTarget.style.color = '#ef4444';
-                                    e.currentTarget.style.background = 'rgba(239,68,68,0.1)';
-                                  }}
-                                  onMouseLeave={e => {
-                                    e.currentTarget.style.color = 'var(--cms-text-muted)';
-                                    e.currentTarget.style.background = 'transparent';
-                                  }}
-                                  title="Hapus"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Cover Image & Gallery Setup */}
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <span>Cover & Galeri</span>
-                  <InfoTooltip content="Gambar pertama pada tab Files otomatis dijadikan cover jika URL kosong" />
-                </div>
-                <input 
-                  value={getSafeString(project.coverImage)}
-                  onChange={e => updateProject(project.id, { coverImage: e.target.value })}
-                  placeholder="URL Cover Image (Opsional)"
-                  style={{ width: '100%', background: 'var(--cms-input-bg)', border: '1.5px solid var(--glass-border)', color: 'var(--cms-text)', fontSize: 13.5, fontWeight: 700, padding: '10px 14px', borderRadius: 12, outline: 'none', boxSizing: 'border-box', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
-                />
-              </div>
-
-              {/* Sub-modul / Sub-proyek Section */}
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      Sub-tasks ({subProjects.length})
-                    </div>
-                    <InfoTooltip content="Pecahan sub-modul dan tugas turunan proyek" />
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                     <button
                       type="button"
-                      onClick={handleGenerateAiSubProjects}
-                      disabled={isAiTaskLoading}
+                      onClick={() => setSelectedProject(parentProject)}
                       style={{
-                        width: 28, height: 28, minWidth: 28, minHeight: 28, borderRadius: '50%',
-                        flexShrink: 0, aspectRatio: '1 / 1',
-                        background: 'var(--cms-accent-soft)', border: '1.5px solid var(--glass-border)',
-                        color: 'var(--cms-accent)',
-                        cursor: isAiTaskLoading ? 'not-allowed' : 'pointer',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        background: 'var(--cms-accent)', border: 'none', color: '#fff',
+                        fontSize: 11, fontWeight: 850, padding: '5px 12px', borderRadius: 100,
+                        cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4
+                      }}
+                    >
+                      <span>Induk Proyek</span>
+                      <ChevronRight size={13} />
+                    </button>
+                  </div>
+                )}
+
+                {project.type === 'content' ? (
+                  <div key="mode-content" style={{ display: 'flex', flexDirection: 'column', gap: 16, animation: 'cmsFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) both' }}>
+                    {/* Status / Tahapan Produksi, Platform, Format, Priority Row */}
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Tahapan</div>
+                        <CustomSelect value={project.status || 'todo'} onChange={val => updateProject(project.id, { status: val })} options={CONTENT_STATUSES} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Prioritas</div>
+                        <CustomSelect value={project.priority || 'medium'} onChange={val => updateProject(project.id, { priority: val })} options={PRIORITIES} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Platform</div>
+                        <CustomSelect value={project.platform || 'instagram'} onChange={val => updateProject(project.id, { platform: val })} options={CONTENT_PLATFORMS} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Format</div>
+                        <CustomSelect value={project.format || 'reels'} onChange={val => updateProject(project.id, { format: val })} options={CONTENT_FORMATS} />
+                      </div>
+                    </div>
+
+                    {/* Jadwal & Jam Publikasi */}
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr', gap: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span>Jadwal Publikasi</span>
+                          <InfoTooltip content="Target tanggal tayang konten" />
+                        </div>
+                        <GlassDatePicker value={project.deadline || project.scheduledDate} onChange={val => updateProject(project.id, { deadline: val, scheduledDate: val })} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Jam</div>
+                        <GlassTimePicker
+                          value={project.scheduledTime}
+                          onChange={val => updateProject(project.id, { scheduledTime: val })}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Caption & Copywriting */}
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Caption & Naskah</div>
+                      <textarea
+                        value={getSafeString(project.caption || project.description)}
+                        onChange={e => updateProject(project.id, { caption: e.target.value, description: e.target.value })}
+                        placeholder="Tuliskan naskah caption, hook, dan CTA..."
+                        rows={3}
+                        style={{ width: '100%', background: 'var(--cms-input-bg)', border: '1.5px solid var(--glass-border)', borderRadius: 14, padding: '12px 16px', fontSize: 14, fontWeight: 500, color: 'var(--cms-text)', outline: 'none', resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.6, boxSizing: 'border-box', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
+                      />
+                    </div>
+
+                    {/* Hashtags */}
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Hashtags</div>
+                      <input
+                        value={getSafeString(project.hashtags)}
+                        onChange={e => updateProject(project.id, { hashtags: e.target.value })}
+                        placeholder="#branding #desain #uiux"
+                        style={{ width: '100%', background: 'var(--cms-input-bg)', border: '1.5px solid var(--glass-border)', color: 'var(--cms-text)', fontSize: 13.5, fontWeight: 700, padding: '10px 16px', borderRadius: 12, outline: 'none', boxSizing: 'border-box', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
+                      />
+                    </div>
+
+                    {/* ── UNIFIED PROJECT NOTES & DOCUMENTS LIST (CONTENT) ── */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            Naskah & Catatan ({projectNotes.length})
+                          </div>
+                          <InfoTooltip content="Naskah video, script scene by scene, dan arahan visual" />
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                          {/* Naskah AI — circle icon only */}
+                          <button
+                            type="button"
+                            onClick={() => handleGenerateAiDocument('script')}
+                            disabled={isAiBriefLoading}
+                            className="cms-circle-btn"
+                            style={{
+                              width: 30, height: 30, minWidth: 30, minHeight: 30,
+                              borderRadius: '50%',
+                              border: '1.5px solid var(--glass-border)',
+                              background: 'var(--cms-accent-soft)',
+                              color: 'var(--cms-accent)',
+                              cursor: isAiBriefLoading ? 'not-allowed' : 'pointer',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              flexShrink: 0, padding: 0
+                            }}
+                            title="Susun Naskah AI"
+                          >
+                            {isAiBriefLoading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                          </button>
+
+                          {/* Tambah — circle icon only */}
+                          <button
+                            type="button"
+                            onClick={() => handleAddProjectNote('Naskah Baru', '', 'script')}
+                            className="cms-circle-btn"
+                            style={{
+                              width: 30, height: 30, minWidth: 30, minHeight: 30,
+                              borderRadius: '50%',
+                              border: 'none',
+                              background: 'var(--cms-accent)',
+                              color: '#fff',
+                              cursor: 'pointer',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              flexShrink: 0, padding: 0
+                            }}
+                            title="Tambah Naskah Baru"
+                          >
+                            <Plus size={14} strokeWidth={2.5} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Notes Cards List with Color Theming */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {projectNotes.length === 0 ? (
+                          <div
+                            onClick={() => handleAddProjectNote('Naskah Konten', '', 'script')}
+                            style={{
+                              padding: '16px',
+                              borderRadius: 14,
+                              background: 'var(--cms-input-bg)',
+                              border: '1.5px dashed var(--glass-border)',
+                              textAlign: 'center',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            <FileText size={20} color="var(--cms-accent)" style={{ margin: '0 auto 4px', display: 'block', opacity: 0.6 }} />
+                            <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--cms-text)' }}>Belum ada naskah</div>
+                            <div style={{ fontSize: 11, color: 'var(--cms-text-muted)', marginTop: 2 }}>Klik untuk menulis naskah atau brief</div>
+                          </div>
+                        ) : (
+                          projectNotes.map((noteItem, nIdx) => {
+                            const snippet = (noteItem.content || '').replace(/^[#\s*>•\-]+/gm, '').trim();
+                            const cardTheme = NOTE_COLOR_THEMES[noteItem.color || 'default'] || NOTE_COLOR_THEMES.default;
+
+                            return (
+                              <div
+                                key={noteItem.id || nIdx}
+                                onClick={() => setActiveEditingNoteId(noteItem.id)}
+                                style={{
+                                  padding: '10px 12px',
+                                  borderRadius: 14,
+                                  background: 'var(--cms-input-bg)',
+                                  border: `1.5px solid ${cardTheme.border}`,
+                                  borderLeft: `4px solid ${cardTheme.dot}`,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: 10,
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease'
+                                }}
+                                onMouseEnter={e => {
+                                  e.currentTarget.style.borderColor = cardTheme.dot;
+                                  e.currentTarget.style.transform = 'translateY(-1px)';
+                                }}
+                                onMouseLeave={e => {
+                                  e.currentTarget.style.borderColor = cardTheme.border;
+                                  e.currentTarget.style.borderLeftColor = cardTheme.dot;
+                                  e.currentTarget.style.transform = 'none';
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                                  <div style={{
+                                    width: 32, height: 32, borderRadius: 8,
+                                    background: cardTheme.bg,
+                                    color: cardTheme.text,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    flexShrink: 0
+                                  }}>
+                                    <FileText size={15} />
+                                  </div>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: 12.5, fontWeight: 850, color: 'var(--cms-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {noteItem.title || 'Naskah'}
+                                    </div>
+                                    <div style={{ fontSize: 11, color: 'var(--cms-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 1 }}>
+                                      {snippet || 'Klik untuk membuka naskah...'}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveEditingNoteId(noteItem.id)}
+                                    style={{
+                                      padding: '4px 8px',
+                                      borderRadius: 6,
+                                      border: '1px solid var(--glass-border)',
+                                      background: 'var(--cms-card-bg)',
+                                      color: cardTheme.text,
+                                      fontSize: 11,
+                                      fontWeight: 800,
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: 3
+                                    }}
+                                    title="Buka"
+                                  >
+                                    <Maximize2 size={11} />
+                                    <span>Buka</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteProjectNote(noteItem.id)}
+                                    style={{
+                                      width: 26, height: 26, borderRadius: 6,
+                                      border: 'none', background: 'transparent',
+                                      color: 'var(--cms-text-muted)', cursor: 'pointer',
+                                      display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                    }}
+                                    onMouseEnter={e => {
+                                      e.currentTarget.style.color = '#ef4444';
+                                      e.currentTarget.style.background = 'rgba(239,68,68,0.1)';
+                                    }}
+                                    onMouseLeave={e => {
+                                      e.currentTarget.style.color = 'var(--cms-text-muted)';
+                                      e.currentTarget.style.background = 'transparent';
+                                    }}
+                                    title="Hapus"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div key="mode-project" style={{ display: 'flex', flexDirection: 'column', gap: 16, animation: 'cmsFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) both' }}>
+                    {/* Status, Priority, Category & Featured Label Row */}
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Status</div>
+                        <CustomSelect value={project.status} onChange={val => updateProject(project.id, { status: val })} options={STATUSES} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Prioritas</div>
+                        <CustomSelect value={project.priority} onChange={val => updateProject(project.id, { priority: val })} options={PRIORITIES} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Kategori</div>
+                        <input
+                          value={getSafeString(project.category)}
+                          onChange={e => updateProject(project.id, { category: e.target.value })}
+                          placeholder="Branding, UI/UX"
+                          style={{ width: '100%', background: 'var(--cms-input-bg)', border: '1.5px solid var(--glass-border)', color: 'var(--cms-text)', fontSize: 13.5, fontWeight: 700, padding: '10px 14px', borderRadius: 12, outline: 'none', boxSizing: 'border-box', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
+                        />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Label</div>
+                        <input
+                          value={getSafeString(project.featuredLabel)}
+                          onChange={e => updateProject(project.id, { featuredLabel: e.target.value })}
+                          placeholder="Pilihan Editor"
+                          style={{ width: '100%', background: 'var(--cms-input-bg)', border: '1.5px solid var(--glass-border)', color: 'var(--cms-text)', fontSize: 13.5, fontWeight: 700, padding: '10px 14px', borderRadius: 12, outline: 'none', boxSizing: 'border-box', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Deadline & Target Waktu */}
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Target Deadline</div>
+                      <GlassDatePicker value={project.deadline} onChange={val => updateProject(project.id, { deadline: val })} />
+                    </div>
+
+                    {/* Description */}
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Deskripsi Proyek</div>
+                      <textarea
+                        value={getSafeString(project.description)}
+                        onChange={e => updateProject(project.id, { description: e.target.value })}
+                        placeholder="Deskripsi proyek..."
+                        rows={3}
+                        style={{ width: '100%', background: 'var(--cms-input-bg)', border: '1.5px solid var(--glass-border)', borderRadius: 14, padding: '12px 16px', fontSize: 14, fontWeight: 500, color: 'var(--cms-text)', outline: 'none', resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.6, boxSizing: 'border-box', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
+                      />
+                    </div>
+
+                    {/* Tags */}
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Tags</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                        {getSafeArray(project.tags).map((tag, i) => (
+                          <span key={i} style={{
+                            background: 'var(--cms-accent-soft)', color: 'var(--cms-accent)',
+                            padding: '5px 8px 5px 12px', borderRadius: 100,
+                            fontSize: 12, fontWeight: 800,
+                            display: 'inline-flex', alignItems: 'center', gap: 6,
+                            lineHeight: 1
+                          }}>
+                            <span>{tag}</span>
+                            <button
+                              type="button"
+                              onClick={() => updateProject(project.id, { tags: getSafeArray(project.tags).filter(t => t !== tag) })}
+                              style={{
+                                background: 'rgba(var(--cms-accent-rgb), 0.15)', border: 'none', color: 'inherit',
+                                cursor: 'pointer', padding: 0, width: 16, height: 16, minWidth: 16, minHeight: 16,
+                                borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                flexShrink: 0
+                              }}
+                              title="Hapus tag"
+                            >
+                              <X size={10} strokeWidth={2.5} />
+                            </button>
+                          </span>
+                        ))}
+                        <TagSelect project={project} projects={projects} updateProject={updateProject} />
+                      </div>
+                    </div>
+
+                    {/* Tim & Kolaborator Overview */}
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            Tim ({getSafeArray(project.team).length})
+                          </div>
+                          <InfoTooltip content="Anggota tim & kolaborator yang ditag" />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('team')}
+                          style={{ background: 'none', border: 'none', color: 'var(--cms-accent)', fontSize: 11, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+                        >
+                          <UserCheck size={13} /> <span>Kelola</span>
+                        </button>
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                        {getSafeArray(project.team).map((m: any, idx: number) => {
+                          const avatar = m.avatar || `https://api.dicebear.com/7.x/notionists/svg?seed=${encodeURIComponent(m.name || 'Admin')}`;
+                          return (
+                            <span
+                              key={m.id || idx}
+                              style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 6,
+                                background: 'var(--cms-input-bg)', border: '1px solid var(--glass-border)',
+                                padding: '3px 8px 3px 5px', borderRadius: 100, fontSize: 11.5, fontWeight: 750, color: 'var(--cms-text)'
+                              }}
+                            >
+                              <img src={avatar} alt="" style={{ width: 16, height: 16, borderRadius: '50%', objectFit: 'cover' }} />
+                              <span>{m.name}</span>
+                            </span>
+                          );
+                        })}
+                        {getSafeArray(project.team).length === 0 && (
+                          <span style={{ fontSize: 11.5, color: 'var(--cms-text-muted)', fontStyle: 'italic' }}>Belum ada tim ditag.</span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('team')}
+                          style={{
+                            padding: '3px 8px', borderRadius: 100, border: '1px dashed var(--glass-border)',
+                            background: 'transparent', color: 'var(--cms-accent)', fontSize: 11, fontWeight: 750,
+                            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4
+                          }}
+                        >
+                          <Plus size={11} /> <span>Tag</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* ── UNIFIED PROJECT NOTES & DOCUMENTS LIST (REGULAR PROJECT) ── */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            Catatan & Dokumen ({projectNotes.length})
+                          </div>
+                          <InfoTooltip content="Brief proyek, naskah, studi kasus, dan catatan internal" />
+                        </div>
+
+                        {/* Vertical (top-bottom) button stack */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                          {/* Studi Kasus AI — circle icon only */}
+                          <button
+                            type="button"
+                            onClick={() => handleGenerateAiDocument('casestudy')}
+                            disabled={isAiBriefLoading}
+                            className="cms-circle-btn"
+                            style={{
+                              width: 30, height: 30, minWidth: 30, minHeight: 30,
+                              borderRadius: '50%',
+                              border: '1.5px solid var(--glass-border)',
+                              background: 'var(--cms-accent-soft)',
+                              color: 'var(--cms-accent)',
+                              cursor: isAiBriefLoading ? 'not-allowed' : 'pointer',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              flexShrink: 0, padding: 0
+                            }}
+                            title="Susun Studi Kasus AI"
+                          >
+                            {isAiBriefLoading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                          </button>
+
+                          {/* Tambah — circle icon only */}
+                          <button
+                            type="button"
+                            onClick={() => handleAddProjectNote('Catatan Baru', '', 'note')}
+                            className="cms-circle-btn"
+                            style={{
+                              width: 30, height: 30, minWidth: 30, minHeight: 30,
+                              borderRadius: '50%',
+                              border: 'none',
+                              background: 'var(--cms-accent)',
+                              color: '#fff',
+                              cursor: 'pointer',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              flexShrink: 0, padding: 0
+                            }}
+                            title="Tambah Catatan Baru"
+                          >
+                            <Plus size={14} strokeWidth={2.5} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Notes Cards List with Color Theming */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {projectNotes.length === 0 ? (
+                          <div
+                            onClick={() => handleAddProjectNote('Catatan Proyek', '', 'note')}
+                            style={{
+                              padding: '16px',
+                              borderRadius: 14,
+                              background: 'var(--cms-input-bg)',
+                              border: '1.5px dashed var(--glass-border)',
+                              textAlign: 'center',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            <FileText size={20} color="var(--cms-accent)" style={{ margin: '0 auto 4px', display: 'block', opacity: 0.6 }} />
+                            <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--cms-text)' }}>Belum ada catatan</div>
+                            <div style={{ fontSize: 11, color: 'var(--cms-text-muted)', marginTop: 2 }}>Klik untuk membuat catatan atau brief baru</div>
+                          </div>
+                        ) : (
+                          projectNotes.map((noteItem, nIdx) => {
+                            const snippet = (noteItem.content || '').replace(/^[#\s*>•\-]+/gm, '').trim();
+                            const cardTheme = NOTE_COLOR_THEMES[noteItem.color || 'default'] || NOTE_COLOR_THEMES.default;
+
+                            return (
+                              <div
+                                key={noteItem.id || nIdx}
+                                onClick={() => setActiveEditingNoteId(noteItem.id)}
+                                style={{
+                                  padding: '10px 12px',
+                                  borderRadius: 14,
+                                  background: 'var(--cms-input-bg)',
+                                  border: `1.5px solid ${cardTheme.border}`,
+                                  borderLeft: `4px solid ${cardTheme.dot}`,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: 10,
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease'
+                                }}
+                                onMouseEnter={e => {
+                                  e.currentTarget.style.borderColor = cardTheme.dot;
+                                  e.currentTarget.style.transform = 'translateY(-1px)';
+                                }}
+                                onMouseLeave={e => {
+                                  e.currentTarget.style.borderColor = cardTheme.border;
+                                  e.currentTarget.style.borderLeftColor = cardTheme.dot;
+                                  e.currentTarget.style.transform = 'none';
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                                  <div style={{
+                                    width: 32, height: 32, borderRadius: 8,
+                                    background: cardTheme.bg,
+                                    color: cardTheme.text,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    flexShrink: 0
+                                  }}>
+                                    <FileText size={15} />
+                                  </div>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: 12.5, fontWeight: 850, color: 'var(--cms-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {noteItem.title || 'Catatan'}
+                                    </div>
+                                    <div style={{ fontSize: 11, color: 'var(--cms-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 1 }}>
+                                      {snippet || 'Klik untuk membuka catatan...'}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveEditingNoteId(noteItem.id)}
+                                    style={{
+                                      padding: '4px 8px',
+                                      borderRadius: 6,
+                                      border: '1px solid var(--glass-border)',
+                                      background: 'var(--cms-card-bg)',
+                                      color: cardTheme.text,
+                                      fontSize: 11,
+                                      fontWeight: 800,
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: 3
+                                    }}
+                                    title="Buka"
+                                  >
+                                    <Maximize2 size={11} />
+                                    <span>Buka</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteProjectNote(noteItem.id)}
+                                    style={{
+                                      width: 26, height: 26, borderRadius: 6,
+                                      border: 'none', background: 'transparent',
+                                      color: 'var(--cms-text-muted)', cursor: 'pointer',
+                                      display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                    }}
+                                    onMouseEnter={e => {
+                                      e.currentTarget.style.color = '#ef4444';
+                                      e.currentTarget.style.background = 'rgba(239,68,68,0.1)';
+                                    }}
+                                    onMouseLeave={e => {
+                                      e.currentTarget.style.color = 'var(--cms-text-muted)';
+                                      e.currentTarget.style.background = 'transparent';
+                                    }}
+                                    title="Hapus"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Cover Image & Gallery Setup */}
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span>Cover & Galeri</span>
+                    <InfoTooltip content="Gambar pertama pada tab Files otomatis dijadikan cover jika URL kosong" />
+                  </div>
+                  <ImageInputWithActions
+                    value={getSafeString(project.coverImage)}
+                    onChange={url => updateProject(project.id, { coverImage: url })}
+                    placeholder="URL Cover Image (Opsional)"
+                  />
+                </div>
+
+                {/* Sub-modul / Sub-proyek Section */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        Sub-tasks ({subProjects.length})
+                      </div>
+                      <InfoTooltip content="Pecahan sub-modul dan tugas turunan proyek" />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                      <button
+                        type="button"
+                        onClick={handleGenerateAiSubProjects}
+                        disabled={isAiTaskLoading}
+                        style={{
+                          width: 28, height: 28, minWidth: 28, minHeight: 28, borderRadius: '50%',
+                          flexShrink: 0, aspectRatio: '1 / 1',
+                          background: 'var(--cms-accent-soft)', border: '1.5px solid var(--glass-border)',
+                          color: 'var(--cms-accent)',
+                          cursor: isAiTaskLoading ? 'not-allowed' : 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          transition: 'all 0.15s ease'
+                        }}
+                        title="AI Sub-tasks"
+                      >
+                        {isAiTaskLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleAddQuickSubProject('Sub-modul Baru')}
+                        style={{
+                          width: 28, height: 28, minWidth: 28, minHeight: 28, borderRadius: '50%',
+                          flexShrink: 0, aspectRatio: '1 / 1',
+                          background: 'var(--cms-accent)',
+                          border: 'none',
+                          color: '#fff',
+                          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          transition: 'all 0.15s ease',
+                          boxShadow: '0 2px 8px rgba(var(--cms-accent-rgb), 0.25)'
+                        }}
+                        title="Tambah Sub-task"
+                      >
+                        <Plus size={14} strokeWidth={2.8} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* List of Sub-projects (Sub-modules) */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {subProjects.map(sub => {
+                      const subStatus = STATUSES.find(s => s.id === sub.status) || STATUSES[0];
+                      return (
+                        <div
+                          key={sub.id}
+                          onClick={() => { setSelectedProject(sub); }}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
+                            borderRadius: 14, background: 'var(--cms-input-bg)',
+                            cursor: 'pointer', border: '1.5px solid var(--glass-border)', transition: 'all 0.15s ease'
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--cms-accent)'}
+                          onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--glass-border)'}
+                          title="Klik untuk membuka detail sub-modul ini"
+                        >
+                          <span style={{
+                            width: 32, height: 32, borderRadius: 10,
+                            background: 'var(--cms-accent-soft)', color: 'var(--cms-accent)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                          }}>
+                            {renderProjectIcon(sub.icon || 'FolderKanban', 16)}
+                          </span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <input
+                              type="text"
+                              value={getSafeString(sub.title)}
+                              onChange={(e) => {
+                                const newTitle = e.target.value;
+                                updateProject(sub.id, { title: newTitle });
+                                const currentSubs = (Array.isArray(project.submodules) ? project.submodules : []).map((s: any) =>
+                                  String(s.id) === String(sub.id) ? { ...s, title: newTitle } : s
+                                );
+                                updateProject(project.id, { submodules: currentSubs });
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              placeholder="Nama Sub-modul..."
+                              style={{
+                                background: 'transparent', border: 'none', color: 'var(--cms-text)',
+                                fontSize: 13.5, fontWeight: 800, width: '100%', outline: 'none',
+                                fontFamily: 'inherit', padding: 0, margin: 0
+                              }}
+                            />
+                            <div style={{ fontSize: 11, color: 'var(--cms-text-muted)', fontWeight: 600, marginTop: 2, display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span>{sub.category || (sub.type === 'content' ? sub.platform : 'Sub-modul')}</span>
+                              {sub.deadline && <span>• Deadline: {sub.deadline}</span>}
+                            </div>
+                          </div>
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const nextStatus = sub.status === 'completed' ? 'todo' : sub.status === 'in_progress' ? 'completed' : 'in_progress';
+                              updateProject(sub.id, { status: nextStatus });
+                            }}
+                            style={{
+                              background: subStatus.bg, color: subStatus.color,
+                              fontSize: 10.5, fontWeight: 900, padding: '3px 10px',
+                              borderRadius: 100, flexShrink: 0, cursor: 'pointer'
+                            }}
+                            title="Klik untuk mengubah status"
+                          >
+                            {subStatus.label}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeProject(sub.id);
+                              const currentSubs = (Array.isArray(project.submodules) ? project.submodules : []).filter((s: any) => String(s.id) !== String(sub.id));
+                              updateProject(project.id, { submodules: currentSubs });
+                            }}
+                            style={{
+                              background: 'none', border: 'none', color: 'var(--cms-text-muted)',
+                              cursor: 'pointer', padding: 4, borderRadius: 6, display: 'flex', flexShrink: 0
+                            }}
+                            title="Hapus sub-modul ini"
+                          >
+                            <X size={14} />
+                          </button>
+                          <ChevronRight size={15} color="var(--cms-text-muted)" style={{ flexShrink: 0 }} />
+                        </div>
+                      );
+                    })}
+
+                    {/* Tombol Tambah Sub-modul Kosong */}
+                    <button
+                      type="button"
+                      onClick={() => handleAddQuickSubProject('Sub-modul Baru')}
+                      style={{
+                        width: '100%', padding: '12px 16px', borderRadius: 14,
+                        border: '1.5px dashed var(--glass-border)', cursor: 'pointer',
+                        background: 'transparent', color: 'var(--cms-accent)', fontSize: 12.5, fontWeight: 800,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                         transition: 'all 0.15s ease'
                       }}
-                      title="AI Sub-tasks"
+                      onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--cms-accent)'}
+                      onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--glass-border)'}
                     >
-                      {isAiTaskLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                      <Plus size={15} />
+                      <span>Tambah Sub-modul Kosong</span>
                     </button>
-                    <button 
-                      type="button" 
-                      onClick={() => handleAddQuickSubProject('Sub-modul Baru')} 
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TASKS TAB */}
+            {activeTab === 'tasks' && (
+              <div>
+                <form onSubmit={addTask} style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
+                  <input
+                    value={newTask}
+                    onChange={e => setNewTask(e.target.value)}
+                    placeholder="Add a new task..."
+                    style={{ flex: 1, minWidth: isMobile ? '100%' : 'auto', padding: '12px 16px', borderRadius: 100, background: 'var(--cms-input-bg)', border: '1.5px solid var(--glass-border)', color: 'var(--cms-text)', fontSize: 14, fontWeight: 600, outline: 'none', fontFamily: 'inherit' }}
+                  />
+                  <button type="submit" style={{ padding: '12px 20px', borderRadius: 100, background: 'var(--cms-accent)', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 900 }}>Add</button>
+                  <button
+                    type="button"
+                    onClick={handleGenerateAiSubtasks}
+                    disabled={isAiTaskLoading}
+                    style={{
+                      padding: '10px 16px', borderRadius: 100,
+                      background: 'var(--cms-accent-soft)', color: 'var(--cms-accent)',
+                      border: '1.5px solid var(--glass-border)', cursor: isAiTaskLoading ? 'not-allowed' : 'pointer',
+                      fontWeight: 850, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6,
+                      whiteSpace: 'nowrap'
+                    }}
+                    title="Susun sub-tasks otomatis dengan AI"
+                  >
+                    {isAiTaskLoading ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />}
+                    <span>AI Sub-tasks</span>
+                  </button>
+                </form>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {normalizedTasks.map(task => (
+                    <div
+                      key={task.id}
+                      onClick={() => toggleTask(task.id)}
                       style={{
-                        width: 28, height: 28, minWidth: 28, minHeight: 28, borderRadius: '50%',
-                        flexShrink: 0, aspectRatio: '1 / 1',
-                        background: 'var(--cms-accent)',
-                        border: 'none',
-                        color: '#fff',
-                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        transition: 'all 0.15s ease',
-                        boxShadow: '0 2px 8px rgba(var(--cms-accent-rgb), 0.25)'
+                        display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px',
+                        borderRadius: 14, background: task.done ? 'var(--cms-input-bg)' : 'var(--cms-card-bg)',
+                        border: '1.5px solid var(--glass-border)', transition: 'all 0.15s ease',
+                        cursor: 'pointer', userSelect: 'none'
                       }}
-                      title="Tambah Sub-task"
                     >
-                      <Plus size={14} strokeWidth={2.8} />
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); toggleTask(task.id); }}
+                        style={{
+                          width: 22, height: 22, borderRadius: 6,
+                          border: task.done ? '2px solid var(--cms-accent)' : '2px solid var(--glass-border)',
+                          background: task.done ? 'var(--cms-accent)' : 'transparent',
+                          cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        {task.done && <Check size={13} color="#fff" strokeWidth={3} />}
+                      </button>
+                      <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: task.done ? 'var(--cms-text-muted)' : 'var(--cms-text)', textDecoration: task.done ? 'line-through' : 'none' }}>
+                        {task.text}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }}
+                        style={{ background: 'none', border: 'none', color: 'var(--cms-text-muted)', cursor: 'pointer', padding: 4, borderRadius: 6, display: 'flex' }}
+                        title="Hapus sub-task"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+                  {normalizedTasks.length === 0 && (
+                    <div style={{ textAlign: 'center', padding: 40, color: 'var(--cms-text-muted)' }}>
+                      <CheckCircle2 size={32} style={{ margin: '0 auto 12px', display: 'block', opacity: 0.3 }} />
+                      <div style={{ fontSize: 14, fontWeight: 700 }}>Belum ada sub-task</div>
+                      <div style={{ fontSize: 12, marginTop: 4, opacity: 0.7 }}>Tambahkan tugas di atas atau gunakan AI Sub-tasks</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* TEAM & TAGGED ADMINS TAB */}
+            {activeTab === 'team' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                {/* Add / Tag Admin Form */}
+                <div style={{ padding: '16px 20px', borderRadius: 16, background: 'var(--cms-card-bg)', border: '1.5px solid var(--glass-border)' }}>
+                  <div style={{ fontSize: 12, fontWeight: 900, color: 'var(--cms-text)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <UserCheck size={16} color="var(--cms-accent)" />
+                    <span>Tag & Tambahkan Admin / Anggota Tim</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: isMobile ? 'wrap' : 'nowrap', alignItems: 'center' }}>
+                    <div style={{ flex: 1, minWidth: 180 }}>
+                      <CustomDropdown
+                        value={selectedAdminId}
+                        onChange={val => setSelectedAdminId(val)}
+                        placeholder="-- Pilih User Admin --"
+                        options={[
+                          { value: '', label: '-- Pilih User Admin --' },
+                          ...adminUsers.map(u => ({
+                            value: u.id,
+                            label: `${u.name || u.email} (${u.role || 'Admin'})`,
+                            icon: <img src={u.avatar || `https://api.dicebear.com/7.x/notionists/svg?seed=${encodeURIComponent(u.name || 'Admin')}`} alt="" style={{ width: 18, height: 18, borderRadius: '50%', objectFit: 'cover' }} />
+                          }))
+                        ]}
+                      />
+                    </div>
+
+                    <div style={{ width: isMobile ? '100%' : 170 }}>
+                      <CustomDropdown
+                        value={selectedRole}
+                        onChange={val => setSelectedRole(val)}
+                        placeholder="Pilih Role"
+                        options={[
+                          { value: 'Project Lead', label: 'Project Lead' },
+                          { value: 'UI/UX Designer', label: 'UI/UX Designer' },
+                          { value: 'Web Developer', label: 'Web Developer' },
+                          { value: 'Video Editor', label: 'Video Editor' },
+                          { value: 'Copywriter', label: 'Copywriter' },
+                          { value: 'QA Reviewer', label: 'QA Reviewer' },
+                          { value: 'Member', label: 'Member' }
+                        ]}
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!selectedAdminId) {
+                          notify?.('Pilih admin terlebih dahulu', 'warning');
+                          return;
+                        }
+                        const user = adminUsers.find(u => u.id === selectedAdminId);
+                        if (!user) return;
+                        const currentTeam = getSafeArray(project.team);
+                        if (currentTeam.some((t: any) => t.id === user.id || t.name === user.name)) {
+                          notify?.('User sudah ada dalam tim proyek ini', 'warning');
+                          return;
+                        }
+                        const newMember = {
+                          id: user.id,
+                          name: user.name || 'Admin',
+                          avatar: user.avatar || `https://api.dicebear.com/7.x/notionists/svg?seed=${encodeURIComponent(user.name || 'Admin')}`,
+                          role: selectedRole,
+                          color: 'var(--cms-accent)'
+                        };
+                        const updatedTeam = [...currentTeam, newMember];
+                        updateProject(project.id, {
+                          team: updatedTeam,
+                          activity: [{ id: Date.now(), time: new Date().toISOString(), message: `${newMember.name} ditambahkan sebagai ${selectedRole}` }, ...getSafeArray(project.activity)]
+                        });
+                        setSelectedAdminId('');
+                        notify?.(`✨ ${newMember.name} berhasil ditambahkan ke tim!`, 'success');
+                      }}
+                      style={{
+                        padding: '0 18px', height: 40, borderRadius: 10,
+                        background: 'var(--cms-accent)', color: '#fff', border: 'none',
+                        fontSize: 13, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap'
+                      }}
+                    >
+                      + Tag ke Tim
                     </button>
                   </div>
                 </div>
 
-                {/* List of Sub-projects (Sub-modules) */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {subProjects.map(sub => {
-                    const subStatus = STATUSES.find(s => s.id === sub.status) || STATUSES[0];
+                {/* Team Members List */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Daftar Anggota Proyek ({getSafeArray(project.team).length})
+                  </div>
+
+                  {getSafeArray(project.team).map((member: any, i: number) => {
+                    const avatar = member.avatar || `https://api.dicebear.com/7.x/notionists/svg?seed=${encodeURIComponent(member.name || 'Admin')}`;
                     return (
-                      <div 
-                        key={sub.id} 
-                        onClick={() => { setSelectedProject(sub); }} 
-                        style={{ 
-                          display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', 
-                          borderRadius: 14, background: 'var(--cms-input-bg)', 
-                          cursor: 'pointer', border: '1.5px solid var(--glass-border)', transition: 'all 0.15s ease' 
+                      <div
+                        key={member.id || i}
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          padding: '12px 16px', borderRadius: 14, background: 'var(--cms-card-bg)',
+                          border: '1.5px solid var(--glass-border)', boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
                         }}
-                        onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--cms-accent)'}
-                        onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--glass-border)'}
-                        title="Klik untuk membuka detail sub-modul ini"
                       >
-                        <span style={{ 
-                          width: 32, height: 32, borderRadius: 10, 
-                          background: 'var(--cms-accent-soft)', color: 'var(--cms-accent)',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 
-                        }}>
-                          {renderProjectIcon(sub.icon || 'FolderKanban', 16)}
-                        </span>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <input
-                            type="text"
-                            value={getSafeString(sub.title)}
-                            onChange={(e) => {
-                              const newTitle = e.target.value;
-                              updateProject(sub.id, { title: newTitle });
-                              const currentSubs = (Array.isArray(project.submodules) ? project.submodules : []).map((s: any) =>
-                                String(s.id) === String(sub.id) ? { ...s, title: newTitle } : s
-                              );
-                              updateProject(project.id, { submodules: currentSubs });
-                            }}
-                            onClick={(e) => e.stopPropagation()}
-                            placeholder="Nama Sub-modul..."
-                            style={{
-                              background: 'transparent', border: 'none', color: 'var(--cms-text)',
-                              fontSize: 13.5, fontWeight: 800, width: '100%', outline: 'none',
-                              fontFamily: 'inherit', padding: 0, margin: 0
-                            }}
-                          />
-                          <div style={{ fontSize: 11, color: 'var(--cms-text-muted)', fontWeight: 600, marginTop: 2, display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span>{sub.category || (sub.type === 'content' ? sub.platform : 'Sub-modul')}</span>
-                            {sub.deadline && <span>• Deadline: {sub.deadline}</span>}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <img src={avatar} alt="" style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--glass-border)' }} />
+                          <div>
+                            <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--cms-text)' }}>{member.name}</div>
+                            <div style={{ fontSize: 11, color: 'var(--cms-text-muted)', marginTop: 2 }}>{member.role || 'Member'}</div>
                           </div>
                         </div>
-                        <span 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const nextStatus = sub.status === 'completed' ? 'todo' : sub.status === 'in_progress' ? 'completed' : 'in_progress';
-                            updateProject(sub.id, { status: nextStatus });
-                          }}
-                          style={{ 
-                            background: subStatus.bg, color: subStatus.color, 
-                            fontSize: 10.5, fontWeight: 900, padding: '3px 10px', 
-                            borderRadius: 100, flexShrink: 0, cursor: 'pointer' 
-                          }}
-                          title="Klik untuk mengubah status"
-                        >
-                          {subStatus.label}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeProject(sub.id);
-                            const currentSubs = (Array.isArray(project.submodules) ? project.submodules : []).filter((s: any) => String(s.id) !== String(sub.id));
-                            updateProject(project.id, { submodules: currentSubs });
-                          }}
-                          style={{
-                            background: 'none', border: 'none', color: 'var(--cms-text-muted)',
-                            cursor: 'pointer', padding: 4, borderRadius: 6, display: 'flex', flexShrink: 0
-                          }}
-                          title="Hapus sub-modul ini"
-                        >
-                          <X size={14} />
-                        </button>
-                        <ChevronRight size={15} color="var(--cms-text-muted)" style={{ flexShrink: 0 }} />
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 10.5, fontWeight: 850, padding: '3px 10px', borderRadius: 100, background: 'var(--cms-accent-soft)', color: 'var(--cms-accent)' }}>
+                            {member.role || 'Member'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updatedTeam = getSafeArray(project.team).filter((_: any, idx: number) => idx !== i);
+                              updateProject(project.id, {
+                                team: updatedTeam,
+                                activity: [{ id: Date.now(), time: new Date().toISOString(), message: `${member.name} dihapus dari tim proyek` }, ...getSafeArray(project.activity)]
+                              });
+                              notify?.(`${member.name} dihapus dari tim`);
+                            }}
+                            style={{
+                              width: 30, height: 30, borderRadius: 8, border: 'none',
+                              background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444',
+                              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                            }}
+                            title="Hapus dari tim"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
 
-                  {/* Tombol Tambah Sub-modul Kosong */}
-                  <button 
-                    type="button"
-                    onClick={() => handleAddQuickSubProject('Sub-modul Baru')}
-                    style={{ 
-                      width: '100%', padding: '12px 16px', borderRadius: 14, 
-                      border: '1.5px dashed var(--glass-border)', cursor: 'pointer',
-                      background: 'transparent', color: 'var(--cms-accent)', fontSize: 12.5, fontWeight: 800,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                      transition: 'all 0.15s ease'
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--cms-accent)'}
-                    onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--glass-border)'}
-                  >
-                    <Plus size={15} />
-                    <span>Tambah Sub-modul Kosong</span>
-                  </button>
+                  {getSafeArray(project.team).length === 0 && (
+                    <div style={{ textAlign: 'center', padding: 40, color: 'var(--cms-text-muted)' }}>
+                      <Users size={32} style={{ margin: '0 auto 12px', display: 'block', opacity: 0.3 }} />
+                      <div style={{ fontSize: 14, fontWeight: 700 }}>Belum ada anggota tim yang ditag</div>
+                    </div>
+                  )}
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* TASKS TAB */}
-          {activeTab === 'tasks' && (
-            <div>
-              <form onSubmit={addTask} style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
-                <input
-                  value={newTask}
-                  onChange={e => setNewTask(e.target.value)}
-                  placeholder="Add a new task..."
-                  style={{ flex: 1, minWidth: isMobile ? '100%' : 'auto', padding: '12px 16px', borderRadius: 100, background: 'var(--cms-input-bg)', border: '1.5px solid var(--glass-border)', color: 'var(--cms-text)', fontSize: 14, fontWeight: 600, outline: 'none', fontFamily: 'inherit' }}
-                />
-                <button type="submit" style={{ padding: '12px 20px', borderRadius: 100, background: 'var(--cms-accent)', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 900 }}>Add</button>
-                <button
-                  type="button"
-                  onClick={handleGenerateAiSubtasks}
-                  disabled={isAiTaskLoading}
-                  style={{
-                    padding: '10px 16px', borderRadius: 100,
-                    background: 'var(--cms-accent-soft)', color: 'var(--cms-accent)',
-                    border: '1.5px solid var(--glass-border)', cursor: isAiTaskLoading ? 'not-allowed' : 'pointer',
-                    fontWeight: 850, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6,
-                    whiteSpace: 'nowrap'
+            {/* COMMENTS & DISCUSSION TAB */}
+            {activeTab === 'comments' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {/* Add Comment Input Form */}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!newCommentText.trim()) return;
+                    const currentUserName = auth.currentUser?.displayName || 'Admin';
+                    const currentUserAvatar = auth.currentUser?.photoURL || `https://api.dicebear.com/7.x/notionists/svg?seed=${encodeURIComponent(currentUserName)}`;
+                    const comment = {
+                      id: `comm_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                      userId: auth.currentUser?.uid || 'admin',
+                      userName: currentUserName,
+                      userAvatar: currentUserAvatar,
+                      text: newCommentText.trim(),
+                      createdAt: new Date().toISOString()
+                    };
+                    const updatedComments = [...getSafeArray(project.comments), comment];
+                    updateProject(project.id, {
+                      comments: updatedComments,
+                      activity: [{ id: Date.now(), time: new Date().toISOString(), message: `${currentUserName} menambahkan komentar` }, ...getSafeArray(project.activity)]
+                    });
+                    setNewCommentText('');
+                    notify?.('💬 Komentar berhasil diposting', 'success');
                   }}
-                  title="Susun sub-tasks otomatis dengan AI"
+                  style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}
                 >
-                  {isAiTaskLoading ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />}
-                  <span>AI Sub-tasks</span>
-                </button>
-              </form>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {normalizedTasks.map(task => (
-                  <div 
-                    key={task.id} 
-                    onClick={() => toggleTask(task.id)}
-                    style={{ 
-                      display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', 
-                      borderRadius: 14, background: task.done ? 'var(--cms-input-bg)' : 'var(--cms-card-bg)', 
-                      border: '1.5px solid var(--glass-border)', transition: 'all 0.15s ease',
-                      cursor: 'pointer', userSelect: 'none'
+                  <textarea
+                    rows={2}
+                    placeholder="Tulis update, catatan, atau tanggapan untuk tim..."
+                    value={newCommentText}
+                    onChange={e => setNewCommentText(e.target.value)}
+                    style={{
+                      flex: 1, padding: '12px 14px', borderRadius: 14,
+                      background: 'var(--cms-input-bg)', border: '1.5px solid var(--glass-border)',
+                      fontSize: 13, color: 'var(--cms-text)', outline: 'none', resize: 'none',
+                      lineHeight: 1.5, fontFamily: 'inherit'
                     }}
-                  >
-                    <button 
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); toggleTask(task.id); }} 
-                      style={{ 
-                        width: 22, height: 22, borderRadius: 6, 
-                        border: task.done ? '2px solid var(--cms-accent)' : '2px solid var(--glass-border)', 
-                        background: task.done ? 'var(--cms-accent)' : 'transparent', 
-                        cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', 
-                        transition: 'all 0.15s ease' 
-                      }}
-                    >
-                      {task.done && <Check size={13} color="#fff" strokeWidth={3} />}
-                    </button>
-                    <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: task.done ? 'var(--cms-text-muted)' : 'var(--cms-text)', textDecoration: task.done ? 'line-through' : 'none' }}>
-                      {task.text}
-                    </span>
-                    <button 
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} 
-                      style={{ background: 'none', border: 'none', color: 'var(--cms-text-muted)', cursor: 'pointer', padding: 4, borderRadius: 6, display: 'flex' }}
-                      title="Hapus sub-task"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                ))}
-                {normalizedTasks.length === 0 && (
-                  <div style={{ textAlign: 'center', padding: 40, color: 'var(--cms-text-muted)' }}>
-                    <CheckCircle2 size={32} style={{ margin: '0 auto 12px', display: 'block', opacity: 0.3 }} />
-                    <div style={{ fontSize: 14, fontWeight: 700 }}>Belum ada sub-task</div>
-                    <div style={{ fontSize: 12, marginTop: 4, opacity: 0.7 }}>Tambahkan tugas di atas atau gunakan AI Sub-tasks</div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* TEAM & TAGGED ADMINS TAB */}
-          {activeTab === 'team' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-              {/* Add / Tag Admin Form */}
-              <div style={{ padding: '16px 20px', borderRadius: 16, background: 'var(--cms-card-bg)', border: '1.5px solid var(--glass-border)' }}>
-                <div style={{ fontSize: 12, fontWeight: 900, color: 'var(--cms-text)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <UserCheck size={16} color="var(--cms-accent)" />
-                  <span>Tag & Tambahkan Admin / Anggota Tim</span>
-                </div>
-                <div style={{ display: 'flex', gap: 10, flexWrap: isMobile ? 'wrap' : 'nowrap', alignItems: 'center' }}>
-                  <div style={{ flex: 1, minWidth: 180 }}>
-                    <CustomDropdown
-                      value={selectedAdminId}
-                      onChange={val => setSelectedAdminId(val)}
-                      placeholder="-- Pilih User Admin --"
-                      options={[
-                        { value: '', label: '-- Pilih User Admin --' },
-                        ...adminUsers.map(u => ({
-                          value: u.id,
-                          label: `${u.name || u.email} (${u.role || 'Admin'})`,
-                          icon: <img src={u.avatar || `https://api.dicebear.com/7.x/notionists/svg?seed=${encodeURIComponent(u.name || 'Admin')}`} alt="" style={{ width: 18, height: 18, borderRadius: '50%', objectFit: 'cover' }} />
-                        }))
-                      ]}
-                    />
-                  </div>
-
-                  <div style={{ width: isMobile ? '100%' : 170 }}>
-                    <CustomDropdown
-                      value={selectedRole}
-                      onChange={val => setSelectedRole(val)}
-                      placeholder="Pilih Role"
-                      options={[
-                        { value: 'Project Lead', label: 'Project Lead' },
-                        { value: 'UI/UX Designer', label: 'UI/UX Designer' },
-                        { value: 'Web Developer', label: 'Web Developer' },
-                        { value: 'Video Editor', label: 'Video Editor' },
-                        { value: 'Copywriter', label: 'Copywriter' },
-                        { value: 'QA Reviewer', label: 'QA Reviewer' },
-                        { value: 'Member', label: 'Member' }
-                      ]}
-                    />
-                  </div>
-
+                  />
                   <button
-                    type="button"
-                    onClick={() => {
-                      if (!selectedAdminId) {
-                        notify?.('Pilih admin terlebih dahulu', 'warning');
-                        return;
-                      }
-                      const user = adminUsers.find(u => u.id === selectedAdminId);
-                      if (!user) return;
-                      const currentTeam = getSafeArray(project.team);
-                      if (currentTeam.some((t: any) => t.id === user.id || t.name === user.name)) {
-                        notify?.('User sudah ada dalam tim proyek ini', 'warning');
-                        return;
-                      }
-                      const newMember = {
-                        id: user.id,
-                        name: user.name || 'Admin',
-                        avatar: user.avatar || `https://api.dicebear.com/7.x/notionists/svg?seed=${encodeURIComponent(user.name || 'Admin')}`,
-                        role: selectedRole,
-                        color: 'var(--cms-accent)'
-                      };
-                      const updatedTeam = [...currentTeam, newMember];
-                      updateProject(project.id, {
-                        team: updatedTeam,
-                        activity: [{ id: Date.now(), time: new Date().toISOString(), message: `${newMember.name} ditambahkan sebagai ${selectedRole}` }, ...getSafeArray(project.activity)]
-                      });
-                      setSelectedAdminId('');
-                      notify?.(`✨ ${newMember.name} berhasil ditambahkan ke tim!`, 'success');
-                    }}
+                    type="submit"
+                    disabled={!newCommentText.trim()}
                     style={{
-                      padding: '0 18px', height: 40, borderRadius: 10,
-                      background: 'var(--cms-accent)', color: '#fff', border: 'none',
-                      fontSize: 13, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap'
+                      padding: '12px 20px', height: 44, borderRadius: 12,
+                      background: newCommentText.trim() ? 'var(--cms-accent)' : 'var(--cms-input-bg)',
+                      color: newCommentText.trim() ? '#fff' : 'var(--cms-text-muted)',
+                      border: 'none', fontSize: 13, fontWeight: 850,
+                      cursor: newCommentText.trim() ? 'pointer' : 'default',
+                      whiteSpace: 'nowrap'
                     }}
                   >
-                    + Tag ke Tim
+                    Kirim
                   </button>
-                </div>
-              </div>
+                </form>
 
-              {/* Team Members List */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Daftar Anggota Proyek ({getSafeArray(project.team).length})
-                </div>
-
-                {getSafeArray(project.team).map((member: any, i: number) => {
-                  const avatar = member.avatar || `https://api.dicebear.com/7.x/notionists/svg?seed=${encodeURIComponent(member.name || 'Admin')}`;
-                  return (
+                {/* Discussion Thread List */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {getSafeArray(project.comments).map((comm: any) => (
                     <div
-                      key={member.id || i}
+                      key={comm.id}
                       style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        padding: '12px 16px', borderRadius: 14, background: 'var(--cms-card-bg)',
-                        border: '1.5px solid var(--glass-border)', boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
+                        display: 'flex', gap: 12, padding: '14px 16px', borderRadius: 14,
+                        background: 'var(--cms-card-bg)', border: '1.5px solid var(--glass-border)',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <img src={avatar} alt="" style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--glass-border)' }} />
-                        <div>
-                          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--cms-text)' }}>{member.name}</div>
-                          <div style={{ fontSize: 11, color: 'var(--cms-text-muted)', marginTop: 2 }}>{member.role || 'Member'}</div>
+                      <img
+                        src={comm.userAvatar || `https://api.dicebear.com/7.x/notionists/svg?seed=${encodeURIComponent(comm.userName || 'Admin')}`}
+                        alt=""
+                        style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
+                      />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontSize: 13, fontWeight: 850, color: 'var(--cms-text)' }}>{comm.userName}</span>
+                            <span style={{ fontSize: 10, color: 'var(--cms-text-muted)' }}>
+                              {new Date(comm.createdAt).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updatedComments = getSafeArray(project.comments).filter((c: any) => c.id !== comm.id);
+                              updateProject(project.id, { comments: updatedComments });
+                              notify?.('Komentar dihapus');
+                            }}
+                            style={{ background: 'none', border: 'none', color: 'var(--cms-text-muted)', cursor: 'pointer', padding: 2 }}
+                            title="Hapus komentar"
+                          >
+                            <X size={12} />
+                          </button>
                         </div>
-                      </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 10.5, fontWeight: 850, padding: '3px 10px', borderRadius: 100, background: 'var(--cms-accent-soft)', color: 'var(--cms-accent)' }}>
-                          {member.role || 'Member'}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const updatedTeam = getSafeArray(project.team).filter((_: any, idx: number) => idx !== i);
-                            updateProject(project.id, {
-                              team: updatedTeam,
-                              activity: [{ id: Date.now(), time: new Date().toISOString(), message: `${member.name} dihapus dari tim proyek` }, ...getSafeArray(project.activity)]
-                            });
-                            notify?.(`${member.name} dihapus dari tim`);
-                          }}
-                          style={{
-                            width: 30, height: 30, borderRadius: 8, border: 'none',
-                            background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444',
-                            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
-                          }}
-                          title="Hapus dari tim"
-                        >
-                          <X size={14} />
-                        </button>
+                        <div style={{ fontSize: 13, color: 'var(--cms-text)', lineHeight: 1.5 }}>
+                          {comm.text}
+                        </div>
                       </div>
                     </div>
-                  );
-                })}
+                  ))}
 
-                {getSafeArray(project.team).length === 0 && (
-                  <div style={{ textAlign: 'center', padding: 40, color: 'var(--cms-text-muted)' }}>
-                    <Users size={32} style={{ margin: '0 auto 12px', display: 'block', opacity: 0.3 }} />
-                    <div style={{ fontSize: 14, fontWeight: 700 }}>Belum ada anggota tim yang ditag</div>
+                  {getSafeArray(project.comments).length === 0 && (
+                    <div style={{ textAlign: 'center', padding: 40, color: 'var(--cms-text-muted)' }}>
+                      <MessageSquare size={32} style={{ margin: '0 auto 12px', display: 'block', opacity: 0.3 }} />
+                      <div style={{ fontSize: 14, fontWeight: 700 }}>Belum ada diskusi untuk proyek ini</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* FILES TAB */}
+            {activeTab === 'files' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {getSafeArray(project.files || project.attachments).length > 0 && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '10px 14px',
+                    background: 'var(--cms-card-bg)',
+                    border: '1px solid var(--glass-border)',
+                    borderRadius: 12,
+                    backdropFilter: 'blur(10px)'
+                  }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--cms-text)' }}>
+                      {getSafeArray(project.files || project.attachments).length} Berkas Hasil / Lampiran
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isZippingFiles}
+                      onClick={async () => {
+                        const filesList = getSafeArray(project.files || project.attachments);
+                        if (!filesList.length) return;
+                        setIsZippingFiles(true);
+                        setZippingProgressText('Mempersiapkan...');
+                        try {
+                          const zipName = `${(project.title || 'project').replace(/[^a-zA-Z0-9_-]/g, '_')}_deliverables.zip`;
+                          await downloadFilesAsZip(filesList, zipName, (pct, item) => {
+                            setZippingProgressText(`${pct}% - ${item}`);
+                          });
+                          notify?.('📦 Berkas ZIP proyek berhasil diunduh!', 'success');
+                        } catch (err: any) {
+                          notify?.(err?.message || 'Gagal membuat file ZIP', 'error');
+                        } finally {
+                          setIsZippingFiles(false);
+                          setZippingProgressText('');
+                        }
+                      }}
+                      className="cms-btn cms-btn-primary"
+                      style={{
+                        height: 34,
+                        padding: '0 14px',
+                        borderRadius: 9999,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 7,
+                        fontSize: 12,
+                        fontWeight: 800,
+                        cursor: isZippingFiles ? 'wait' : 'pointer'
+                      }}
+                      title="Unduh Semua Berkas Lampiran sebagai Satu File ZIP"
+                    >
+                      {isZippingFiles ? (
+                        <>
+                          <Loader2 size={14} className="animate-spin" />
+                          <span>{zippingProgressText || 'Mengompres...'}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Archive size={14} />
+                          <span>Unduh Semua (.ZIP)</span>
+                        </>
+                      )}
+                    </button>
                   </div>
                 )}
-              </div>
-            </div>
-          )}
 
-          {/* COMMENTS & DISCUSSION TAB */}
-          {activeTab === 'comments' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {/* Add Comment Input Form */}
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (!newCommentText.trim()) return;
-                  const currentUserName = auth.currentUser?.displayName || 'Admin';
-                  const currentUserAvatar = auth.currentUser?.photoURL || `https://api.dicebear.com/7.x/notionists/svg?seed=${encodeURIComponent(currentUserName)}`;
-                  const comment = {
-                    id: `comm_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-                    userId: auth.currentUser?.uid || 'admin',
-                    userName: currentUserName,
-                    userAvatar: currentUserAvatar,
-                    text: newCommentText.trim(),
-                    createdAt: new Date().toISOString()
-                  };
-                  const updatedComments = [...getSafeArray(project.comments), comment];
-                  updateProject(project.id, {
-                    comments: updatedComments,
-                    activity: [{ id: Date.now(), time: new Date().toISOString(), message: `${currentUserName} menambahkan komentar` }, ...getSafeArray(project.activity)]
-                  });
-                  setNewCommentText('');
-                  notify?.('💬 Komentar berhasil diposting', 'success');
-                }}
-                style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}
-              >
-                <textarea
-                  rows={2}
-                  placeholder="Tulis update, catatan, atau tanggapan untuk tim..."
-                  value={newCommentText}
-                  onChange={e => setNewCommentText(e.target.value)}
-                  style={{
-                    flex: 1, padding: '12px 14px', borderRadius: 14,
-                    background: 'var(--cms-input-bg)', border: '1.5px solid var(--glass-border)',
-                    fontSize: 13, color: 'var(--cms-text)', outline: 'none', resize: 'none',
-                    lineHeight: 1.5, fontFamily: 'inherit'
+                <DriveAttachmentPicker
+                  attachments={getSafeArray(project.files || project.attachments)}
+                  onChange={(newFiles) => {
+                    updateProject(project.id, { files: newFiles, attachments: newFiles });
+                    notify?.('Lampiran proyek diperbarui');
                   }}
+                  folderCategory={`Projects/${project.title || project.id}`}
+                  notify={notify}
                 />
-                <button
-                  type="submit"
-                  disabled={!newCommentText.trim()}
-                  style={{
-                    padding: '12px 20px', height: 44, borderRadius: 12,
-                    background: newCommentText.trim() ? 'var(--cms-accent)' : 'var(--cms-input-bg)',
-                    color: newCommentText.trim() ? '#fff' : 'var(--cms-text-muted)',
-                    border: 'none', fontSize: 13, fontWeight: 850,
-                    cursor: newCommentText.trim() ? 'pointer' : 'default',
-                    whiteSpace: 'nowrap'
-                  }}
-                >
-                  Kirim
-                </button>
-              </form>
+              </div>
+            )}
 
-              {/* Discussion Thread List */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {getSafeArray(project.comments).map((comm: any) => (
-                  <div
-                    key={comm.id}
-                    style={{
-                      display: 'flex', gap: 12, padding: '14px 16px', borderRadius: 14,
-                      background: 'var(--cms-card-bg)', border: '1.5px solid var(--glass-border)',
-                      boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
-                    }}
-                  >
-                    <img
-                      src={comm.userAvatar || `https://api.dicebear.com/7.x/notionists/svg?seed=${encodeURIComponent(comm.userName || 'Admin')}`}
-                      alt=""
-                      style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
-                    />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ fontSize: 13, fontWeight: 850, color: 'var(--cms-text)' }}>{comm.userName}</span>
-                          <span style={{ fontSize: 10, color: 'var(--cms-text-muted)' }}>
-                            {new Date(comm.createdAt).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })}
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const updatedComments = getSafeArray(project.comments).filter((c: any) => c.id !== comm.id);
-                            updateProject(project.id, { comments: updatedComments });
-                            notify?.('Komentar dihapus');
-                          }}
-                          style={{ background: 'none', border: 'none', color: 'var(--cms-text-muted)', cursor: 'pointer', padding: 2 }}
-                          title="Hapus komentar"
-                        >
-                          <X size={12} />
-                        </button>
-                      </div>
-                      <div style={{ fontSize: 13, color: 'var(--cms-text)', lineHeight: 1.5 }}>
-                        {comm.text}
-                      </div>
+            {/* ACTIVITY TAB */}
+            {activeTab === 'activity' && (
+              <div>
+                {getSafeArray(project.activity).map((act, i) => (
+                  <div key={act.id || i} style={{ display: 'flex', gap: 14, paddingBottom: 16, borderLeft: '2px solid var(--glass-border)', marginLeft: 8, paddingLeft: 20, position: 'relative' }}>
+                    <div style={{ position: 'absolute', left: -7, top: 0, width: 12, height: 12, borderRadius: '50%', background: 'var(--cms-accent)', border: '2px solid var(--cms-panel-bg)' }} />
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--cms-text)' }}>{act.message}</div>
+                      <div style={{ fontSize: 11, color: 'var(--cms-text-muted)', marginTop: 4 }}>{act.time ? new Date(act.time).toLocaleString() : ''}</div>
                     </div>
                   </div>
                 ))}
-
-                {getSafeArray(project.comments).length === 0 && (
+                {getSafeArray(project.activity).length === 0 && (
                   <div style={{ textAlign: 'center', padding: 40, color: 'var(--cms-text-muted)' }}>
-                    <MessageSquare size={32} style={{ margin: '0 auto 12px', display: 'block', opacity: 0.3 }} />
-                    <div style={{ fontSize: 14, fontWeight: 700 }}>Belum ada diskusi untuk proyek ini</div>
+                    <History size={32} style={{ margin: '0 auto 12px', display: 'block', opacity: 0.3 }} />
+                    <div style={{ fontSize: 14, fontWeight: 700 }}>No activity yet</div>
                   </div>
                 )}
               </div>
-            </div>
-          )}
-
-          {/* FILES TAB */}
-          {activeTab === 'files' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <DriveAttachmentPicker
-                attachments={getSafeArray(project.files || project.attachments)}
-                onChange={(newFiles) => {
-                  updateProject(project.id, { files: newFiles, attachments: newFiles });
-                  notify?.('Lampiran proyek diperbarui');
-                }}
-                folderCategory={`Projects/${project.title || project.id}`}
-                notify={notify}
-              />
-            </div>
-          )}
-
-          {/* ACTIVITY TAB */}
-          {activeTab === 'activity' && (
-            <div>
-              {getSafeArray(project.activity).map((act, i) => (
-                <div key={act.id || i} style={{ display: 'flex', gap: 14, paddingBottom: 16, borderLeft: '2px solid var(--glass-border)', marginLeft: 8, paddingLeft: 20, position: 'relative' }}>
-                  <div style={{ position: 'absolute', left: -7, top: 0, width: 12, height: 12, borderRadius: '50%', background: 'var(--cms-accent)', border: '2px solid var(--cms-panel-bg)' }} />
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--cms-text)' }}>{act.message}</div>
-                    <div style={{ fontSize: 11, color: 'var(--cms-text-muted)', marginTop: 4 }}>{act.time ? new Date(act.time).toLocaleString() : ''}</div>
-                  </div>
-                </div>
-              ))}
-              {getSafeArray(project.activity).length === 0 && (
-                <div style={{ textAlign: 'center', padding: 40, color: 'var(--cms-text-muted)' }}>
-                  <History size={32} style={{ margin: '0 auto 12px', display: 'block', opacity: 0.3 }} />
-                  <div style={{ fontSize: 14, fontWeight: 700 }}>No activity yet</div>
-                </div>
-              )}
-            </div>
-          )}
+            )}
           </div>
         </div>
       </div>
+
+      {/* ── CLIENT PROOFING & WATERMARK MODAL ── */}
+      <ProjectProofingModal
+        isOpen={isProofingModalOpen}
+        onClose={() => setIsProofingModalOpen(false)}
+        project={project}
+        updateProject={updateProject}
+        notify={notify}
+      />
     </div>,
     document.body
   );
 };
 
 export default ProjectsModule;
-

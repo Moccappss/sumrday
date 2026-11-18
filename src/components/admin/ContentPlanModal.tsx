@@ -5,6 +5,7 @@ import {
   Layers, Eye, Link, Trash2, ExternalLink
 } from 'lucide-react';
 import { createGoogleCalendarUrl } from '../../utils/calendarUtils';
+import PillDatePicker from '../common/PillDatePicker';
 
 export interface ContentPlanItem {
   id: string;
@@ -148,8 +149,9 @@ export const ContentPlanModal: React.FC<ContentPlanModalProps> = ({
         position: 'fixed',
         inset: 0,
         zIndex: 99999,
-        background: 'rgba(0, 0, 0, 0.75)',
-        backdropFilter: 'blur(8px)',
+        background: 'rgba(4, 4, 8, 0.82)',
+        backdropFilter: 'none',
+        WebkitBackdropFilter: 'none',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -377,22 +379,11 @@ export const ContentPlanModal: React.FC<ContentPlanModalProps> = ({
               <label style={{ fontSize: 11, fontWeight: 900, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 6 }}>
                 Target Tanggal Upload
               </label>
-              <input
-                type="date"
+              <PillDatePicker
                 value={formData.scheduledDate}
-                onChange={e => setFormData(prev => ({ ...prev, scheduledDate: e.target.value }))}
-                style={{
-                  width: '100%',
-                  height: 40,
-                  padding: '0 12px',
-                  borderRadius: 12,
-                  border: '1.5px solid var(--glass-border)',
-                  background: 'var(--cms-input-bg)',
-                  color: 'var(--cms-text)',
-                  fontSize: 12.5,
-                  fontWeight: 700,
-                  outline: 'none'
-                }}
+                onChange={dateStr => setFormData(prev => ({ ...prev, scheduledDate: dateStr }))}
+                placeholder="Pilih Tanggal Upload"
+                accentColor="var(--cms-accent, #7c3aed)"
               />
             </div>
 

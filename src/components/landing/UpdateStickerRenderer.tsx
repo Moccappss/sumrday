@@ -1,12 +1,18 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
-  BarChart2, Check, Sparkles, Send, Heart, Flame, Star, 
-  MessageCircle, HelpCircle, CheckCircle2, ChevronRight, User
+  BarChart2, BarChart3, Check, Sparkles, Send, Heart, Flame, Star, 
+  MessageCircle, MessageSquare, HelpCircle, CheckCircle2, ChevronRight, User,
+  ShoppingBag, ExternalLink, Timer, ArrowRight, Zap, FolderGit2, Package, FileText, BookOpen,
+  SlidersHorizontal, Scale, Award
 } from 'lucide-react';
 import { 
   UpdateSticker, PollSticker, ThisOrThatSticker, 
-  SliderRateSticker, QnASticker, QnAResponse 
+  SliderRateSticker, QnASticker, QnAResponse,
+  ProductSticker, PortfolioSticker, ArticleSticker, FlashSaleSticker
 } from '../../types/socialUpdates';
+import { storage } from '../../utils/storage';
+import { haptic } from '../../utils/haptics';
 
 interface UpdateStickerRendererProps {
   postId: string;
@@ -23,11 +29,29 @@ export const UpdateStickerRenderer: React.FC<UpdateStickerRendererProps> = ({
   accentColor = '#f59e0b',
   onUpdateSticker
 }) => {
+  const navigate = useNavigate();
   // Theme styling tokens
   const cardBg = isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)';
   const borderCard = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)';
   const textPrimary = isDark ? '#f8fafc' : '#0f172a';
   const textSecondary = isDark ? '#94a3b8' : '#64748b';
+
+  // Live Catalog Sync for Product & Flash Sale Stickers
+  const [liveCatalogProduct, setLiveCatalogProduct] = useState<any>(null);
+
+  useEffect(() => {
+    if (sticker.type === 'flash_sale' || sticker.type === 'product_card') {
+      const pId = (sticker as any).productId;
+      if (pId) {
+        storage.getItem('porto_catalog_products', []).then((list: any[]) => {
+          if (Array.isArray(list)) {
+            const found = list.find((p: any) => p.id === pId);
+            if (found) setLiveCatalogProduct(found);
+          }
+        }).catch(() => {});
+      }
+    }
+  }, [sticker]);
 
   // ─────────────────────────────────────────────────────────────
   // 1. POLL LOGIC
@@ -109,15 +133,17 @@ export const UpdateStickerRenderer: React.FC<UpdateStickerRendererProps> = ({
   }, [postId, sticker.type]);
 
   const handleSubmitSliderRate = (finalVal?: number) => {
-    if (hasRated || sticker.type !== 'slider_rate') return;
+    if (sticker.type !== 'slider_rate') return;
     const val = finalVal !== undefined ? finalVal : sliderVal;
+    haptic.success();
 
     const rate = sticker as SliderRateSticker;
     const prevCount = rate.ratingsCount || 0;
     const prevTotal = rate.totalScore || (rate.averageScore ? rate.averageScore * prevCount : 0);
 
-    const newCount = prevCount + 1;
-    const newTotal = prevTotal + val;
+    const prevUserScore = userRating;
+    const newCount = prevUserScore !== null ? Math.max(1, prevCount) : prevCount + 1;
+    const newTotal = prevUserScore !== null ? Math.max(0, prevTotal - prevUserScore + val) : prevTotal + val;
     const newAvg = Math.round(newTotal / newCount);
 
     const updatedRate: SliderRateSticker = {
@@ -178,43 +204,27 @@ export const UpdateStickerRenderer: React.FC<UpdateStickerRendererProps> = ({
 
     return (
       <div style={{
-        marginTop: 12,
+        marginTop: 10,
         marginBottom: 8,
-        borderRadius: 20,
-        padding: '16px 18px',
-        background: isDark 
-          ? 'linear-gradient(145deg, rgba(245, 158, 11, 0.08) 0%, rgba(20, 20, 30, 0.7) 100%)'
-          : 'linear-gradient(145deg, rgba(245, 158, 11, 0.09) 0%, rgba(254, 243, 199, 0.4) 100%)',
-        border: `1.5px solid ${accentColor}35`,
-        boxShadow: `0 8px 24px ${accentColor}0e`
+        borderRadius: 16,
+        padding: '14px 16px',
+        background: isDark ? 'rgba(255, 255, 255, 0.025)' : 'rgba(0, 0, 0, 0.02)',
+        border: `1px solid ${borderCard}`,
+        boxShadow: 'none'
       }}>
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 16 }}>📊</span>
-            <span style={{
-              fontSize: 11,
-              fontWeight: 850,
-              textTransform: 'uppercase',
-              letterSpacing: '0.06em',
-              color: accentColor
-            }}>
-              Poling sumr.day club
-            </span>
+        {/* Header: Question & Total Votes */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+          <div style={{
+            fontSize: 13.5,
+            fontWeight: 700,
+            color: textPrimary,
+            lineHeight: 1.4
+          }}>
+            {sticker.question}
           </div>
-          <span style={{ fontSize: 11.5, fontWeight: 700, color: textSecondary }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: textSecondary, whiteSpace: 'nowrap', paddingTop: 2 }}>
             {totalVotes} suara
           </span>
-        </div>
-
-        <div style={{
-          fontSize: 14.5,
-          fontWeight: 850,
-          color: textPrimary,
-          marginBottom: 14,
-          lineHeight: 1.4
-        }}>
-          {sticker.question}
         </div>
 
         {/* Options List */}
@@ -233,21 +243,20 @@ export const UpdateStickerRenderer: React.FC<UpdateStickerRendererProps> = ({
                 style={{
                   position: 'relative',
                   width: '100%',
-                  padding: '12px 14px',
-                  borderRadius: 14,
-                  border: isSelected ? `2px solid ${accentColor}` : `1px solid ${borderCard}`,
+                  padding: '10px 14px',
+                  borderRadius: 12,
+                  border: isSelected ? `1.5px solid ${accentColor}` : `1px solid ${borderCard}`,
                   background: isDark ? 'rgba(255, 255, 255, 0.04)' : '#ffffff',
                   color: textPrimary,
                   fontSize: 13,
-                  fontWeight: 700,
+                  fontWeight: 600,
                   textAlign: 'left',
                   cursor: hasVoted ? 'default' : 'pointer',
                   overflow: 'hidden',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  transition: 'all 0.2s ease',
-                  boxShadow: isSelected ? `0 4px 14px ${accentColor}25` : 'none'
+                  transition: 'all 0.18s ease'
                 }}
               >
                 {/* Percentage progress bar fill */}
@@ -258,8 +267,8 @@ export const UpdateStickerRenderer: React.FC<UpdateStickerRendererProps> = ({
                     top: 0,
                     bottom: 0,
                     width: `${pct}%`,
-                    background: isSelected ? `${accentColor}30` : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)'),
-                    transition: 'width 0.6s cubic-bezier(0.16, 1, 0.3, 1)',
+                    background: isSelected ? `${accentColor}25` : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
+                    transition: 'width 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
                     pointerEvents: 'none'
                   }} />
                 )}
@@ -267,8 +276,8 @@ export const UpdateStickerRenderer: React.FC<UpdateStickerRendererProps> = ({
                 <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
                   {isSelected && (
                     <div style={{
-                      width: 18,
-                      height: 18,
+                      width: 16,
+                      height: 16,
                       borderRadius: '50%',
                       background: accentColor,
                       color: '#fff',
@@ -276,15 +285,15 @@ export const UpdateStickerRenderer: React.FC<UpdateStickerRendererProps> = ({
                       alignItems: 'center',
                       justifyContent: 'center'
                     }}>
-                      <Check size={11} strokeWidth={3} />
+                      <Check size={10} strokeWidth={3} />
                     </div>
                   )}
                   <span>{opt.text}</span>
                 </div>
 
-                <div style={{ position: 'relative', zIndex: 1, fontWeight: 800, fontSize: 13, color: isSelected ? accentColor : textSecondary }}>
+                <div style={{ position: 'relative', zIndex: 1, fontWeight: 700, fontSize: 12.5, color: isSelected ? accentColor : textSecondary }}>
                   {hasVoted ? `${pct}%` : (
-                    <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.7 }}>Pilih</span>
+                    <span style={{ fontSize: 11, fontWeight: 600, opacity: 0.65 }}>Pilih</span>
                   )}
                 </div>
               </button>
@@ -293,8 +302,9 @@ export const UpdateStickerRenderer: React.FC<UpdateStickerRendererProps> = ({
         </div>
 
         {hasVoted && (
-          <div style={{ marginTop: 10, fontSize: 11, textAlign: 'center', color: accentColor, fontWeight: 750 }}>
-            ✓ Suaramu sudah tercatat! Terima kasih telah berkontribusi ✨
+          <div style={{ marginTop: 8, fontSize: 11, textAlign: 'center', color: accentColor, fontWeight: 650, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+            <CheckCircle2 size={11} color={accentColor} />
+            <span>Pilihan tersimpan</span>
           </div>
         )}
       </div>
@@ -312,35 +322,24 @@ export const UpdateStickerRenderer: React.FC<UpdateStickerRendererProps> = ({
 
     return (
       <div style={{
-        marginTop: 12,
+        marginTop: 10,
         marginBottom: 8,
-        borderRadius: 20,
-        padding: '16px 18px',
-        background: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
-        border: `1.5px solid ${borderCard}`,
+        borderRadius: 16,
+        padding: '14px 16px',
+        background: isDark ? 'rgba(255, 255, 255, 0.025)' : 'rgba(0, 0, 0, 0.02)',
+        border: `1px solid ${borderCard}`,
         position: 'relative'
       }}>
         {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: 12 }}>
-          <span style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 5,
-            padding: '3px 10px',
-            borderRadius: 100,
-            background: `${accentColor}18`,
-            color: accentColor,
-            fontSize: 10.5,
-            fontWeight: 850,
-            letterSpacing: '0.06em',
-            textTransform: 'uppercase',
-            marginBottom: 6
-          }}>
-            ⚖️ THIS OR THAT
-          </span>
-          <div style={{ fontSize: 14, fontWeight: 850, color: textPrimary }}>
-            {sticker.question || 'Mana yang lebih kamu suka?'}
+          <div style={{ fontSize: 13.5, fontWeight: 700, color: textPrimary }}>
+            {sticker.question || 'Pilih salah satu'}
           </div>
+          {total > 0 && (
+            <div style={{ fontSize: 11, color: textSecondary, marginTop: 2 }}>
+              {total} orang telah memilih
+            </div>
+          )}
         </div>
 
         {/* Dual Cards Grid */}
@@ -357,20 +356,20 @@ export const UpdateStickerRenderer: React.FC<UpdateStickerRendererProps> = ({
             top: '50%',
             transform: 'translate(-50%, -50%)',
             zIndex: 10,
-            width: 28,
-            height: 28,
+            width: 24,
+            height: 24,
             borderRadius: '50%',
-            background: accentColor,
-            color: '#ffffff',
+            background: isDark ? '#1e2230' : '#ffffff',
+            color: textSecondary,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: 10.5,
-            fontWeight: 900,
-            boxShadow: `0 4px 12px ${accentColor}40`,
-            border: `2px solid ${isDark ? '#0e0e18' : '#ffffff'}`
+            fontSize: 9.5,
+            fontWeight: 800,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+            border: `1px solid ${borderCard}`
           }}>
-            VS
+            vs
           </div>
 
           {/* Option A */}
@@ -379,27 +378,26 @@ export const UpdateStickerRenderer: React.FC<UpdateStickerRendererProps> = ({
             disabled={hasVoted}
             onClick={() => handleVoteThisOrThat('A')}
             style={{
-              padding: '16px 12px',
-              borderRadius: 16,
-              border: totVoted === 'A' ? `2px solid ${accentColor}` : `1px solid ${borderCard}`,
+              padding: '12px 10px',
+              borderRadius: 12,
+              border: totVoted === 'A' ? `1.5px solid ${accentColor}` : `1px solid ${borderCard}`,
               background: totVoted === 'A' 
-                ? (isDark ? 'rgba(245, 158, 11, 0.18)' : 'rgba(254, 243, 199, 0.7)')
-                : (isDark ? 'rgba(255, 255, 255, 0.04)' : '#ffffff'),
+                ? (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)')
+                : (isDark ? 'rgba(255, 255, 255, 0.03)' : '#ffffff'),
               color: textPrimary,
               cursor: hasVoted ? 'default' : 'pointer',
               textAlign: 'center',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              gap: 6,
-              transition: 'all 0.2s ease',
-              boxShadow: totVoted === 'A' ? `0 6px 18px ${accentColor}25` : 'none'
+              gap: 4,
+              transition: 'all 0.18s ease'
             }}
           >
-            <div style={{ fontSize: 26 }}>{sticker.optionA.emoji || '☀️'}</div>
-            <div style={{ fontSize: 13, fontWeight: 800 }}>{sticker.optionA.text}</div>
+            {sticker.optionA.emoji && <div style={{ fontSize: 20 }}>{sticker.optionA.emoji}</div>}
+            <div style={{ fontSize: 12.5, fontWeight: 650 }}>{sticker.optionA.text}</div>
             {hasVoted && (
-              <div style={{ fontSize: 15, fontWeight: 900, color: totVoted === 'A' ? accentColor : textSecondary, marginTop: 4 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: totVoted === 'A' ? accentColor : textSecondary, marginTop: 2 }}>
                 {pctA}%
               </div>
             )}
@@ -411,27 +409,26 @@ export const UpdateStickerRenderer: React.FC<UpdateStickerRendererProps> = ({
             disabled={hasVoted}
             onClick={() => handleVoteThisOrThat('B')}
             style={{
-              padding: '16px 12px',
-              borderRadius: 16,
-              border: totVoted === 'B' ? `2px solid ${accentColor}` : `1px solid ${borderCard}`,
+              padding: '12px 10px',
+              borderRadius: 12,
+              border: totVoted === 'B' ? `1.5px solid ${accentColor}` : `1px solid ${borderCard}`,
               background: totVoted === 'B' 
-                ? (isDark ? 'rgba(245, 158, 11, 0.18)' : 'rgba(254, 243, 199, 0.7)')
-                : (isDark ? 'rgba(255, 255, 255, 0.04)' : '#ffffff'),
+                ? (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)')
+                : (isDark ? 'rgba(255, 255, 255, 0.03)' : '#ffffff'),
               color: textPrimary,
               cursor: hasVoted ? 'default' : 'pointer',
               textAlign: 'center',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              gap: 6,
-              transition: 'all 0.2s ease',
-              boxShadow: totVoted === 'B' ? `0 6px 18px ${accentColor}25` : 'none'
+              gap: 4,
+              transition: 'all 0.18s ease'
             }}
           >
-            <div style={{ fontSize: 26 }}>{sticker.optionB.emoji || '🎧'}</div>
-            <div style={{ fontSize: 13, fontWeight: 800 }}>{sticker.optionB.text}</div>
+            {sticker.optionB.emoji && <div style={{ fontSize: 20 }}>{sticker.optionB.emoji}</div>}
+            <div style={{ fontSize: 12.5, fontWeight: 650 }}>{sticker.optionB.text}</div>
             {hasVoted && (
-              <div style={{ fontSize: 15, fontWeight: 900, color: totVoted === 'B' ? accentColor : textSecondary, marginTop: 4 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: totVoted === 'B' ? accentColor : textSecondary, marginTop: 2 }}>
                 {pctB}%
               </div>
             )}
@@ -454,124 +451,138 @@ export const UpdateStickerRenderer: React.FC<UpdateStickerRendererProps> = ({
 
     return (
       <div style={{
-        marginTop: 12,
+        marginTop: 10,
         marginBottom: 8,
-        borderRadius: 22,
-        padding: '18px 20px',
-        background: isDark 
-          ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(20, 20, 32, 0.8) 100%)'
-          : 'linear-gradient(135deg, rgba(245, 158, 11, 0.12) 0%, rgba(254, 243, 199, 0.5) 100%)',
-        border: `1.5px solid ${accentColor}40`,
-        boxShadow: `0 8px 30px ${accentColor}12`,
-        textAlign: 'center'
+        borderRadius: 16,
+        padding: '14px 16px',
+        background: isDark ? 'rgba(255, 255, 255, 0.025)' : 'rgba(0, 0, 0, 0.02)',
+        border: `1px solid ${borderCard}`,
+        textAlign: 'center',
+        position: 'relative'
       }}>
-        {/* Top Header & Average Pill */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ fontSize: 15 }}>🎚️</span>
-            <span style={{
-              fontSize: 11,
-              fontWeight: 850,
-              textTransform: 'uppercase',
-              letterSpacing: '0.06em',
-              color: accentColor
-            }}>
-              SLIDER RATING
-            </span>
+        <style>{`
+          .sumr-slider-rate-range {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 7px;
+            border-radius: 99px;
+            outline: none;
+            cursor: pointer;
+            touch-action: none !important;
+            transition: all 0.08s ease;
+          }
+          .sumr-slider-rate-range::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #ffffff;
+            border: 2.5px solid ${accentColor};
+            box-shadow: none;
+            cursor: pointer;
+            transition: transform 0.1s ease;
+          }
+          .sumr-slider-rate-range:active::-webkit-slider-thumb {
+            cursor: grabbing;
+            transform: scale(1.15);
+            box-shadow: none;
+          }
+          .sumr-slider-rate-range::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #ffffff;
+            border: 2.5px solid ${accentColor};
+            box-shadow: none;
+            cursor: pointer;
+          }
+        `}</style>
+
+        {/* Top Header: Question & Average Rating */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 700, color: textPrimary, lineHeight: 1.4, textAlign: 'left' }}>
+            {sticker.question}
           </div>
 
-          {/* Rata-Rata Rating Badge */}
           <div style={{
             display: 'inline-flex',
             alignItems: 'center',
-            gap: 6,
-            padding: '4px 12px',
+            gap: 4,
+            padding: '2px 8px',
             borderRadius: 100,
-            background: `${accentColor}25`,
-            border: `1px solid ${accentColor}45`,
-            color: accentColor,
-            fontSize: 12,
-            fontWeight: 850
+            background: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+            border: `1px solid ${borderCard}`,
+            color: textSecondary,
+            fontSize: 11,
+            fontWeight: 650,
+            whiteSpace: 'nowrap'
           }}>
-            <span>Rata-rata: {avg > 0 ? `${avg}%` : 'Belum ada'}</span>
-            {count > 0 && <span style={{ opacity: 0.7, fontSize: 11 }}>({count} voter)</span>}
+            <Star size={10} fill={accentColor} color={accentColor} />
+            <span>{avg > 0 ? `${avg}%` : '-'}</span>
+            {count > 0 && <span style={{ opacity: 0.65, fontSize: 10 }}>({count})</span>}
           </div>
         </div>
 
-        {/* Question */}
-        <div style={{ fontSize: 15, fontWeight: 850, color: textPrimary, marginBottom: 10 }}>
-          {sticker.question}
-        </div>
-
-        {/* Dynamic Emoji Scale */}
-        <div style={{
-          fontSize: `${32 + (sliderVal / 100) * 22}px`,
-          margin: '6px 0',
-          transition: 'font-size 0.1s ease',
-          display: 'inline-block',
-          filter: `drop-shadow(0 4px 12px ${accentColor}40)`
-        }}>
-          {sticker.emoji || '☀️'}
-        </div>
-
-        {/* Slider Input */}
-        <div style={{ padding: '0 8px', margin: '8px 0 10px' }}>
+        {/* Sleek Gradient-Filled Slider Track */}
+        <div style={{ padding: '0 2px', margin: '4px 0 8px' }}>
           <input
             type="range"
             min="0"
             max="100"
             value={sliderVal}
-            disabled={hasRated}
             onChange={(e) => setSliderVal(Number(e.target.value))}
-            onMouseUp={() => !hasRated && handleSubmitSliderRate(sliderVal)}
-            onTouchEnd={() => !hasRated && handleSubmitSliderRate(sliderVal)}
+            onPointerUp={() => handleSubmitSliderRate(sliderVal)}
+            onTouchEnd={() => handleSubmitSliderRate(sliderVal)}
+            onMouseUp={() => handleSubmitSliderRate(sliderVal)}
+            onKeyUp={(e) => {
+              if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Enter') {
+                handleSubmitSliderRate(sliderVal);
+              }
+            }}
+            className="sumr-slider-rate-range"
             style={{
-              width: '100%',
-              height: 8,
-              borderRadius: 6,
-              accentColor: accentColor,
-              cursor: hasRated ? 'default' : 'pointer'
+              background: `linear-gradient(90deg, ${accentColor} 0%, ${accentColor} ${sliderVal}%, ${isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(0, 0, 0, 0.12)'} ${sliderVal}%, ${isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(0, 0, 0, 0.12)'} 100%)`,
+              touchAction: 'none'
             }}
           />
         </div>
 
-        {/* Labels & Feedback */}
+        {/* Labels & Live Value Indicator */}
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          fontSize: 11.5,
+          fontSize: 11,
           color: textSecondary,
-          fontWeight: 700,
-          padding: '0 6px'
+          fontWeight: 600,
+          padding: '0 2px'
         }}>
-          <span>{sticker.minLabel || 'Biasa'}</span>
-          <span style={{ color: accentColor, fontWeight: 850, fontSize: 13 }}>
-            {hasRated ? `Nilaimu: ${userRating}% ✨` : `Geser: ${sliderVal}%`}
+          <span>{sticker.minLabel || 'Cukup'}</span>
+          <span style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '2px 9px',
+            borderRadius: 100,
+            background: hasRated && sliderVal === userRating ? 'rgba(16, 185, 129, 0.12)' : `${accentColor}14`,
+            border: `1px solid ${hasRated && sliderVal === userRating ? 'rgba(16, 185, 129, 0.35)' : `${accentColor}28`}`,
+            color: hasRated && sliderVal === userRating ? '#10b981' : accentColor,
+            fontWeight: 700,
+            fontSize: 11
+          }}>
+            {hasRated && sliderVal === userRating ? (
+              <>
+                <CheckCircle2 size={11} />
+                <span>Tersimpan: {userRating}%</span>
+              </>
+            ) : (
+              <span>{sliderVal}%</span>
+            )}
           </span>
-          <span>{sticker.maxLabel || 'Hangat Pol! ☀️'}</span>
+          <span>{sticker.maxLabel || 'Sangat Memuaskan'}</span>
         </div>
-
-        {!hasRated && (
-          <button
-            type="button"
-            onClick={() => handleSubmitSliderRate(sliderVal)}
-            style={{
-              marginTop: 12,
-              padding: '6px 18px',
-              borderRadius: 100,
-              border: 'none',
-              background: `linear-gradient(135deg, ${accentColor} 0%, #d97706 100%)`,
-              color: '#fff',
-              fontSize: 11.5,
-              fontWeight: 800,
-              cursor: 'pointer',
-              boxShadow: `0 4px 12px ${accentColor}35`
-            }}
-          >
-            Kirim Rating
-          </button>
-        )}
       </div>
     );
   }
@@ -582,27 +593,17 @@ export const UpdateStickerRenderer: React.FC<UpdateStickerRendererProps> = ({
 
     return (
       <div style={{
-        marginTop: 12,
+        marginTop: 10,
         marginBottom: 8,
-        borderRadius: 20,
-        padding: '16px 18px',
-        background: isDark ? 'rgba(99, 102, 241, 0.05)' : 'rgba(99, 102, 241, 0.04)',
-        border: '1.5px solid rgba(99, 102, 241, 0.25)',
-        boxShadow: '0 8px 24px rgba(99, 102, 241, 0.06)'
+        borderRadius: 16,
+        padding: '14px 16px',
+        background: isDark ? 'rgba(255, 255, 255, 0.025)' : 'rgba(0, 0, 0, 0.02)',
+        border: `1px solid ${borderCard}`
       }}>
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 16 }}>💬</span>
-            <span style={{
-              fontSize: 11,
-              fontWeight: 850,
-              textTransform: 'uppercase',
-              letterSpacing: '0.06em',
-              color: '#6366f1'
-            }}>
-              KOTAK TANYA JAWAB
-            </span>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 700, color: textPrimary, lineHeight: 1.4 }}>
+            {sticker.prompt || 'Tanya Jawab'}
           </div>
           {responses.length > 0 && (
             <button
@@ -611,19 +612,17 @@ export const UpdateStickerRenderer: React.FC<UpdateStickerRendererProps> = ({
               style={{
                 background: 'none',
                 border: 'none',
-                color: '#6366f1',
-                fontSize: 11.5,
-                fontWeight: 750,
-                cursor: 'pointer'
+                color: accentColor,
+                fontSize: 11,
+                fontWeight: 650,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                paddingTop: 2
               }}
             >
-              {showResponses ? 'Tutup Respon' : `Lihat ${responses.length} Respon`}
+              {showResponses ? 'Tutup Respon' : `${responses.length} Respon`}
             </button>
           )}
-        </div>
-
-        <div style={{ fontSize: 14.5, fontWeight: 850, color: textPrimary, marginBottom: 12, lineHeight: 1.4 }}>
-          {sticker.prompt}
         </div>
 
         {/* Input Form */}
@@ -699,9 +698,14 @@ export const UpdateStickerRenderer: React.FC<UpdateStickerRendererProps> = ({
             color: '#10b981',
             fontSize: 12,
             fontWeight: 750,
-            textAlign: 'center'
+            textAlign: 'center',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6
           }}>
-            ✓ Pesanmu terkirim ke sumr.day studio! ☀️
+            <CheckCircle2 size={13.5} color="#10b981" />
+            <span>Pesanmu berhasil terkirim ke sumr.day studio!</span>
           </div>
         )}
 
@@ -745,7 +749,592 @@ export const UpdateStickerRenderer: React.FC<UpdateStickerRendererProps> = ({
     );
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // 5. PRODUCT CARD STICKER
+  // ─────────────────────────────────────────────────────────────
+  if (sticker.type === 'product_card') {
+    const prodSticker = sticker as ProductSticker;
+    const formatRupiah = (v: string | number) => {
+      if (!v) return 'Rp 0';
+      if (typeof v === 'string' && v.startsWith('Rp')) return v;
+      const num = typeof v === 'number' ? v : parseInt(String(v).replace(/\D/g, ''), 10) || 0;
+      return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(num);
+    };
+
+    // Live catalog synchronization for inventory, price, and media
+    const effectivePrice = liveCatalogProduct?.price !== undefined ? liveCatalogProduct.price : prodSticker.price;
+    const effectiveOriginalPrice = liveCatalogProduct?.originalPrice || prodSticker.originalPrice;
+    const effectiveImage = liveCatalogProduct?.image || liveCatalogProduct?.gallery?.[0] || prodSticker.imageUrl;
+    const effectiveTitle = liveCatalogProduct?.name || prodSticker.title;
+    const liveStock = typeof liveCatalogProduct?.stock === 'number' ? liveCatalogProduct.stock : undefined;
+    const isOutOfStock = liveStock !== undefined && liveStock <= 0;
+    const isLowStock = liveStock !== undefined && liveStock > 0 && liveStock <= 5;
+
+    return (
+      <div style={{
+        marginTop: 10,
+        marginBottom: 8,
+        padding: '12px 14px',
+        borderRadius: 16,
+        background: isDark ? 'rgba(255, 255, 255, 0.025)' : 'rgba(0, 0, 0, 0.02)',
+        border: `1px solid ${borderCard}`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: 12
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 220, flex: '1 1 auto' }}>
+          {effectiveImage ? (
+            <img 
+              src={effectiveImage} 
+              alt={effectiveTitle}
+              style={{ 
+                width: 72, 
+                height: 72, 
+                borderRadius: 14, 
+                objectFit: 'cover', 
+                border: isOutOfStock ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(16, 185, 129, 0.2)',
+                filter: isOutOfStock ? 'grayscale(0.6)' : 'none'
+              }}
+            />
+          ) : (
+            <div style={{
+              width: 72,
+              height: 72,
+              borderRadius: 14,
+              background: isOutOfStock ? 'rgba(239, 68, 68, 0.12)' : 'rgba(16, 185, 129, 0.15)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: isOutOfStock ? '#ef4444' : '#10b981'
+            }}>
+              <ShoppingBag size={28} />
+            </div>
+          )}
+
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
+              <span style={{
+                fontSize: 10,
+                fontWeight: 800,
+                padding: '2px 8px',
+                borderRadius: 100,
+                background: isOutOfStock ? 'rgba(239, 68, 68, 0.18)' : 'rgba(16, 185, 129, 0.18)',
+                color: isOutOfStock ? '#ef4444' : '#10b981',
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase'
+              }}>
+                {isOutOfStock ? 'STOK HABIS' : (prodSticker.badge || 'PRODUK KATALOG')}
+              </span>
+              {isLowStock && (
+                <span style={{
+                  fontSize: 10,
+                  fontWeight: 800,
+                  padding: '2px 8px',
+                  borderRadius: 100,
+                  background: 'rgba(245, 158, 11, 0.18)',
+                  color: '#f59e0b',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 3
+                }}>
+                  <Flame size={11} color="#f59e0b" fill="#f59e0b" />
+                  <span>Sisa {liveStock}</span>
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 14.5, fontWeight: 850, color: textPrimary, marginBottom: 4 }}>
+              {effectiveTitle}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 15, fontWeight: 900, color: isOutOfStock ? '#94a3b8' : '#10b981' }}>
+                {formatRupiah(effectivePrice)}
+              </span>
+              {effectiveOriginalPrice && Number(effectiveOriginalPrice) > Number(effectivePrice) && (
+                <span style={{ fontSize: 12, color: textSecondary, textDecoration: 'line-through' }}>
+                  {formatRupiah(effectiveOriginalPrice)}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            haptic.light();
+            window.dispatchEvent(new CustomEvent('porto_open_product_modal', {
+              detail: {
+                productId: prodSticker.productId,
+                sticker: {
+                  ...prodSticker,
+                  price: effectivePrice,
+                  originalPrice: effectiveOriginalPrice,
+                  title: effectiveTitle,
+                  imageUrl: effectiveImage
+                },
+                product: liveCatalogProduct
+              }
+            }));
+          }}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '10px 20px',
+            borderRadius: 12,
+            border: 'none',
+            background: isOutOfStock ? '#64748b' : '#10b981',
+            color: '#ffffff',
+            fontSize: 13,
+            fontWeight: 800,
+            cursor: 'pointer',
+            boxShadow: isOutOfStock ? 'none' : '0 4px 14px rgba(16, 185, 129, 0.35)',
+            transition: 'transform 0.15s ease'
+          }}
+        >
+          <span>{isOutOfStock ? 'Tanya Restock via WA' : (prodSticker.buttonText || 'Lihat di Store')}</span>
+          <ArrowRight size={14} />
+        </button>
+      </div>
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 6. PORTFOLIO CARD STICKER
+  // ─────────────────────────────────────────────────────────────
+  if (sticker.type === 'portfolio_card') {
+    const portSticker = sticker as PortfolioSticker;
+    return (
+      <div style={{
+        marginTop: 10,
+        marginBottom: 8,
+        padding: '12px 14px',
+        borderRadius: 16,
+        background: isDark ? 'rgba(255, 255, 255, 0.025)' : 'rgba(0, 0, 0, 0.02)',
+        border: `1px solid ${borderCard}`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: 12
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 220, flex: '1 1 auto' }}>
+          {portSticker.imageUrl ? (
+            <img 
+              src={portSticker.imageUrl} 
+              alt={portSticker.title}
+              style={{ width: 72, height: 72, borderRadius: 14, objectFit: 'cover', border: '1px solid rgba(99, 102, 241, 0.2)' }}
+            />
+          ) : (
+            <div style={{
+              width: 72,
+              height: 72,
+              borderRadius: 14,
+              background: 'rgba(99, 102, 241, 0.15)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#6366f1'
+            }}>
+              <FolderGit2 size={28} />
+            </div>
+          )}
+
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              <span style={{
+                fontSize: 10,
+                fontWeight: 800,
+                padding: '2px 8px',
+                borderRadius: 100,
+                background: 'rgba(99, 102, 241, 0.18)',
+                color: '#6366f1',
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase'
+              }}>
+                {portSticker.category || 'KARYA TERPILIH'}
+              </span>
+            </div>
+            <div style={{ fontSize: 14.5, fontWeight: 850, color: textPrimary, marginBottom: 4 }}>
+              {portSticker.title}
+            </div>
+            <div style={{ fontSize: 12, color: textSecondary }}>
+              Studi kasus & dokumentasi proses visual
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            const url = portSticker.projectUrl || '/portfolio';
+            if (url.startsWith('#')) {
+              document.querySelector(url)?.scrollIntoView({ behavior: 'smooth' });
+            } else {
+              navigate(url);
+            }
+          }}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '10px 20px',
+            borderRadius: 12,
+            border: 'none',
+            background: '#6366f1',
+            color: '#ffffff',
+            fontSize: 13,
+            fontWeight: 800,
+            cursor: 'pointer',
+            boxShadow: '0 4px 14px rgba(99, 102, 241, 0.35)',
+            transition: 'transform 0.15s ease'
+          }}
+        >
+          <span>{portSticker.buttonText || 'Lihat Karya'}</span>
+          <ArrowRight size={14} />
+        </button>
+      </div>
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 6.5 ARTICLE CARD STICKER
+  // ─────────────────────────────────────────────────────────────
+  if (sticker.type === 'article_card') {
+    const artSticker = sticker as ArticleSticker;
+    return (
+      <div style={{
+        marginTop: 10,
+        marginBottom: 8,
+        padding: '12px 14px',
+        borderRadius: 16,
+        background: isDark ? 'rgba(255, 255, 255, 0.025)' : 'rgba(0, 0, 0, 0.02)',
+        border: `1px solid ${borderCard}`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: 12
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 220, flex: '1 1 auto' }}>
+          {artSticker.imageUrl ? (
+            <img 
+              src={artSticker.imageUrl} 
+              alt={artSticker.title}
+              style={{ width: 72, height: 72, borderRadius: 14, objectFit: 'cover', border: '1px solid rgba(245, 158, 11, 0.25)' }}
+            />
+          ) : (
+            <div style={{
+              width: 72,
+              height: 72,
+              borderRadius: 14,
+              background: 'rgba(245, 158, 11, 0.15)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#f59e0b'
+            }}>
+              <BookOpen size={28} />
+            </div>
+          )}
+
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              <span style={{
+                fontSize: 10,
+                fontWeight: 800,
+                padding: '2px 8px',
+                borderRadius: 100,
+                background: 'rgba(245, 158, 11, 0.18)',
+                color: '#f59e0b',
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase'
+              }}>
+                {artSticker.category || 'ARTIKEL PILIHAN'}
+              </span>
+              {artSticker.readTime && (
+                <span style={{ fontSize: 11, color: textSecondary, fontWeight: 600 }}>
+                  • {artSticker.readTime}
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 14.5, fontWeight: 850, color: textPrimary, marginBottom: 4 }}>
+              {artSticker.title}
+            </div>
+            <div style={{ fontSize: 12, color: textSecondary }}>
+              Wawasan & studi kasus arsitektur web modern
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            const url = artSticker.articleUrl || '/blog';
+            navigate(url);
+          }}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '10px 20px',
+            borderRadius: 12,
+            border: 'none',
+            background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+            color: '#ffffff',
+            fontSize: 13,
+            fontWeight: 800,
+            cursor: 'pointer',
+            boxShadow: '0 4px 14px rgba(245, 158, 11, 0.35)',
+            transition: 'transform 0.15s ease'
+          }}
+        >
+          <span>{artSticker.buttonText || 'Baca Artikel'}</span>
+          <ArrowRight size={14} />
+        </button>
+      </div>
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 7. FLASH SALE STICKER WITH COUNTDOWN & AUTO POPUP
+  // ─────────────────────────────────────────────────────────────
+  if (sticker.type === 'flash_sale') {
+    const fsSticker = sticker as FlashSaleSticker;
+    const formatRupiah = (v: string | number) => {
+      if (!v) return 'Rp 0';
+      if (typeof v === 'string' && v.startsWith('Rp')) return v;
+      const num = typeof v === 'number' ? v : parseInt(String(v).replace(/\D/g, ''), 10) || 0;
+      return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(num);
+    };
+
+    // Real-time synchronization with live catalog product
+    const liveFs = liveCatalogProduct?.flashSale?.isActive ? liveCatalogProduct.flashSale : null;
+    const effectiveSalePrice = liveFs?.salePrice || fsSticker.salePrice || 0;
+    const effectiveOriginalPrice = liveFs?.originalPrice || fsSticker.originalPrice || liveCatalogProduct?.price || 0;
+    const effectiveEndTime = liveFs?.endTime || fsSticker.endTime;
+    const effectiveStockLeft = liveFs?.stockLeft !== undefined ? liveFs.stockLeft : fsSticker.stockLeft;
+
+    const calcDiscount = () => {
+      if (liveFs?.discountPercent) return liveFs.discountPercent;
+      if (fsSticker.discountPercent) return fsSticker.discountPercent;
+      const orig = Number(effectiveOriginalPrice) || 0;
+      const sale = Number(effectiveSalePrice) || 0;
+      if (orig > sale && orig > 0) {
+        return Math.round(((orig - sale) / orig) * 100);
+      }
+      return 50;
+    };
+
+    const effectiveDiscount = calcDiscount();
+
+    // Trigger Pop-up directly with discounted item
+    const handleOpenFlashSaleModal = () => {
+      haptic.medium();
+      window.dispatchEvent(new CustomEvent('porto_open_flash_sale_modal', {
+        detail: {
+          productId: fsSticker.productId,
+          sticker: {
+            ...fsSticker,
+            salePrice: effectiveSalePrice,
+            originalPrice: effectiveOriginalPrice,
+            discountPercent: effectiveDiscount,
+            endTime: effectiveEndTime,
+            stockLeft: effectiveStockLeft
+          },
+          product: liveCatalogProduct
+        }
+      }));
+    };
+
+    return (
+      <div 
+        onClick={handleOpenFlashSaleModal}
+        style={{
+          marginTop: 10,
+          marginBottom: 8,
+          padding: '14px 16px',
+          borderRadius: 16,
+          background: isDark ? 'rgba(255, 255, 255, 0.025)' : 'rgba(0, 0, 0, 0.02)',
+          border: `1px solid ${borderCard}`,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
+          position: 'relative',
+          overflow: 'hidden',
+          cursor: 'pointer',
+          transition: 'border-color 0.15s ease'
+        }}
+        onMouseEnter={e => {
+          e.currentTarget.style.transform = 'translateY(-2px)';
+          e.currentTarget.style.boxShadow = '0 12px 30px rgba(239, 68, 68, 0.25)';
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.transform = 'none';
+          e.currentTarget.style.boxShadow = '0 8px 26px rgba(239, 68, 68, 0.12)';
+        }}
+      >
+        {/* Flash Sale Header: Live Badge + Countdown Timer */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, borderBottom: '1px dashed rgba(239, 68, 68, 0.25)', paddingBottom: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '3px 10px',
+              borderRadius: 100,
+              background: (effectiveStockLeft !== undefined && effectiveStockLeft <= 0) ? '#64748b' : '#ef4444',
+              color: '#ffffff',
+              fontSize: 11,
+              fontWeight: 900,
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase'
+            }}>
+              <Zap size={13} fill="#fff" />
+              <span>FLASH SALE</span>
+            </span>
+            <span style={{
+              fontSize: 11,
+              fontWeight: 850,
+              color: (effectiveStockLeft !== undefined && effectiveStockLeft <= 0) ? '#94a3b8' : '#f59e0b',
+              padding: '2px 8px',
+              borderRadius: 6,
+              background: (effectiveStockLeft !== undefined && effectiveStockLeft <= 0) ? 'rgba(148, 163, 184, 0.15)' : 'rgba(245, 158, 11, 0.15)'
+            }}>
+              {(effectiveStockLeft !== undefined && effectiveStockLeft <= 0) ? 'KUOTA HABIS' : `HEMAT ${effectiveDiscount}%`}
+            </span>
+          </div>
+
+          {/* Countdown Clock */}
+          {effectiveEndTime && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: textSecondary }}>
+                Berakhir Dalam:
+              </span>
+              <CountdownTimer endTime={effectiveEndTime} />
+            </div>
+          )}
+        </div>
+
+        {/* Flash Sale Main Body */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 220, flex: '1 1 auto' }}>
+            {(liveCatalogProduct?.image || fsSticker.imageUrl) ? (
+              <img 
+                src={liveCatalogProduct?.image || fsSticker.imageUrl} 
+                alt={fsSticker.title}
+                style={{ width: 72, height: 72, borderRadius: 14, objectFit: 'cover', border: '1.5px solid rgba(239, 68, 68, 0.3)' }}
+              />
+            ) : (
+              <div style={{
+                width: 72,
+                height: 72,
+                borderRadius: 14,
+                background: 'rgba(239, 68, 68, 0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#ef4444'
+              }}>
+                <Zap size={30} />
+              </div>
+            )}
+
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 900, color: textPrimary, marginBottom: 4 }}>
+                {liveCatalogProduct?.name || fsSticker.title}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                <span style={{ fontSize: 18, fontWeight: 950, color: '#ef4444' }}>
+                  {formatRupiah(effectiveSalePrice)}
+                </span>
+                {effectiveOriginalPrice && Number(effectiveOriginalPrice) > Number(effectiveSalePrice) && (
+                  <span style={{ fontSize: 12.5, color: textSecondary, textDecoration: 'line-through' }}>
+                    {formatRupiah(effectiveOriginalPrice)}
+                  </span>
+                )}
+              </div>
+              {effectiveStockLeft !== undefined && (
+                <div style={{ fontSize: 11, fontWeight: 700, color: effectiveStockLeft <= 0 ? '#ef4444' : '#f59e0b', marginTop: 2, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <Flame size={12} color={effectiveStockLeft <= 0 ? '#ef4444' : '#f59e0b'} fill={effectiveStockLeft <= 0 ? '#ef4444' : '#f59e0b'} />
+                  <span>{effectiveStockLeft <= 0 ? 'Promo telah penuh!' : `Tersisa ${effectiveStockLeft} slot promo lagi!`}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpenFlashSaleModal();
+            }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '11px 22px',
+              borderRadius: 12,
+              border: 'none',
+              background: (effectiveStockLeft !== undefined && effectiveStockLeft <= 0)
+                ? '#64748b'
+                : 'linear-gradient(135deg, #ef4444 0%, #f97316 100%)',
+              color: '#ffffff',
+              fontSize: 13,
+              fontWeight: 850,
+              cursor: 'pointer',
+              boxShadow: (effectiveStockLeft !== undefined && effectiveStockLeft <= 0)
+                ? 'none'
+                : '0 6px 18px rgba(239, 68, 68, 0.4)',
+              transition: 'transform 0.15s ease'
+            }}
+          >
+            <span>{(effectiveStockLeft !== undefined && effectiveStockLeft <= 0) ? 'Kuota Habis' : 'Klaim Flash Sale'}</span>
+            <ArrowRight size={14} />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return null;
+};
+
+// ── Countdown Timer Component ──
+const CountdownTimer: React.FC<{ endTime: string }> = ({ endTime }) => {
+  const [timeLeft, setTimeLeft] = useState<{ hours: number; minutes: number; seconds: number; isExpired: boolean }>({ hours: 0, minutes: 0, seconds: 0, isExpired: false });
+
+  useEffect(() => {
+    const calc = () => {
+      const diff = new Date(endTime).getTime() - Date.now();
+      if (diff <= 0) {
+        setTimeLeft({ hours: 0, minutes: 0, seconds: 0, isExpired: true });
+        return;
+      }
+      const hours = Math.floor(diff / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+      setTimeLeft({ hours, minutes, seconds, isExpired: false });
+    };
+    calc();
+    const interval = setInterval(calc, 1000);
+    return () => clearInterval(interval);
+  }, [endTime]);
+
+  if (timeLeft.isExpired) {
+    return <span style={{ color: '#ef4444', fontWeight: 800, fontSize: 11 }}>Berakhir</span>;
+  }
+
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontFamily: 'monospace', fontWeight: 900, fontSize: 12 }}>
+      <span style={{ padding: '2px 5px', borderRadius: 4, background: '#ef4444', color: '#fff' }}>{pad(timeLeft.hours)}</span>:
+      <span style={{ padding: '2px 5px', borderRadius: 4, background: '#ef4444', color: '#fff' }}>{pad(timeLeft.minutes)}</span>:
+      <span style={{ padding: '2px 5px', borderRadius: 4, background: '#ef4444', color: '#fff' }}>{pad(timeLeft.seconds)}</span>
+    </div>
+  );
 };
 
 export default UpdateStickerRenderer;

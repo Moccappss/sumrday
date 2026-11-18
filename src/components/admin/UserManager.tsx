@@ -6,7 +6,7 @@ import {
   Smartphone, MailCheck, Settings, Database, Layout, Lock, Unlock, Zap, ShieldCheck,
   FileText, Receipt, ChevronLeft, Copy, SlidersHorizontal, ShoppingBag, Phone, KeyRound,
   ExternalLink, Package, MessageCircle, AlertCircle, Edit3, Eye, EyeOff, Camera, Sparkles,
-  Globe, Contact
+  Globe, Contact, Info
 } from 'lucide-react';
 
 import { db, auth, firebaseConfig } from '../../firebase';
@@ -23,6 +23,8 @@ import AvatarPickerModal from '../common/AvatarPickerModal';
 import { googleSync } from '../../utils/googleSync';
 import { CustomerHubView } from './CustomerHubView';
 import { storage } from '../../utils/storage';
+import { generateAffiliateCode, updateClientTier } from '../../services/clientAuth';
+import { PartnershipHubManager } from './PartnershipHubManager';
 
 const ROLE_OPTIONS = [
   { key: 'Super Admin', label: 'Super Admin', desc: 'Akses Penuh' },
@@ -66,8 +68,8 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Active Tab: 'admin' (Tim & Admin CMS), 'clients' (Pelanggan Website), or 'all-contacts' (Database Pelanggan Terpadu)
-  const [activeTab, setActiveTab] = useState<'admin' | 'clients' | 'all-contacts'>('admin');
+  // Active Tab: 'admin' (Tim & Admin CMS), 'clients' (Pelanggan Website), 'all-contacts' (Database Pelanggan Terpadu), or 'partnership' (Kemitraan, Afiliasi & Revisi)
+  const [activeTab, setActiveTab] = useState<'admin' | 'clients' | 'all-contacts' | 'partnership'>('admin');
 
   // Admin / Team Users State
   const [users, setUsers] = useState<any[]>([]);
@@ -91,6 +93,52 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
   const [newClient, setNewClient] = useState({ name: '', email: '', phone: '', password: '', avatar: '' });
   const [avatarTarget, setAvatarTarget] = useState<{ type: 'user' | 'client' | 'newClient'; id: string; name: string; avatar: string } | null>(null);
   const [contactsCount, setContactsCount] = useState<number>(0);
+
+  // Reseller / Affiliate Tier Modal State
+  const [tierModalClient, setTierModalClient] = useState<any | null>(null);
+  const [tierFormData, setTierFormData] = useState<{
+    membershipTier: 'regular' | 'reseller' | 'affiliate' | 'vip';
+    affiliateCode: string;
+    affiliateCommissionRate: number;
+    resellerDiscountRate: number;
+    affiliateBalance: number;
+    affiliateTotalEarnings: number;
+    affiliateSalesCount: number;
+  }>({
+    membershipTier: 'regular',
+    affiliateCode: '',
+    affiliateCommissionRate: 10,
+    resellerDiscountRate: 15,
+    affiliateBalance: 0,
+    affiliateTotalEarnings: 0,
+    affiliateSalesCount: 0,
+  });
+  const [clientTierFilter, setClientTierFilter] = useState<'all' | 'regular' | 'reseller' | 'affiliate' | 'vip'>('all');
+
+  const openTierModal = (cli: any) => {
+    setTierModalClient(cli);
+    setTierFormData({
+      membershipTier: cli.membershipTier || 'regular',
+      affiliateCode: cli.affiliateCode || generateAffiliateCode(cli.name, cli.id),
+      affiliateCommissionRate: cli.affiliateCommissionRate !== undefined ? cli.affiliateCommissionRate : 10,
+      resellerDiscountRate: cli.resellerDiscountRate !== undefined ? cli.resellerDiscountRate : 15,
+      affiliateBalance: cli.affiliateBalance || 0,
+      affiliateTotalEarnings: cli.affiliateTotalEarnings || 0,
+      affiliateSalesCount: cli.affiliateSalesCount || 0,
+    });
+  };
+
+  const handleSaveTierModal = async () => {
+    if (!tierModalClient) return;
+    try {
+      await updateClientTier(tierModalClient.id, tierFormData);
+      setClients(prev => prev.map(c => c.id === tierModalClient.id ? { ...c, ...tierFormData } : c));
+      notify(`Level kemitraan ${tierModalClient.name} berhasil diperbarui menjadi ${tierFormData.membershipTier.toUpperCase()}!`, 'success');
+      setTierModalClient(null);
+    } catch (err: any) {
+      notify(`Gagal memperbarui level: ${err?.message || ''}`, 'error');
+    }
+  };
 
   useEffect(() => {
     const updateCounts = async () => {
@@ -297,11 +345,16 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
     }
   }, [location.pathname, navigate]);
 
-  // Admin Stats
+  // Admin Stats & Pending Users
+  const pendingUsers = useMemo(() => {
+    return users.filter(u => u.role === 'Pending' || u.status === 'Pending');
+  }, [users]);
+
   const stats = useMemo(() => {
     return {
       total: users.length,
-      active: users.filter(u => u.status === 'Active').length,
+      active: users.filter(u => u.status === 'Active' && u.role !== 'Pending').length,
+      pending: users.filter(u => u.role === 'Pending' || u.status === 'Pending').length,
       superAdmins: users.filter(u => u.role === 'Super Admin').length,
       privateDb: users.filter(u => u.dbScope === 'private').length
     };
@@ -405,7 +458,6 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
       status: 'Aktif',
       role: 'client',
       passwordHash,
-      rawPassword
     };
 
     try {
@@ -499,11 +551,9 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
 
     setIsSubmitting(true);
     const passwordHash = hashSecret(newClientPassword);
-    const rawPassword = newClientPassword;
     try {
       await updateDoc(doc(db, 'porto_clients', resettingPasswordClient.id), {
         passwordHash,
-        rawPassword
       });
 
       // Update local cache
@@ -513,18 +563,43 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
           const cache = JSON.parse(raw);
           if (cache[resettingPasswordClient.id]) {
             cache[resettingPasswordClient.id].passwordHash = passwordHash;
-            cache[resettingPasswordClient.id].rawPassword = rawPassword;
+            delete cache[resettingPasswordClient.id].rawPassword;
             localStorage.setItem('porto_clients_cache', JSON.stringify(cache));
           }
         }
       } catch (_) {}
 
-      setClients(prev => prev.map(c => c.id === resettingPasswordClient.id ? { ...c, passwordHash, rawPassword } : c));
+      setClients(prev => prev.map(c => c.id === resettingPasswordClient.id ? { ...c, passwordHash, rawPassword: undefined } : c));
       setResettingPasswordClient(null);
       setNewClientPassword('');
-      notify(`Kata sandi pelanggan ${resettingPasswordClient.name} berhasil diubah!`, 'success');
+      notify(`Kata sandi pelanggan ${resettingPasswordClient.name} berhasil diperbarui dengan aman (SHA-256 Hash)!`, 'success');
     } catch (err: any) {
       notify(`Gagal mereset kata sandi: ${err.message}`, 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSaveClientTier = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tierModalClient) return;
+
+    setIsSubmitting(true);
+    try {
+      const updated = await updateClientTier(tierModalClient.id, {
+        membershipTier: tierFormData.membershipTier,
+        affiliateCode: tierFormData.affiliateCode ? tierFormData.affiliateCode.trim().toUpperCase() : undefined,
+        affiliateCommissionRate: Number(tierFormData.affiliateCommissionRate) || 0,
+        resellerDiscountRate: Number(tierFormData.resellerDiscountRate) || 0,
+        affiliateBalance: Number(tierFormData.affiliateBalance) || 0,
+      });
+
+      setClients(prev => prev.map(c => c.id === tierModalClient.id ? updated : c));
+      notify(`Level membership ${tierModalClient.name} berhasil diperbarui ke ${tierFormData.membershipTier.toUpperCase()}!`, 'success');
+      setTierModalClient(null);
+    } catch (err: any) {
+      console.error('Error updating client tier:', err);
+      notify(`Gagal memperbarui level: ${err.message}`, 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -558,10 +633,14 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
   const handleUpdateRole = async (userId: string, newRole: string) => {
     try {
       const updates: any = { role: newRole };
+      if (newRole !== 'Pending') {
+        updates.status = 'Active';
+      }
       if (newRole === 'Super Admin') {
         updates.allowedPages = MODULES.map(m => m.id);
       }
       await updateDoc(doc(db, 'users', userId), updates);
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, ...updates } : u));
       notify(`Peran diupdate ke ${newRole}`);
       
       if (selectedUser && selectedUser.id === userId) {
@@ -571,6 +650,41 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
       console.error("Error updating role:", error);
       notify('Gagal update peran', 'error');
     }
+  };
+
+  const handleApproveUser = async (targetUser: any, approvedRole: 'Editor' | 'Admin') => {
+    try {
+      const updates: any = {
+        role: approvedRole,
+        status: 'Active',
+        allowedPages: approvedRole === 'Admin' ? MODULES.map(m => m.id) : ['dashboard', 'projects', 'blog', 'pages']
+      };
+      await updateDoc(doc(db, 'users', targetUser.id), updates);
+      setUsers(prev => prev.map(u => u.id === targetUser.id ? { ...u, ...updates } : u));
+      notify(`Akun "${targetUser.name}" berhasil disetujui sebagai ${approvedRole}!`, 'success');
+    } catch (err: any) {
+      console.error('Error approving user:', err);
+      notify(`Gagal menyetujui akun: ${err.message}`, 'error');
+    }
+  };
+
+  const handleRejectUser = async (targetUser: any) => {
+    showConfirm({
+      title: 'Tolak & Hapus Permintaan Akun',
+      message: `Apakah Anda yakin ingin menolak dan menghapus akun "${targetUser.name}" (${targetUser.email})? Pengguna ini tidak akan bisa login ke CMS.`,
+      confirmLabel: 'Tolak & Hapus',
+      isDanger: true,
+      onConfirm: async () => {
+        try {
+          await deleteDoc(doc(db, 'users', targetUser.id));
+          setUsers(prev => prev.filter(u => u.id !== targetUser.id));
+          notify(`Permintaan akun "${targetUser.name}" berhasil ditolak & dihapus.`, 'info');
+        } catch (err: any) {
+          console.error('Error rejecting user:', err);
+          notify(`Gagal menghapus user: ${err.message}`, 'error');
+        }
+      }
+    });
   };
 
   const handleUpdatePerms = async (updates: any) => {
@@ -668,16 +782,9 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
           action: () => { setResettingPasswordClient(cli); setNewClientPassword(''); setShowResetClientPassword(false); }
         },
         {
-          label: 'Lihat / Salin Kata Sandi',
+          label: 'Ganti Kata Sandi Pelanggan',
           icon: <KeyRound size={15} color="var(--cms-accent)" />,
-          action: () => {
-            if (cli.rawPassword) {
-              navigator.clipboard?.writeText(cli.rawPassword);
-              notify(`Kata sandi ${cli.name} (${cli.rawPassword}) disalin!`);
-            } else {
-              notify(`Kata sandi akun terenkripsi, gunakan menu 'Ganti Kata Sandi'`, 'info');
-            }
-          }
+          action: () => setResettingPasswordClient(cli)
         },
         {
           label: 'Lihat Riwayat Pesanan',
@@ -702,7 +809,7 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
           label: 'Salin Data Pelanggan',
           icon: <Copy size={15} />,
           action: () => {
-            navigator.clipboard?.writeText(`Nama: ${cli.name}\nEmail: ${cli.email}\nWhatsApp: ${cli.phone || '-'}\nSandi: ${cli.rawPassword || '(Tersimpan Aman)'}`);
+            navigator.clipboard?.writeText(`Nama: ${cli.name}\nEmail: ${cli.email}\nWhatsApp: ${cli.phone || '-'}\nStatus: Terverifikasi (Sandi Terenkripsi SHA-256)`);
             notify('Data pelanggan disalin ke clipboard');
           }
         },
@@ -723,11 +830,17 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
     user.role?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const filteredClients = clients.filter(cli => 
-    cli.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    cli.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (cli.phone && cli.phone.includes(searchQuery))
-  );
+  const filteredClients = clients.filter(cli => {
+    const matchesSearch = 
+      cli.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      cli.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (cli.phone && cli.phone.includes(searchQuery)) ||
+      (cli.affiliateCode && cli.affiliateCode.toLowerCase().includes(searchQuery.toLowerCase()));
+    if (!matchesSearch) return false;
+    if (clientTierFilter === 'all') return true;
+    const tier = cli.membershipTier || 'regular';
+    return tier === clientTierFilter;
+  });
 
   if (isLoading) {
     return (
@@ -758,11 +871,9 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
       }}>
       {/* Header Section */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0, color: 'var(--cms-text)', fontFamily: "'Outfit', sans-serif" }}>sumr.day club</h1>
-          <p style={{ color: 'var(--cms-text-muted)', fontWeight: 400, marginTop: 4, fontSize: 13 }}>
-            Circle hangat & teman berkreasi: dari crew studio internal sampai para member setia sumr.day club! ☀️
-          </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0, color: 'var(--cms-text)', fontFamily: "'Outfit', sans-serif" }}>Member Club</h1>
+          <Info size={14} style={{ color: 'var(--cms-text-muted)', cursor: 'help' }} title="Circle tim studio internal hingga membership mitra sumr.day." />
         </div>
         
         {activeTab === 'admin' ? (
@@ -770,22 +881,26 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
             onClick={openAddModal}
             className="cms-btn cms-btn-primary" 
             style={{ 
-              padding: '0 20px', borderRadius: 100, fontWeight: 700, fontSize: 13, height: 42,
-              display: 'flex', alignItems: 'center', gap: 6
+              width: 42, height: 42, padding: 0, borderRadius: '50%', fontWeight: 700,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
             }}
+            title="Tambah Admin / Crew Studio"
+            aria-label="Tambah Admin / Crew Studio"
           >
-            <UserPlus size={16} /> <span>Tambah</span>
+            <UserPlus size={18} />
           </button>
         ) : activeTab === 'clients' ? (
           <button 
             onClick={() => { setShowAddClientModal(true); setShowAddClientPassword(false); }}
             className="cms-btn cms-btn-primary" 
             style={{ 
-              padding: '0 20px', borderRadius: 100, fontWeight: 700, fontSize: 13, height: 42,
-              display: 'flex', alignItems: 'center', gap: 6
+              width: 42, height: 42, padding: 0, borderRadius: '50%', fontWeight: 700,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
             }}
+            title="Tambah Member Club"
+            aria-label="Tambah Member Club"
           >
-            <UserPlus size={16} /> <span>Tambah</span>
+            <UserPlus size={18} />
           </button>
         ) : null}
       </div>
@@ -796,24 +911,24 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
           display: 'flex',
           background: 'var(--cms-card-bg)',
           borderRadius: 100,
-          padding: 5,
+          padding: 4,
           marginBottom: 20,
           border: '1px solid var(--glass-border)',
           width: 'fit-content',
           maxWidth: '100%',
-          gap: 6,
+          gap: 4,
         }}
       >
         <button
           type="button"
           onClick={() => { setActiveTab('admin'); setSearchQuery(''); }}
-          title="Crew Studio (Tim & Admin CMS)"
-          aria-label="Crew Studio"
+          title={`Crew (${users.length})`}
+          aria-label="Crew"
           style={{
             display: 'inline-flex',
             alignItems: 'center',
-            gap: 6,
-            padding: '7px 14px',
+            gap: 5,
+            padding: '7px 12px',
             borderRadius: 100,
             border: 'none',
             background: activeTab === 'admin' ? 'var(--cms-accent, #7c3aed)' : 'transparent',
@@ -826,7 +941,6 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
           }}
         >
           <Crown size={16} />
-          <span>Crew</span>
           <span
             style={{
               fontSize: 11,
@@ -844,13 +958,13 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
         <button
           type="button"
           onClick={() => { setActiveTab('clients'); setSearchQuery(''); }}
-          title="Member sumr.day club"
-          aria-label="Member sumr.day club"
+          title={`Club (${clients.length})`}
+          aria-label="Club"
           style={{
             display: 'inline-flex',
             alignItems: 'center',
-            gap: 6,
-            padding: '7px 14px',
+            gap: 5,
+            padding: '7px 12px',
             borderRadius: 100,
             border: 'none',
             background: activeTab === 'clients' ? 'var(--cms-accent, #7c3aed)' : 'transparent',
@@ -863,7 +977,6 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
           }}
         >
           <ShoppingBag size={16} />
-          <span>Club</span>
           <span
             style={{
               fontSize: 11,
@@ -881,13 +994,13 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
         <button
           type="button"
           onClick={() => { setActiveTab('all-contacts'); setSearchQuery(''); }}
-          title="Database Kontak Terpadu"
-          aria-label="Database Kontak Terpadu"
+          title={`Kontak (${contactsCount})`}
+          aria-label="Kontak"
           style={{
             display: 'inline-flex',
             alignItems: 'center',
-            gap: 6,
-            padding: '7px 14px',
+            gap: 5,
+            padding: '7px 12px',
             borderRadius: 100,
             border: 'none',
             background: activeTab === 'all-contacts' ? 'var(--cms-accent, #7c3aed)' : 'transparent',
@@ -900,7 +1013,6 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
           }}
         >
           <Contact size={16} />
-          <span>Contacts</span>
           <span
             style={{
               fontSize: 11,
@@ -914,10 +1026,35 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
             {contactsCount}
           </span>
         </button>
+
+        <button
+          type="button"
+          onClick={() => { setActiveTab('partnership'); setSearchQuery(''); }}
+          title="Mitra"
+          aria-label="Mitra"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 38,
+            height: 34,
+            padding: 0,
+            borderRadius: 100,
+            border: 'none',
+            background: activeTab === 'partnership' ? 'linear-gradient(135deg, #ec4899, #8b5cf6)' : 'transparent',
+            color: activeTab === 'partnership' ? '#ffffff' : 'var(--cms-text-muted)',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          <Sparkles size={16} color={activeTab === 'partnership' ? '#ffffff' : '#ec4899'} />
+        </button>
       </div>
 
       {/* Render Content Based on Active Tab */}
-      {activeTab === 'all-contacts' ? (
+      {activeTab === 'partnership' ? (
+        <PartnershipHubManager notify={notify} confirm={showConfirm} clients={clients} />
+      ) : activeTab === 'all-contacts' ? (
         <CustomerHubView notify={notify} clientList={clients} />
       ) : (
         <>
@@ -1016,6 +1153,115 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
         {/* ── TAB 1: Admin / Team Users List ── */}
         {activeTab === 'admin' && (
           <>
+            {/* ── Pending Users Approval Banner ── */}
+            {pendingUsers.length > 0 && (
+              <div style={{
+                background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(239, 68, 68, 0.08))',
+                border: '1px solid rgba(245, 158, 11, 0.35)',
+                borderRadius: 20,
+                padding: '20px 22px',
+                marginBottom: 24,
+                boxShadow: '0 10px 25px -5px rgba(245, 158, 11, 0.12)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: 12, background: '#f59e0b', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(245, 158, 11, 0.3)' }}>
+                      <ShieldAlert size={22} strokeWidth={2.4} />
+                    </div>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <h4 style={{ margin: 0, fontSize: 15, fontWeight: 900, color: 'var(--cms-text)' }}>
+                          Permintaan Admin Baru Menunggu Persetujuan
+                        </h4>
+                        <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 6, background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a' }}>
+                          {pendingUsers.length} Permintaan
+                        </span>
+                      </div>
+                      <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--cms-text-muted)', lineHeight: 1.5 }}>
+                        Akun-akun ini baru mendaftar dan saat ini tertahan di <strong>Waiting Page</strong> sampai Anda menyetujuinya di sini.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {pendingUsers.map(pUser => (
+                    <div 
+                      key={pUser.id}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12,
+                        background: 'var(--cms-card-bg)', border: '1px solid var(--glass-border)', borderRadius: 14, padding: '12px 18px',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.03)'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 220 }}>
+                        <div style={{ 
+                          width: 38, height: 38, borderRadius: '50%', background: 'rgba(245, 158, 11, 0.15)', color: '#d97706', 
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15, flexShrink: 0,
+                          border: '1px solid rgba(245, 158, 11, 0.3)'
+                        }}>
+                          {pUser.avatar ? <img src={pUser.avatar} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} alt="" /> : (pUser.name || 'U').charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--cms-text)' }}>{pUser.name}</span>
+                            <span style={{ fontSize: 10, fontWeight: 800, padding: '1px 6px', borderRadius: 4, background: '#fef3c7', color: '#b45309' }}>
+                              Pending
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 12, color: 'var(--cms-text-muted)' }}>{pUser.email}</div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <button
+                          type="button"
+                          onClick={() => handleApproveUser(pUser, 'Editor')}
+                          style={{
+                            height: 34, padding: '0 14px', borderRadius: 8, border: 'none', background: '#10b981', color: '#ffffff',
+                            fontSize: 12, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+                            boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)'
+                          }}
+                          title="Setujui pengguna ini dengan hak akses Editor (Kelola Konten)"
+                        >
+                          <Check size={14} strokeWidth={3} />
+                          <span>Setujui (Editor)</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleApproveUser(pUser, 'Admin')}
+                          style={{
+                            height: 34, padding: '0 14px', borderRadius: 8, border: 'none', background: '#2563eb', color: '#ffffff',
+                            fontSize: 12, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+                            boxShadow: '0 2px 8px rgba(37, 99, 235, 0.25)'
+                          }}
+                          title="Setujui pengguna ini dengan hak akses Admin (Kelola Konten & User)"
+                        >
+                          <Crown size={14} />
+                          <span>Setujui (Admin)</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleRejectUser(pUser)}
+                          style={{
+                            height: 34, padding: '0 12px', borderRadius: 8, border: '1px solid rgba(239, 68, 68, 0.25)',
+                            background: 'rgba(239, 68, 68, 0.08)', color: '#ef4444', fontSize: 12, fontWeight: 700,
+                            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5
+                          }}
+                          title="Tolak dan hapus akun pendaftar ini"
+                        >
+                          <Trash2 size={13} />
+                          <span>Tolak</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="user-table-desktop">
               {filteredUsers.length === 0 ? (
                 <div style={{ padding: 40, textAlign: 'center', background: 'var(--cms-card-bg)', borderRadius: 20, border: '1px solid var(--glass-border)' }}>
@@ -1073,14 +1319,19 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
                         </div>
                      </div>
 
-                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, justifyContent: 'flex-end' }}>
-                        <div style={{ 
-                          display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 100, 
-                          background: user.dbScope === 'private' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(16, 185, 129, 0.1)',
-                          fontSize: 12, fontWeight: 700, color: user.dbScope === 'private' ? '#3b82f6' : '#10b981'
-                        }}>
-                          {user.dbScope === 'private' ? <Lock size={12} /> : <Unlock size={12} />}
-                          {user.dbScope === 'private' ? 'Private DB' : 'Global DB'}
+                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, justifyContent: 'flex-end' }}>
+                        <div 
+                          title={user.dbScope === 'private' ? 'Private DB Scope' : 'Global DB Scope'}
+                          aria-label={user.dbScope === 'private' ? 'Private DB Scope' : 'Global DB Scope'}
+                          style={{ 
+                            width: 38, height: 38, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            background: user.dbScope === 'private' ? 'rgba(59, 130, 246, 0.12)' : 'rgba(16, 185, 129, 0.12)',
+                            color: user.dbScope === 'private' ? '#3b82f6' : '#10b981',
+                            border: `1px solid ${user.dbScope === 'private' ? 'rgba(59, 130, 246, 0.25)' : 'rgba(16, 185, 129, 0.25)'}`,
+                            flexShrink: 0
+                          }}
+                        >
+                          {user.dbScope === 'private' ? <Lock size={15} /> : <Unlock size={15} />}
                         </div>
                         {user.dbScope === 'private' && (
                           <button 
@@ -1091,25 +1342,34 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
                             }} 
                             className="cms-btn" 
                             style={{ 
-                              padding: '0 16px', height: 40, borderRadius: 100, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)',
-                              fontSize: 13, fontWeight: 700, color: '#ef4444', display: 'flex', alignItems: 'center', gap: 6
+                              width: 38, height: 38, padding: 0, borderRadius: '50%', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)',
+                              color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
                             }}
                             title="Inspeksi Database"
+                            aria-label="Inspeksi Database"
                           >
-                            <Search size={14} /> Inspeksi
+                            <Search size={16} />
                           </button>
                         )}
                         <button 
                           onClick={() => openDrawer(user)} 
                           className="cms-btn" 
                           style={{ 
-                            padding: '0 16px', height: 40, borderRadius: 100, background: 'var(--cms-switcher-bg)', border: '1px solid var(--glass-border)',
-                            fontSize: 13, fontWeight: 600, color: 'var(--cms-text)', display: 'flex', alignItems: 'center', gap: 6
+                            width: 38, height: 38, padding: 0, borderRadius: '50%', background: 'var(--cms-switcher-bg)', border: '1px solid var(--glass-border)',
+                            color: 'var(--cms-text)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
                           }}
+                          title="Kelola Hak Akses Pengguna"
+                          aria-label="Kelola Hak Akses Pengguna"
                         >
-                          <ShieldAlert size={14} /> Akses
+                          <ShieldAlert size={16} />
                         </button>
-                        <button className="sidebar-icon-btn danger" style={{ width: 40, height: 40, borderRadius: '50%' }} onClick={() => handleDeleteUser(user.id, user.name)} title="Hapus User">
+                        <button 
+                          className="sidebar-icon-btn danger" 
+                          style={{ width: 38, height: 38, borderRadius: '50%', flexShrink: 0 }} 
+                          onClick={() => handleDeleteUser(user.id, user.name)} 
+                          title="Hapus Pengguna"
+                          aria-label="Hapus Pengguna"
+                        >
                           <Trash2 size={16} />
                         </button>
                      </div>
@@ -1196,7 +1456,77 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
 
         {/* ── TAB 2: Website Clients / Customers List ── */}
         {activeTab === 'clients' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {/* Client Summary & Level Filter */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* Summary Cards */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
+                gap: 10
+              }}>
+                <div style={{ padding: '12px 16px', borderRadius: 16, background: 'var(--cms-card-bg)', border: '1px solid var(--glass-border)' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--cms-text-muted)' }}>Pelanggan</div>
+                  <div style={{ fontSize: 20, fontWeight: 900, color: 'var(--cms-text)', fontFamily: "'Outfit', sans-serif" }}>{clients.length}</div>
+                </div>
+                <div style={{ padding: '12px 16px', borderRadius: 16, background: 'var(--cms-card-bg)', border: '1px solid rgba(16,185,129,0.3)' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#10b981', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span>Reseller</span>
+                  </div>
+                  <div style={{ fontSize: 20, fontWeight: 900, color: '#10b981', fontFamily: "'Outfit', sans-serif" }}>
+                    {clients.filter(c => c.membershipTier === 'reseller').length}
+                  </div>
+                </div>
+                <div style={{ padding: '12px 16px', borderRadius: 16, background: 'var(--cms-card-bg)', border: '1px solid rgba(99,102,241,0.3)' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#6366f1', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span>Afiliasi</span>
+                  </div>
+                  <div style={{ fontSize: 20, fontWeight: 900, color: '#6366f1', fontFamily: "'Outfit', sans-serif" }}>
+                    {clients.filter(c => c.membershipTier === 'affiliate').length}
+                  </div>
+                </div>
+                <div style={{ padding: '12px 16px', borderRadius: 16, background: 'var(--cms-card-bg)', border: '1px solid rgba(245,158,11,0.3)' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span>VIP</span>
+                  </div>
+                  <div style={{ fontSize: 20, fontWeight: 900, color: '#f59e0b', fontFamily: "'Outfit', sans-serif" }}>
+                    {clients.filter(c => c.membershipTier === 'vip').length}
+                  </div>
+                </div>
+              </div>
+
+              {/* Filter Pills */}
+              <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
+                {[
+                  { key: 'all', label: `Semua (${clients.length})` },
+                  { key: 'reseller', label: `Reseller (${clients.filter(c => c.membershipTier === 'reseller').length})` },
+                  { key: 'affiliate', label: `Afiliasi (${clients.filter(c => c.membershipTier === 'affiliate').length})` },
+                  { key: 'vip', label: `VIP (${clients.filter(c => c.membershipTier === 'vip').length})` },
+                  { key: 'regular', label: `Reguler (${clients.filter(c => !c.membershipTier || c.membershipTier === 'regular').length})` },
+                ].map(f => (
+                  <button
+                    key={f.key}
+                    type="button"
+                    onClick={() => setClientTierFilter(f.key as any)}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: 100,
+                      border: '1px solid var(--glass-border)',
+                      background: clientTierFilter === f.key ? 'var(--cms-accent, #7c3aed)' : 'var(--cms-card-bg)',
+                      color: clientTierFilter === f.key ? '#ffffff' : 'var(--cms-text-muted)',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {filteredClients.length === 0 ? (
               <div style={{ padding: 48, textAlign: 'center', background: 'var(--cms-card-bg)', borderRadius: 20, border: '1px solid var(--glass-border)' }}>
                 <ShoppingBag size={36} style={{ opacity: 0.3, margin: '0 auto 14px' }} />
@@ -1273,18 +1603,95 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
                           <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--cms-text)', fontFamily: "'Outfit', sans-serif" }}>
                             {cli.name}
                           </span>
-                          <span
-                            style={{
-                              fontSize: 10,
-                              fontWeight: 800,
-                              padding: '2px 8px',
-                              borderRadius: 100,
-                              background: 'rgba(124, 58, 237, 0.12)',
-                              color: 'var(--cms-accent, #7c3aed)',
-                            }}
-                          >
-                            Pelanggan
-                          </span>
+                          
+                          {/* Dynamic Tier Badge */}
+                          {(() => {
+                            const tier = cli.membershipTier || 'regular';
+                            if (tier === 'reseller') {
+                              return (
+                                <span
+                                  onClick={() => openTierModal(cli)}
+                                  style={{
+                                    fontSize: 10,
+                                    fontWeight: 800,
+                                    padding: '3px 9px',
+                                    borderRadius: 100,
+                                    background: 'rgba(16, 185, 129, 0.15)',
+                                    color: '#10b981',
+                                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4
+                                  }}
+                                  title="Klik untuk ubah level & diskon reseller"
+                                >
+                                  Reseller ({cli.resellerDiscountRate || 15}%)
+                                </span>
+                              );
+                            } else if (tier === 'affiliate') {
+                              return (
+                                <span
+                                  onClick={() => openTierModal(cli)}
+                                  style={{
+                                    fontSize: 10,
+                                    fontWeight: 800,
+                                    padding: '3px 9px',
+                                    borderRadius: 100,
+                                    background: 'rgba(99, 102, 241, 0.15)',
+                                    color: '#6366f1',
+                                    border: '1px solid rgba(99, 102, 241, 0.3)',
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4
+                                  }}
+                                  title={`Kode: ${cli.affiliateCode || '-'} • Komisi: ${cli.affiliateCommissionRate || 10}%`}
+                                >
+                                  Afiliasi ({cli.affiliateCommissionRate || 10}%)
+                                </span>
+                              );
+                            } else if (tier === 'vip') {
+                              return (
+                                <span
+                                  onClick={() => openTierModal(cli)}
+                                  style={{
+                                    fontSize: 10,
+                                    fontWeight: 800,
+                                    padding: '3px 9px',
+                                    borderRadius: 100,
+                                    background: 'rgba(245, 158, 11, 0.15)',
+                                    color: '#f59e0b',
+                                    border: '1px solid rgba(245, 158, 11, 0.3)',
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4
+                                  }}
+                                  title="VIP Partner: Diskon & Komisi Aktif"
+                                >
+                                  VIP Partner
+                                </span>
+                              );
+                            }
+                            return (
+                              <span
+                                onClick={() => openTierModal(cli)}
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 800,
+                                  padding: '3px 9px',
+                                  borderRadius: 100,
+                                  background: 'rgba(124, 58, 237, 0.12)',
+                                  color: 'var(--cms-accent, #7c3aed)',
+                                  cursor: 'pointer',
+                                }}
+                                title="Klik untuk upgrade ke Reseller/Afiliasi"
+                              >
+                                Pelanggan
+                              </span>
+                            );
+                          })()}
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, color: 'var(--cms-text-muted)', marginTop: 2, flexWrap: 'wrap' }}>
                           <span>{cli.email}</span>
@@ -1298,67 +1705,27 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
                       </div>
                     </div>
 
-                    {/* Middle: Password Recovery Pill & Orders */}
+                    {/* Middle: Secure Password Status & Orders */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: isMobile ? 'flex-start' : 'center', flex: isMobile ? '1 1 100%' : 1, flexWrap: 'wrap' }}>
-                      {/* Password Recovery Pill for Admin */}
-                      {cli.rawPassword ? (
-                        <div
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 6,
-                            padding: '5px 12px',
-                            borderRadius: 100,
-                            background: 'var(--cms-input-bg)',
-                            border: '1px solid var(--glass-border)',
-                            fontSize: 12,
-                            color: 'var(--cms-text)',
-                          }}
-                          title="Sandi tersimpan untuk antisipasi jika client lupa sandi"
-                        >
-                          <KeyRound size={13} style={{ color: '#f59e0b', flexShrink: 0 }} />
-                          <span style={{ fontFamily: isRevealed ? "'Outfit', sans-serif" : 'monospace', fontWeight: 700, fontSize: 12 }}>
-                            {isRevealed ? cli.rawPassword : '••••••••'}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setRevealedPasswords(prev => ({ ...prev, [cli.id]: !prev[cli.id] }))}
-                            title={isRevealed ? "Sembunyikan Sandi" : "Tampilkan Sandi Client"}
-                            style={{
-                              background: 'transparent',
-                              border: 'none',
-                              color: 'var(--cms-text-muted)',
-                              cursor: 'pointer',
-                              padding: '2px 4px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              borderRadius: 4,
-                            }}
-                          >
-                            {isRevealed ? <EyeOff size={13} /> : <Eye size={13} />}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard?.writeText(cli.rawPassword);
-                              notify(`Kata sandi ${cli.name} (${cli.rawPassword}) disalin!`, 'success');
-                            }}
-                            title="Salin Sandi Client"
-                            style={{
-                              background: 'transparent',
-                              border: 'none',
-                              color: 'var(--cms-accent, #7c3aed)',
-                              cursor: 'pointer',
-                              padding: '2px 4px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              borderRadius: 4,
-                            }}
-                          >
-                            <Copy size={13} />
-                          </button>
-                        </div>
-                      ) : (
+                      {/* Secure Password Status Badge */}
+                      <div
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          padding: '5px 12px',
+                          borderRadius: 100,
+                          background: 'rgba(16, 185, 129, 0.08)',
+                          border: '1px solid rgba(16, 185, 129, 0.25)',
+                          fontSize: 12,
+                          color: 'var(--cms-text)',
+                        }}
+                        title="Kata sandi akun terproteksi secara aman (Hash SHA-256)"
+                      >
+                        <KeyRound size={13} style={{ color: '#10b981', flexShrink: 0 }} />
+                        <span style={{ fontWeight: 700, fontSize: 12, color: '#10b981' }}>
+                          Terenkripsi Aman
+                        </span>
                         <button
                           type="button"
                           onClick={() => {
@@ -1366,25 +1733,22 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
                             setNewClientPassword('');
                             setShowResetClientPassword(false);
                           }}
+                          title="Ganti Kata Sandi Klien"
                           style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 6,
-                            padding: '5px 12px',
-                            borderRadius: 100,
-                            background: 'rgba(245, 158, 11, 0.12)',
-                            border: '1px solid rgba(245, 158, 11, 0.3)',
-                            fontSize: 12,
-                            fontWeight: 700,
-                            color: '#f59e0b',
+                            background: 'transparent',
+                            border: 'none',
+                            color: 'var(--cms-accent, #D95629)',
                             cursor: 'pointer',
+                            padding: '2px 6px',
+                            fontSize: 11,
+                            fontWeight: 800,
+                            borderRadius: 4,
+                            marginLeft: 2
                           }}
-                          title="Akun ini belum memiliki sandi terbaca. Klik untuk setel kata sandi baru agar bisa dilihat dan disalin."
                         >
-                          <KeyRound size={13} />
-                          <span>Setel Sandi Terbaca</span>
+                          Ganti Sandi
                         </button>
-                      )}
+                      </div>
 
                       <button
                         onClick={() => setViewingOrdersClient(cli)}
@@ -1457,6 +1821,37 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
                         aria-label="Sandi"
                       >
                         <KeyRound size={15} />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTierModalClient(cli);
+                          setTierFormData({
+                            membershipTier: cli.membershipTier || 'regular',
+                            affiliateCode: cli.affiliateCode || generateAffiliateCode(cli.name, cli.id),
+                            affiliateCommissionRate: cli.affiliateCommissionRate ?? 10,
+                            resellerDiscountRate: cli.resellerDiscountRate ?? 15,
+                            affiliateBalance: cli.affiliateBalance ?? 0,
+                          });
+                        }}
+                        style={{
+                          width: 36,
+                          height: 36,
+                          borderRadius: '50%',
+                          background: 'rgba(236, 72, 153, 0.12)',
+                          border: '1px solid rgba(236, 72, 153, 0.3)',
+                          color: '#ec4899',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          flexShrink: 0
+                        }}
+                        title="Kelola Level Membership (Reseller / Afiliasi / VIP)"
+                        aria-label="Kelola Level"
+                      >
+                        <Sparkles size={15} />
                       </button>
 
                       <button
@@ -1802,6 +2197,229 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
         </>
       )}
 
+      {/* ── MODAL: Kelola Level Kemitraan (Reseller & Affiliate) ── */}
+      {tierModalClient && (
+        <>
+          <div className="drawer-backdrop open" onClick={() => setTierModalClient(null)} />
+          <div style={{
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+            background: 'var(--cms-card-bg)', width: 'calc(100% - 32px)', maxWidth: 480, borderRadius: 24,
+            boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', border: '1.5px solid var(--glass-border)',
+            zIndex: 1000002, padding: 24, display: 'flex', flexDirection: 'column', maxHeight: '90vh', overflowY: 'auto'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 800, color: '#ec4899', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  <Sparkles size={13} /> Membership & Partnership
+                </div>
+                <h2 style={{ fontSize: 18, fontWeight: 800, margin: '4px 0 0', color: 'var(--cms-text)', fontFamily: "'Outfit', sans-serif" }}>
+                  Kelola Level Klien
+                </h2>
+                <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--cms-text-muted)' }}>
+                  {tierModalClient.name} • {tierModalClient.email}
+                </p>
+              </div>
+              <button onClick={() => setTierModalClient(null)} className="sidebar-icon-btn" style={{ width: 36, height: 36, borderRadius: '50%' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveClientTier} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Pilihan Level Tier */}
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--cms-text-muted)', marginBottom: 8 }}>
+                  Tingkatan Level Akun
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                  {[
+                    { id: 'regular', label: 'Pelanggan', desc: 'Harga standar katalog', border: 'var(--glass-border)', color: 'var(--cms-text)' },
+                    { id: 'reseller', label: 'Reseller', desc: 'Diskon belanja langsung', border: 'rgba(59, 130, 246, 0.4)', color: '#3b82f6' },
+                    { id: 'affiliate', label: 'Afiliasi', desc: 'Dapat komisi bagi hasil', border: 'rgba(236, 72, 153, 0.4)', color: '#ec4899' },
+                    { id: 'vip', label: 'VIP Partner', desc: 'Prioritas & komisi/diskon', border: 'rgba(245, 158, 11, 0.4)', color: '#f59e0b' }
+                  ].map(t => {
+                    const isSelected = tierFormData.membershipTier === t.id;
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => setTierFormData(prev => ({ ...prev, membershipTier: t.id as any }))}
+                        style={{
+                          textAlign: 'left',
+                          padding: '10px 12px',
+                          borderRadius: 14,
+                          border: `1.5px solid ${isSelected ? t.color : 'var(--glass-border)'}`,
+                          background: isSelected ? 'var(--cms-input-bg)' : 'transparent',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                        }}
+                      >
+                        <div style={{ fontSize: 13, fontWeight: 800, color: isSelected ? t.color : 'var(--cms-text)' }}>
+                          {t.label}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--cms-text-muted)', marginTop: 2 }}>
+                          {t.desc}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Kode Referral / Afiliasi */}
+              <div className="modern-input-group">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <label style={{ margin: 0 }}>Kode Referral / Kupon Afiliasi</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newCode = generateAffiliateCode(tierModalClient.name, tierModalClient.id);
+                      setTierFormData(prev => ({ ...prev, affiliateCode: newCode }));
+                    }}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--cms-accent, #7c3aed)',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      padding: 0
+                    }}
+                  >
+                    Acak Kode Baru
+                  </button>
+                </div>
+                <div className="input-wrapper">
+                  <Sparkles size={16} className="input-icon" />
+                  <input
+                    type="text"
+                    value={tierFormData.affiliateCode}
+                    onChange={e => setTierFormData(prev => ({ ...prev, affiliateCode: e.target.value.toUpperCase() }))}
+                    placeholder="CONTOH: SUMR88"
+                    style={{ textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1 }}
+                  />
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--cms-text-muted)', marginTop: 4 }}>
+                  Tautan affiliate klien: <span style={{ color: 'var(--cms-accent, #7c3aed)', fontWeight: 600 }}>{window.location.origin}/?ref={tierFormData.affiliateCode || 'KODE'}</span>
+                </div>
+              </div>
+
+              {/* Diskon Reseller & Komisi Afiliasi (Grid 2 Kolom) */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div className="modern-input-group">
+                  <label>Diskon Reseller (%)</label>
+                  <div className="input-wrapper">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={tierFormData.resellerDiscountRate}
+                      onChange={e => setTierFormData(prev => ({ ...prev, resellerDiscountRate: Number(e.target.value) }))}
+                      style={{ paddingLeft: 16 }}
+                      placeholder="15"
+                    />
+                  </div>
+                </div>
+
+                <div className="modern-input-group">
+                  <label>Komisi Afiliasi (%)</label>
+                  <div className="input-wrapper">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={tierFormData.affiliateCommissionRate}
+                      onChange={e => setTierFormData(prev => ({ ...prev, affiliateCommissionRate: Number(e.target.value) }))}
+                      style={{ paddingLeft: 16 }}
+                      placeholder="10"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Saldo Komisi & Penyesuaian Saldo */}
+              <div className="modern-input-group">
+                <label>Saldo Komisi Afiliasi Aktif (Rp)</label>
+                <div className="input-wrapper">
+                  <input
+                    type="number"
+                    min="0"
+                    value={tierFormData.affiliateBalance}
+                    onChange={e => setTierFormData(prev => ({ ...prev, affiliateBalance: Number(e.target.value) }))}
+                    style={{ paddingLeft: 16 }}
+                    placeholder="0"
+                  />
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--cms-text-muted)', marginTop: 4 }}>
+                  Total penghasilan tercatat: <strong>{formatRp(tierModalClient.affiliateTotalEarnings || 0)}</strong> • {tierModalClient.affiliateSalesCount || 0} order referral
+                </div>
+              </div>
+
+              {tierModalClient.phone && (
+                <div style={{ marginTop: 2 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cleanPhone = tierModalClient.phone.replace(/[^0-9]/g, '');
+                      const waPhone = cleanPhone.startsWith('0') ? '62' + cleanPhone.slice(1) : cleanPhone;
+                      let msg = '';
+                      if (tierFormData.membershipTier === 'reseller') {
+                        msg = `Halo Kak ${tierModalClient.name}!\n\nSelamat, akun Anda di sumr.day telah resmi diaktifkan sebagai *RESELLER STUDIO*. Anda berhak mendapatkan diskon khusus *${tierFormData.resellerDiscountRate}% OFF* untuk setiap pemesanan layanan & katalog.\n\nSilakan login ke dashboard akun Anda untuk melihat status: ${window.location.origin}/akun\n\nTerima kasih atas kemitraannya!`;
+                      } else if (tierFormData.membershipTier === 'affiliate') {
+                        msg = `Halo Kak ${tierModalClient.name}!\n\nSelamat, akun Anda di sumr.day telah resmi diaktifkan sebagai *MITRA AFILIASI*. Anda mendapatkan bagi hasil komisi *${tierFormData.affiliateCommissionRate}%* dari setiap transaksi.\n\nLink Referral Anda: ${window.location.origin}/?ref=${tierFormData.affiliateCode || 'KODE'}\nKode Kupon: *${tierFormData.affiliateCode || 'KODE'}*\n\nDashboard Kemitraan: ${window.location.origin}/akun\n\nSelamat membagikan link dan raih komisi Anda!`;
+                      } else if (tierFormData.membershipTier === 'vip') {
+                        msg = `Halo Kak ${tierModalClient.name}!\n\nSelamat, akun Anda telah di-upgrade menjadi *VIP PARTNER STUDIO* sumr.day dengan prioritas pengerjaan, diskon reseller *${tierFormData.resellerDiscountRate}%*, dan komisi afiliasi *${tierFormData.affiliateCommissionRate}%*.\n\nDashboard: ${window.location.origin}/akun`;
+                      } else {
+                        msg = `Halo Kak ${tierModalClient.name}, akun Anda di sumr.day telah aktif sebagai Pelanggan. Kunjungi katalog kami di: ${window.location.origin}/katalog`;
+                      }
+                      window.open(`https://wa.me/${waPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+                    }}
+                    title="Kirim Notifikasi WhatsApp Aktivasi Level"
+                    style={{
+                      width: '100%',
+                      height: 42,
+                      borderRadius: 100,
+                      background: 'rgba(34, 197, 94, 0.12)',
+                      border: '1px solid rgba(34, 197, 94, 0.3)',
+                      color: '#22c55e',
+                      fontFamily: "'Outfit', sans-serif",
+                      fontSize: 12.5,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6
+                    }}
+                  >
+                    <MessageCircle size={15} /> Kirim WA
+                  </button>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+                <button
+                  type="button"
+                  onClick={() => setTierModalClient(null)}
+                  className="cms-btn cms-btn-secondary"
+                  style={{ flex: 1, height: 46, borderRadius: 100, fontWeight: 700 }}
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="cms-btn cms-btn-primary"
+                  style={{ flex: 1, height: 46, borderRadius: 100, fontWeight: 700 }}
+                >
+                  {isSubmitting ? <Loader2 size={16} className="cms-spin" /> : <Check size={16} />}
+                  Simpan Level
+                </button>
+              </div>
+            </form>
+          </div>
+        </>
+      )}
+
       {/* ── DRAWER: Admin Permissions ── */}
       <div className={`drawer-backdrop ${showPermsDrawer ? 'open' : ''}`} onClick={closeDrawer} />
       <div className={`side-drawer ${showPermsDrawer ? 'open' : ''}`}>
@@ -1865,7 +2483,7 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
               display: 'flex',
               flexDirection: 'column',
               gap: 20,
-              paddingBottom: 'calc(100px + env(safe-area-inset-bottom, 0px))',
+              paddingBottom: 'calc(84px + env(safe-area-inset-bottom, 0px))',
               overscrollBehavior: 'contain',
               WebkitOverflowScrolling: 'touch'
             }}>
@@ -1900,8 +2518,63 @@ const UserManager = ({ notify }: { notify: (msg: string, type?: 'success' | 'err
 
                {/* Modules Permission Checkboxes */}
                <div style={{ background: 'var(--cms-card-bg)', padding: 18, borderRadius: 20, border: '1.5px solid var(--glass-border)' }}>
-                 <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--cms-text)', marginBottom: 12, fontFamily: "'Outfit', sans-serif" }}>
-                   Izin Akses Modul ({selectedUser.allowedPages?.length || 0}/{MODULES.length})
+                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 6 }}>
+                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--cms-text)', fontFamily: "'Outfit', sans-serif" }}>
+                     Izin Akses Modul ({selectedUser.allowedPages?.length || 0}/{MODULES.length})
+                   </div>
+                   {/* Smart Preset Buttons */}
+                   {selectedUser.role !== 'Super Admin' && (
+                     <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                       <button
+                         type="button"
+                         onClick={() => handleUpdatePerms({ allowedPages: ['dashboard', 'pages', 'projects', 'whiteboard', 'storage'] })}
+                         style={{
+                           fontSize: 10, fontWeight: 800, padding: '3px 8px', borderRadius: 9999,
+                           background: 'rgba(99, 102, 241, 0.12)', border: '1px solid rgba(99, 102, 241, 0.3)',
+                           color: 'var(--cms-accent, #6366f1)', cursor: 'pointer'
+                         }}
+                         title="Preset Desainer & Tim Kreatif"
+                       >
+                         🎨 Creative
+                       </button>
+                       <button
+                         type="button"
+                         onClick={() => handleUpdatePerms({ allowedPages: ['dashboard', 'transactions', 'chat', 'projects'] })}
+                         style={{
+                           fontSize: 10, fontWeight: 800, padding: '3px 8px', borderRadius: 9999,
+                           background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)',
+                           color: '#10b981', cursor: 'pointer'
+                         }}
+                         title="Preset Keuangan & Penjualan"
+                       >
+                         💼 Sales
+                       </button>
+                       <button
+                         type="button"
+                         onClick={() => handleUpdatePerms({ allowedPages: ['dashboard', 'blog', 'pages', 'storage'] })}
+                         style={{
+                           fontSize: 10, fontWeight: 800, padding: '3px 8px', borderRadius: 9999,
+                           background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.3)',
+                           color: '#f59e0b', cursor: 'pointer'
+                         }}
+                         title="Preset Penulis & SEO"
+                       >
+                         ✍️ Content
+                       </button>
+                       <button
+                         type="button"
+                         onClick={() => handleUpdatePerms({ allowedPages: MODULES.map(m => m.id) })}
+                         style={{
+                           fontSize: 10, fontWeight: 800, padding: '3px 8px', borderRadius: 9999,
+                           background: 'rgba(255, 255, 255, 0.08)', border: '1px solid var(--glass-border)',
+                           color: 'var(--cms-text)', cursor: 'pointer'
+                         }}
+                         title="Beri Semua Akses"
+                       >
+                         🌟 Semua
+                       </button>
+                     </div>
+                   )}
                  </div>
                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
                    {MODULES.map(m => {

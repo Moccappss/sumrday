@@ -39,7 +39,7 @@ const SOCIAL_PLATFORMS = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 🌟 MINIMALIST CLOUDINARY MEDIA PICKER (1-3 WORDS TEXT & TOOLTIPS)
+// MINIMALIST CLOUDINARY MEDIA PICKER (1-3 WORDS TEXT & TOOLTIPS)
 // ─────────────────────────────────────────────────────────────────────────────
 interface CloudinaryMediaPickerProps {
   label: string;
@@ -327,7 +327,7 @@ function CloudinaryMediaPicker({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 🚀 MASTER BUSINESS PROFILE MANAGER
+// MASTER BUSINESS PROFILE MANAGER
 // ─────────────────────────────────────────────────────────────────────────────
 interface BusinessProfileManagerProps {
   notify?: (msg: string, type?: 'success' | 'error') => void;
@@ -372,9 +372,13 @@ export default function BusinessProfileManager({ notify = () => {} }: BusinessPr
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await updateProfile(form);
+      const syncRes = await updateProfile(form, 'Profil Bisnis');
       setHasChanges(false);
-      notify('Profil bisnis tersimpan', 'success');
+      if (syncRes && syncRes.notificationText) {
+        notify(syncRes.notificationText, 'success');
+      } else {
+        notify('Profil bisnis tersimpan & otomatis tersinkron ke semua modul', 'success');
+      }
     } catch (err) {
       console.error(err);
       notify('Gagal menyimpan profil', 'error');
@@ -790,6 +794,31 @@ export default function BusinessProfileManager({ notify = () => {} }: BusinessPr
               <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 5 }}>
                 <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--cms-text-muted)', textTransform: 'uppercase' }}>Alamat Studio</label>
                 <InfoTooltip content="Alamat fisik studio yang tampil di nota dan footer." />
+                {form.address && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(form.address)}`;
+                      window.open(url, '_blank', 'noopener,noreferrer');
+                    }}
+                    style={{
+                      marginLeft: 'auto',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      fontSize: 11,
+                      fontWeight: 800,
+                      color: 'var(--cms-accent)',
+                      background: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: 0
+                    }}
+                  >
+                    <MapPin size={12} />
+                    <span>Cek Maps</span>
+                  </button>
+                )}
               </div>
               <input
                 type="text"
@@ -943,14 +972,43 @@ export default function BusinessProfileManager({ notify = () => {} }: BusinessPr
                         />
                       </div>
 
-                      <div>
-                        <label style={{ display: 'block', fontSize: 9.5, fontWeight: 700, color: 'var(--cms-text-muted)', textTransform: 'uppercase', marginBottom: 2 }}>Warna</label>
-                        <input
-                          type="color"
-                          style={{ height: 32, width: '100%', borderRadius: 8, border: '1px solid var(--glass-border)', padding: 1, background: 'transparent', cursor: 'pointer' }}
-                          value={bank.color || '#003399'}
-                          onChange={e => updateBank(bank.id, 'color', e.target.value)}
-                        />
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                        <label style={{ display: 'block', fontSize: 9.5, fontWeight: 700, color: 'var(--cms-text-muted)', textTransform: 'uppercase', marginBottom: 2, textAlign: 'center' }}>Warna</label>
+                        <label
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            position: 'relative',
+                            width: 32,
+                            height: 32,
+                            borderRadius: '50%',
+                            backgroundColor: bank.color || '#003399',
+                            border: '2px solid rgba(255, 255, 255, 0.25)',
+                            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.35)',
+                            cursor: 'pointer',
+                            overflow: 'hidden',
+                            flexShrink: 0
+                          }}
+                          title="Pilih Warna Bank"
+                        >
+                          <input
+                            type="color"
+                            style={{
+                              position: 'absolute',
+                              inset: '-50%',
+                              width: '200%',
+                              height: '200%',
+                              opacity: 0,
+                              cursor: 'pointer',
+                              border: 'none',
+                              padding: 0,
+                              margin: 0
+                            }}
+                            value={bank.color || '#003399'}
+                            onChange={e => updateBank(bank.id, 'color', e.target.value)}
+                          />
+                        </label>
                       </div>
                     </div>
 

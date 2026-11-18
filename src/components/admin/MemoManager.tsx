@@ -12,7 +12,8 @@ import {
   Image as ImageIcon, Upload, Library, Loader2, Sparkle, Palette, Layout,
   Table as TableIcon, Link as LinkIcon, Lightbulb, CheckCheck, Eraser, AlignLeft, AlignCenter, AlignRight, AlignJustify, Info, Rocket,
   PenTool, MessageSquare, Receipt, Briefcase, ListTodo, Megaphone, Compass, UserCheck, Wand2, Zap, Bookmark,
-  Shield, Cloud, CloudOff, Maximize2, Minimize2, ZoomIn, ExternalLink, ArrowUp, ArrowDown, Paperclip, RotateCw, Undo2, Redo2
+  Shield, ShieldCheck, Cloud, CloudOff, Maximize2, Minimize2, ZoomIn, ExternalLink, ArrowUp, ArrowDown, Paperclip, RotateCw, Undo2, Redo2,
+  Lock, Key, EyeOff, Mic, MicOff
 } from 'lucide-react';
 import { storage } from '../../utils/storage';
 import { uploadToCloudinary } from '../../utils/cloudinary';
@@ -66,6 +67,15 @@ export interface NoteItem {
   isTrash: boolean;
   isOfflineOnly?: boolean; // When true: stored strictly on local device, never uploaded to cloud
   color?: string;
+  // Client Preview & Sharing Enhancements
+  sharePassword?: string;
+  showWatermark?: boolean;
+  watermarkText?: string;
+  viewCount?: number;
+  lastViewedAt?: string;
+  approvalStatus?: 'pending' | 'approved' | 'revision';
+  approvalNote?: string;
+  approvalDate?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -366,6 +376,21 @@ const AutoGrowTextarea: React.FC<{
 
   useEffect(() => {
     resize();
+    const handleWinResize = () => resize();
+    window.addEventListener('resize', handleWinResize);
+
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && localRef.current) {
+      ro = new ResizeObserver(() => resize());
+      if (localRef.current.parentElement) {
+        ro.observe(localRef.current.parentElement);
+      }
+    }
+
+    return () => {
+      window.removeEventListener('resize', handleWinResize);
+      ro?.disconnect();
+    };
   }, [value]);
 
   const updateCaret = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
@@ -484,7 +509,7 @@ const RichBlockNotepad: React.FC<{
         const fullText = serializeBlocksToContent(blocks);
         navigator.clipboard?.writeText(fullText);
         window.dispatchEvent(new CustomEvent('porto_notify', { 
-          detail: { message: "📋 Seluruh isi catatan disalin ke clipboard!", type: "success" } 
+          detail: { message: "Seluruh isi catatan disalin ke clipboard!", type: "success" } 
         }));
         return;
       }
@@ -750,7 +775,7 @@ const RichBlockNotepad: React.FC<{
 
   return (
     <div
-      className={`memo-canvas-container ${isGlobalAllSelected ? 'is-all-selected' : ''}`}
+      className={`memo-blocks-flow ${isGlobalAllSelected ? 'is-all-selected' : ''}`}
       onClick={(e) => {
         if (e.target === e.currentTarget) {
           setActiveImageId(null);
@@ -768,7 +793,7 @@ const RichBlockNotepad: React.FC<{
           }
         }
       }}
-      style={{ display: 'block', width: '100%', minHeight: '65vh', background: 'transparent', cursor: 'text', paddingBottom: 80 }}
+      style={{ display: 'block', width: '100%', flex: '0 0 auto', background: 'transparent', cursor: 'text' }}
     >
       {blocks.map((block, idx) => {
         // MS Word / Google Docs Style Block Image
@@ -1088,7 +1113,7 @@ const RichBlockNotepad: React.FC<{
                     type="text"
                     value={block.text || ''}
                     onChange={e => handleUpdateBlock(idx, { text: e.target.value })}
-                    placeholder="✍️ Sumber / keterangan gambar..."
+                    placeholder="Sumber / keterangan gambar..."
                     style={{
                       width: '100%',
                       background: 'transparent',
@@ -1118,7 +1143,7 @@ const RichBlockNotepad: React.FC<{
         }
 
         // Determine block-specific styles
-        let blockWrapStyle: React.CSSProperties = { width: '100%', minHeight: 28, background: 'transparent', position: 'relative' };
+        let blockWrapStyle: React.CSSProperties = { width: '100%', minHeight: 28, background: 'transparent', position: 'relative', marginBottom: 6 };
         let textareaStyle: React.CSSProperties = {
           fontSize: 15, lineHeight: 1.7, fontFamily: "'Inter', sans-serif",
           color: 'var(--cms-text)',
@@ -1140,12 +1165,13 @@ const RichBlockNotepad: React.FC<{
           prefix = (
             <button
               type="button"
+              className="memo-todo-checkbox"
               onClick={(e) => { e.stopPropagation(); handleUpdateBlock(idx, { checked: !block.checked }); }}
               style={{
-                flexShrink: 0, marginTop: 6, width: 18, height: 18, borderRadius: 5,
+                flexShrink: 0, marginTop: 4, width: 18, height: 18, minWidth: 18, minHeight: 18, maxWidth: 18, maxHeight: 18, aspectRatio: '1 / 1', borderRadius: 5,
                 border: `2px solid ${block.checked ? 'var(--cms-accent, #6366f1)' : 'var(--glass-border)'}`,
                 background: block.checked ? 'var(--cms-accent, #6366f1)' : 'transparent',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0, boxSizing: 'border-box'
               }}
             >
               {block.checked && <Check size={11} color="#fff" strokeWidth={3} />}
@@ -1264,9 +1290,9 @@ const RichBlockNotepad: React.FC<{
             position: 'fixed',
             inset: 0,
             zIndex: 100000,
-            background: 'rgba(0, 0, 0, 0.88)',
-            backdropFilter: 'blur(16px)',
-            WebkitBackdropFilter: 'blur(16px)',
+            background: 'rgba(4, 4, 8, 0.92)',
+            backdropFilter: 'none',
+            WebkitBackdropFilter: 'none',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
@@ -1512,6 +1538,10 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
   const [newCommentText, setNewCommentText] = useState('');
   const [isCommentsOpen, setIsCommentsOpen] = useState(false);
 
+  // State: Client Note Preview / Share Modal
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [copiedShareLink, setCopiedShareLink] = useState(false);
+
 
   useEffect(() => {
     // Muat dari penyimpanan lokal / Google Drive partitions (Zero Firestore reads)
@@ -1537,6 +1567,76 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
   const [aiCategoryFilter, setAiCategoryFilter] = useState<'all' | 'custom' | 'design' | 'business' | 'tasks' | 'marketing' | 'personal'>('all');
   const [aiSearchQuery, setAiSearchQuery] = useState('');
   const [isAiGenerating, setIsAiGenerating] = useState(false);
+  const [isListeningVoice, setIsListeningVoice] = useState(false);
+
+  const handleToggleVoiceDictation = () => {
+    const SpeechRec = (typeof window !== 'undefined') && ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+    if (!SpeechRec) {
+      notify('Browser tidak mendukung Speech Recognition. Silakan gunakan Google Chrome.', 'error');
+      return;
+    }
+
+    if (isListeningVoice) {
+      setIsListeningVoice(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRec();
+      recognition.lang = 'id-ID';
+      recognition.interimResults = false;
+      recognition.continuous = false;
+
+      recognition.onstart = () => {
+        setIsListeningVoice(true);
+        notify('Mendengarkan suara... Silakan berbicara.', 'info');
+      };
+
+      recognition.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        if (!transcript) return;
+
+        const dateStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        const voiceTitle = `Suara: ${transcript.slice(0, 28)}${transcript.length > 28 ? '...' : ''}`;
+
+        const newNote: NoteItem = {
+          id: `note_voice_${Date.now()}`,
+          title: voiceTitle,
+          content: `<p><strong>Dikte Suara (${dateStr}):</strong></p><p>${transcript}</p>`,
+          type: 'doc',
+          folderId: 'general',
+          tags: ['voice', 'suara'],
+          isPinned: false,
+          isFavorite: false,
+          isTrash: false,
+          color: 'default',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+
+        const updated = [newNote, ...notes];
+        setNotes(updated);
+        setSelectedNoteId(newNote.id);
+        saveNotesToStorage(updated);
+        setViewMode('editor');
+        notify('Catatan suara berhasil dibuat!', 'success');
+      };
+
+      recognition.onerror = () => {
+        setIsListeningVoice(false);
+        notify('Perekaman suara dibatalkan atau tidak terdengar.', 'info');
+      };
+
+      recognition.onend = () => {
+        setIsListeningVoice(false);
+      };
+
+      recognition.start();
+    } catch {
+      setIsListeningVoice(false);
+      notify('Gagal memulai rekaman suara.', 'error');
+    }
+  };
   const [aiError, setAiError] = useState('');
   const [isEditorAiMenuOpen, setIsEditorAiMenuOpen] = useState(false);
 
@@ -1713,6 +1813,37 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
     window.dispatchEvent(new CustomEvent('cms_switch_page', { detail: 'projects' }));
   };
 
+  // Client Note Preview / Sharing Handlers
+  const handleOpenClientPreview = () => {
+    if (!currentNote) return;
+    window.open(`/preview/note/${currentNote.id}`, '_blank');
+  };
+
+  const handleCopyClientPreviewLink = () => {
+    if (!currentNote) return;
+    const url = `${window.location.origin}/preview/note/${currentNote.id}`;
+    navigator.clipboard?.writeText(url);
+    setCopiedShareLink(true);
+    notify('Tautan pratinjau klien berhasil disalin!', 'success');
+    setTimeout(() => setCopiedShareLink(false), 2200);
+  };
+
+  const handleUpdateCurrentNoteMeta = (patch: Partial<NoteItem>) => {
+    if (!currentNote) return;
+    const updated = notes.map(n => n.id === currentNote.id ? { ...n, ...patch, updatedAt: new Date().toISOString() } : n);
+    setNotes(updated);
+    saveNotesToStorage(updated);
+  };
+
+  const handleShareToClientWhatsApp = () => {
+    if (!currentNote) return;
+    const url = `${window.location.origin}/preview/note/${currentNote.id}`;
+    const modeDesc = currentNote.type === 'canvas' ? 'Whiteboard Wireframe / Mindmap' : 'Dokumen Konsep';
+    const pinPart = currentNote.sharePassword ? `\n🔑 PIN Akses: ${currentNote.sharePassword}` : '';
+    const text = `Halo! Berikut kami lampirkan tautan pratinjau draf ${modeDesc} "${currentNote.title || 'Konsep Proyek'}":\n${url}${pinPart}\n\nSilakan dibuka dan ditinjau ya. Terima kasih! - sumr.day Studio`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+  };
+
   // Track active note to Recent Apps manager
   useEffect(() => {
     if (selectedNoteId && currentNote) {
@@ -1786,7 +1917,7 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
         await storage.setItem('porto_memo_notes', updatedNotes, true);
         await storage.flushAllPendingWrites();
         setSaveIndicator('saved');
-        notify('☁️ Catatan berhasil disimpan ke Cloud!', 'success');
+        notify('Catatan berhasil disimpan ke Cloud!', 'success');
       } else {
         storage.debouncedSetItem('porto_memo_notes', updatedNotes, 1500);
         setTimeout(() => setSaveIndicator('saved'), 600);
@@ -2161,7 +2292,7 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
       setViewMode('editor');
       setEditorMode('preview');
       setMobilePane('editor');
-      notify(`⚡ Catatan "${offlineNote.title}" berhasil dibuat dari Template Instan`, 'success');
+      notify(`Catatan "${offlineNote.title}" berhasil dibuat dari Template Instan`, 'success');
       return;
     }
 
@@ -2189,7 +2320,7 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
         setViewMode('editor');
         setEditorMode('preview');
         setMobilePane('editor');
-        notify(`⚡ Menggunakan Template Offline karena koneksi AI offline/terkendala.`, 'warning');
+        notify(`Menggunakan Template Offline karena koneksi AI offline/terkendala.`, 'warning');
         return;
       }
 
@@ -2250,7 +2381,7 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
       setViewMode('editor');
       setEditorMode('preview');
       setMobilePane('editor');
-      notify('✨ Catatan AI berhasil dibuat dan disimpan', 'success');
+      notify('Catatan AI berhasil dibuat dan disimpan', 'success');
     } catch (err: any) {
       const fallbackNote = buildOfflineNote(aiTemplateType, aiPrompt);
       const updated = [fallbackNote, ...notes];
@@ -3471,14 +3602,16 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
     <div className="memo-manager-root" style={{
       display: 'flex',
       height: '100%',
+      minHeight: '100%',
       width: '100%',
       maxWidth: '100%',
-      background: 'var(--cms-bg)',
+      background: (isMobile && mobilePane === 'editor' && currentNote) ? (activeColorObj.bg || 'var(--cms-card-bg)') : 'var(--cms-bg)',
       color: 'var(--cms-text)',
       fontFamily: "'Inter', sans-serif",
       overflow: 'hidden',
       position: 'relative',
-      boxSizing: 'border-box'
+      boxSizing: 'border-box',
+      transition: 'background 0.25s ease'
     }}>
       <style>{`
         .memo-editor-pane textarea,
@@ -3509,6 +3642,23 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
         .memo-canvas-container input,
         .memo-title-input {
           color: var(--cms-text) !important;
+        }
+        .memo-todo-checkbox,
+        button.memo-todo-checkbox {
+          width: 18px !important;
+          height: 18px !important;
+          min-width: 18px !important;
+          min-height: 18px !important;
+          max-width: 18px !important;
+          max-height: 18px !important;
+          aspect-ratio: 1 / 1 !important;
+          flex-shrink: 0 !important;
+          border-radius: 5px !important;
+          padding: 0 !important;
+          box-sizing: border-box !important;
+          display: inline-flex !important;
+          align-items: center !important;
+          justify-content: center !important;
         }
         .memo-quote-block {
           border-left: 4px solid var(--cms-accent, #6366f1) !important;
@@ -3942,23 +4092,47 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
                   }}
                   title="Catatan Dokumen Baru"
                 >
-                  <FileText size={15} /> <span>Dokumen</span>
+                  <FileText size={16} />
                 </button>
+                <button
+                  onClick={handleToggleVoiceDictation}
+                  className="memo-mobile-create-btn"
+                  style={{
+                    background: isListeningVoice ? '#ef4444' : '#10b981',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 10,
+                    padding: '8px 12px',
+                    fontSize: 12,
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}
+                  title="Dikte Suara"
+                >
+                  {isListeningVoice ? <MicOff size={14} /> : <Mic size={14} />}
+                  <span>Suara</span>
+                </button>
+
                 <button
                   onClick={() => handleCreateNote('canvas')}
                   className="memo-mobile-create-btn"
                   style={{
                     height: 38,
-                    padding: '0 12px', borderRadius: 100, border: 'none',
+                    width: 38,
+                    padding: 0, borderRadius: '50%', border: 'none',
                     background: '#a855f7', color: '#fff',
-                    fontSize: 12, fontWeight: 800, cursor: 'pointer',
-                    display: 'none', alignItems: 'center', gap: 5,
+                    cursor: 'pointer',
+                    display: 'none', alignItems: 'center', justifyContent: 'center',
                     boxShadow: '0 4px 12px rgba(168,85,247, 0.25)',
                     flexShrink: 0
                   }}
                   title="Kanvas Kreatif Baru"
+                  aria-label="Kanvas Kreatif Baru"
                 >
-                  <Layout size={15} /> <span>Kanvas</span>
+                  <Layout size={16} />
                 </button>
               </div>
             )}
@@ -3974,15 +4148,16 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
               <button
                 onClick={() => setViewMode('gallery')}
                 style={{
-                  padding: '6px 14px', borderRadius: 100, border: 'none',
+                  width: 34, height: 32, padding: 0, borderRadius: 100, border: 'none',
                   background: viewMode === 'gallery' ? 'var(--cms-accent)' : 'transparent',
                   color: viewMode === 'gallery' ? '#fff' : 'var(--cms-text-muted)',
-                  fontSize: 12, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
                   transition: 'all 0.15s'
                 }}
                 title="Tampilan Galeri Kartu"
+                aria-label="Tampilan Galeri Kartu"
               >
-                <LayoutGrid size={15} /> <span>Galeri</span>
+                <LayoutGrid size={15} />
               </button>
               <button
                 onClick={() => {
@@ -3990,15 +4165,16 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
                   setViewMode('editor');
                 }}
                 style={{
-                  padding: '6px 14px', borderRadius: 100, border: 'none',
+                  width: 34, height: 32, padding: 0, borderRadius: 100, border: 'none',
                   background: viewMode === 'editor' ? 'var(--cms-accent)' : 'transparent',
                   color: viewMode === 'editor' ? '#fff' : 'var(--cms-text-muted)',
-                  fontSize: 12, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
                   transition: 'all 0.15s'
                 }}
                 title="Tampilan Editor Menulis"
+                aria-label="Tampilan Editor Menulis"
               >
-                <Edit3 size={15} /> <span>Editor</span>
+                <Edit3 size={15} />
               </button>
             </div>
           </div>
@@ -4050,13 +4226,15 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
                     <button
                       onClick={handleEmptyTrash}
                       style={{
-                        padding: '8px 18px', borderRadius: 100, border: 'none',
-                        background: '#ef4444', color: '#fff', fontSize: 12, fontWeight: 800,
-                        cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
-                        boxShadow: '0 4px 12px rgba(239,68,68,0.25)'
+                        width: 36, height: 36, borderRadius: '50%', border: 'none',
+                        background: '#ef4444', color: '#fff',
+                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        boxShadow: '0 4px 12px rgba(239,68,68,0.25)', flexShrink: 0
                       }}
+                      title="Kosongkan Sampah"
+                      aria-label="Kosongkan Sampah"
                     >
-                      <Trash2 size={14} /> Kosongkan Sampah
+                      <Trash2 size={16} />
                     </button>
                   )
                 ) : (
@@ -4065,28 +4243,29 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
                       <button
                         onClick={() => setIsCreatingFolder(true)}
                         style={{
-                          padding: '8px 16px', borderRadius: 100, border: '1.5px solid var(--glass-border)',
-                          background: 'var(--cms-input-bg)', color: 'var(--cms-text)', fontSize: 12, fontWeight: 800,
-                          cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s'
+                          width: 36, height: 36, borderRadius: '50%', border: '1.5px solid var(--glass-border)',
+                          background: 'var(--cms-input-bg)', color: 'var(--cms-text)',
+                          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          transition: 'all 0.15s', flexShrink: 0
                         }}
-                        title="Tambah Folder di direktori ini"
+                        title={currentFolderId === 'root' ? 'Folder Baru' : 'Sub-Folder'}
+                        aria-label={currentFolderId === 'root' ? 'Folder Baru' : 'Sub-Folder'}
                       >
-                        <FolderPlus size={15} color="var(--cms-accent)" />
-                        <span>{currentFolderId === 'root' ? 'Folder Baru' : 'Sub-Folder'}</span>
+                        <FolderPlus size={16} color="var(--cms-accent)" />
                       </button>
                     )}
 
                     <label
                       style={{
-                        padding: '8px 16px', borderRadius: 100, border: '1.5px solid var(--glass-border)',
-                        background: 'var(--cms-input-bg)', color: 'var(--cms-text)', fontSize: 12, fontWeight: 800,
-                        cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
-                        boxShadow: 'var(--cms-shadow-sm)'
+                        width: 36, height: 36, borderRadius: '50%', border: '1.5px solid var(--glass-border)',
+                        background: 'var(--cms-input-bg)', color: 'var(--cms-text)',
+                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        transition: 'all 0.15s', boxShadow: 'var(--cms-shadow-sm)', flexShrink: 0
                       }}
                       title="Buka Berkas (.agzmemo / .agzboard) dari Explorer Komputer"
+                      aria-label="Buka Berkas"
                     >
-                      <Upload size={14} color="var(--cms-accent)" />
-                      <span>Buka Berkas</span>
+                      <Upload size={16} color="var(--cms-accent)" />
                       <input
                         type="file"
                         accept=".agzmemo,.agzboard,.json"
@@ -4098,53 +4277,74 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
                     <button
                       onClick={() => { setIsAiModalOpen(true); setAiError(''); }}
                       style={{
-                        padding: '8px 16px', borderRadius: 100, border: '1.5px solid var(--cms-accent)',
-                        background: 'var(--cms-accent-soft)', color: 'var(--cms-accent)', fontSize: 12, fontWeight: 850,
-                        cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
-                        boxShadow: '0 2px 8px rgba(var(--cms-accent-rgb), 0.15)', transition: 'all 0.15s ease'
+                        width: 36, height: 36, borderRadius: '50%', border: '1.5px solid var(--cms-accent)',
+                        background: 'var(--cms-accent-soft)', color: 'var(--cms-accent)',
+                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        boxShadow: '0 2px 8px rgba(var(--cms-accent-rgb), 0.15)', transition: 'all 0.15s ease',
+                        flexShrink: 0
                       }}
                       title="Buat Catatan Otomatis dengan AI"
+                      aria-label="Buat Catatan Otomatis dengan AI"
                     >
-                      <Wand2 size={14} /> <span>Buat dengan AI</span>
+                      <Wand2 size={16} />
                     </button>
 
                     <button
                       onClick={() => handleCreateNote('doc')}
                       style={{
-                        padding: '8px 16px', borderRadius: 100, border: 'none',
-                        background: 'var(--cms-accent)', color: '#fff', fontSize: 12, fontWeight: 800,
-                        cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
-                        boxShadow: '0 4px 12px rgba(var(--cms-accent-rgb), 0.25)'
+                        width: 36, height: 36, borderRadius: '50%', border: 'none',
+                        background: 'var(--cms-accent)', color: '#fff',
+                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        boxShadow: '0 4px 12px rgba(var(--cms-accent-rgb), 0.25)', flexShrink: 0
                       }}
                       title="Buat Catatan Dokumen Teks"
+                      aria-label="Buat Catatan Dokumen Teks"
                     >
-                      <FileText size={15} /> <span>Catatan Teks</span>
+                      <FileText size={16} />
+                    </button>
+
+                    <button
+                      onClick={handleToggleVoiceDictation}
+                      style={{
+                        width: 36, height: 36, borderRadius: '50%', border: 'none',
+                        background: isListeningVoice ? '#ef4444' : '#10b981', color: '#fff',
+                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        boxShadow: isListeningVoice ? '0 0 16px rgba(239,68,68,0.7)' : '0 4px 12px rgba(16,185,129,0.25)',
+                        flexShrink: 0
+                      }}
+                      title={isListeningVoice ? 'Sedang merekam...' : 'Dikte Suara'}
+                      aria-label="Dikte Suara"
+                    >
+                      {isListeningVoice ? <MicOff size={16} /> : <Mic size={16} />}
                     </button>
 
                     <button
                       onClick={() => handleCreateNote('canvas')}
                       style={{
-                        padding: '8px 16px', borderRadius: 100, border: 'none',
-                        background: '#a855f7', color: '#fff', fontSize: 12, fontWeight: 800,
-                        cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
-                        boxShadow: '0 4px 12px rgba(168,85,247, 0.25)'
+                        width: 36, height: 36, borderRadius: '50%', border: 'none',
+                        background: '#a855f7', color: '#fff',
+                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        boxShadow: '0 4px 12px rgba(168,85,247, 0.25)', flexShrink: 0
                       }}
                       title="Buat Kanvas Kreatif Bebas"
+                      aria-label="Buat Kanvas Kreatif Bebas"
                     >
-                      <Layout size={15} /> <span>Kanvas Kreatif</span>
+                      <Layout size={16} />
                     </button>
 
                     {activeCustomFolder && activeCustomFolder.id !== 'general' && (
                       <button
                         onClick={() => handlePromptDeleteFolder(activeCustomFolder)}
                         style={{
-                          padding: '8px 14px', borderRadius: 100, border: '1px solid rgba(239,68,68,0.3)',
-                          background: 'rgba(239,68,68,0.08)', color: '#ef4444', fontSize: 12, fontWeight: 800,
-                          cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5
+                          width: 36, height: 36, borderRadius: '50%', border: '1px solid rgba(239,68,68,0.3)',
+                          background: 'rgba(239,68,68,0.08)', color: '#ef4444',
+                          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          flexShrink: 0
                         }}
                         title="Hapus folder ini dan kelola isinya"
+                        aria-label="Hapus folder ini"
                       >
-                        <Trash2 size={14} /> Hapus Folder
+                        <Trash2 size={16} />
                       </button>
                     )}
                   </>
@@ -5039,6 +5239,32 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
                         )}
                       </div>
 
+                      {/* Client Preview & Share Button */}
+                      <button
+                        type="button"
+                        onClick={() => setIsShareModalOpen(true)}
+                        style={{
+                          height: 34,
+                          padding: isMobile ? '0 10px' : '0 13px',
+                          borderRadius: 10,
+                          border: '1.5px solid rgba(99, 102, 241, 0.4)',
+                          background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(168, 85, 247, 0.15) 100%)',
+                          color: 'var(--cms-accent, #6366f1)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          cursor: 'pointer',
+                          flexShrink: 0,
+                          fontWeight: 800,
+                          fontSize: 11.5,
+                          boxShadow: '0 2px 8px rgba(99, 102, 241, 0.15)'
+                        }}
+                        title="Bagikan Pratinjau Klien (Read-Only Preview)"
+                      >
+                        <Share2 size={14} />
+                        <span className="hidden sm:inline">Pratinjau Klien</span>
+                      </button>
+
                       {/* PDF Print / Export Button */}
                       {!isMobile && (
                         <button
@@ -5232,6 +5458,17 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
                                 animation: 'cmsModalPop 0.15s ease-out'
                               }}
                             >
+                              <button
+                                onClick={() => { setIsMoreMenuOpen(false); setIsShareModalOpen(true); }}
+                                style={{
+                                  padding: '9px 12px', borderRadius: 10, border: 'none', background: 'rgba(99, 102, 241, 0.1)',
+                                  color: 'var(--cms-accent, #6366f1)', fontSize: 12.5, fontWeight: 800, textAlign: 'left',
+                                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 9
+                                }}
+                              >
+                                <Share2 size={16} color="var(--cms-accent, #6366f1)" />
+                                <span>Pratinjau Klien (Preview)</span>
+                              </button>
                               <label
                                 onClick={() => setIsMoreMenuOpen(false)}
                                 style={{
@@ -5648,12 +5885,14 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
                       className="memo-canvas-container" 
                       style={{ 
                         flex: 1, 
+                        minHeight: 0,
                         overflowY: 'auto', 
+                        overflowX: 'hidden',
                         background: 'transparent',
                         display: 'flex',
                         flexDirection: 'column',
                         alignItems: 'center', // Centers document sheet on desktop!
-                        padding: isMobile ? '16px 12px calc(65vh + env(safe-area-inset-bottom, 30px))' : '44px 32px 180px',
+                        padding: isMobile ? '16px 14px 20px 14px' : '44px 32px 180px',
                         scrollbarWidth: 'thin',
                         overscrollBehaviorY: 'contain',
                         WebkitOverflowScrolling: 'touch'
@@ -5666,7 +5905,8 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
                           maxWidth: 840, // Notion/Medium centered layout
                           display: 'flex',
                           flexDirection: 'column',
-                          minHeight: '100%'
+                          minHeight: '100%',
+                          paddingBottom: isMobile ? 'calc(240px + env(safe-area-inset-bottom, 30px))' : '120px'
                         }}
                       >
                         {/* Note Title */}
@@ -5846,44 +6086,49 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
                           }}
                         />
 
+                        {/* Document Footer Metadata Flow (Clean Notion/Docs Style) */}
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '16px 2px 4px',
+                          marginTop: 36,
+                          borderTop: '1px solid var(--glass-border)',
+                          fontSize: 11,
+                          color: 'var(--cms-text-muted)',
+                          opacity: 0.7,
+                          userSelect: 'none',
+                          fontWeight: 600,
+                          flexShrink: 0,
+                          clear: 'both',
+                          width: '100%',
+                          boxSizing: 'border-box'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span>{noteStats.words} Kata</span>
+                            <span>•</span>
+                            <span>{noteStats.chars} Karakter</span>
+                            <span>•</span>
+                            <span>{noteStats.lines} Baris</span>
+                          </div>
+                          <div>
+                            Diedit: {new Date(currentNote.updatedAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </div>
+
+                        {/* Generous bottom clearance spacer so all content effortlessly scrolls way above the floating navbar dock */}
+                        <div 
+                          className="memo-bottom-clearance-spacer"
+                          style={{
+                            height: isMobile ? 260 : 140,
+                            width: '100%',
+                            flexShrink: 0,
+                            pointerEvents: 'none'
+                          }} 
+                        />
                       </div>
                     </div>
                   )}
-
-                  {/* ── 5. Bottom Stats Bar with Interactive Comment Trigger ── */}
-                  <div style={{
-                    position: 'fixed',
-                    bottom: isMobile ? 'env(safe-area-inset-bottom, 4px)' : '4px',
-                    left: isMobile ? 16 : 280,
-                    right: isMobile ? 16 : 24,
-                    padding: '2px 8px',
-                    background: 'transparent',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    fontSize: 10,
-                    color: 'var(--cms-text-muted)',
-                    opacity: 0.45,
-                    pointerEvents: 'none',
-                    zIndex: 50,
-                    letterSpacing: '0.04em',
-                    fontWeight: 600,
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      {currentNote.type === 'canvas' ? (
-                        <span>{(currentNote.canvasNotes || []).length} Elemen</span>
-                      ) : (
-                        <>
-                          <span>{noteStats.words} Kata</span>
-                          <span>{noteStats.chars} Karakter</span>
-                          <span>{noteStats.lines} Baris</span>
-                        </>
-                      )}
-                    </div>
-                    <div>
-                      Diedit: {new Date(currentNote.updatedAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
-                    </div>
-                  </div>
                 </>
               ) : (
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--cms-text-muted)', gap: 12 }}>
@@ -5911,7 +6156,9 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
           {/* Backdrop – no blur */}
           <div style={{
             position: 'absolute', inset: 0,
-            background: 'rgba(0,0,0,0.55)'
+            background: 'rgba(0, 0, 0, 0.8)',
+            backdropFilter: 'none',
+            WebkitBackdropFilter: 'none'
           }} />
 
           {/* Floating Panel */}
@@ -6145,7 +6392,9 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
       {isImageMenuOpen && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 99999,
-          background: 'rgba(0,0,0,0.65)',
+          background: 'rgba(0, 0, 0, 0.8)',
+          backdropFilter: 'none',
+          WebkitBackdropFilter: 'none',
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
           animation: 'cmsFadeIn 0.15s ease-out'
         }}>
@@ -6267,7 +6516,9 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
       {isCreatingFolder && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 99999,
-          background: 'rgba(0,0,0,0.65)',
+          background: 'rgba(0, 0, 0, 0.8)',
+          backdropFilter: 'none',
+          WebkitBackdropFilter: 'none',
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
           animation: 'cmsFadeIn 0.15s ease-out'
         }}>
@@ -6358,7 +6609,7 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
       {folderToDelete && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 99999,
-          background: 'rgba(0,0,0,0.45)',
+          background: 'rgba(0, 0, 0, 0.8)',
           backdropFilter: 'none',
           WebkitBackdropFilter: 'none',
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
@@ -7349,8 +7600,8 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
           onClick={() => setIsDriveAttachmentsModalOpen(false)}
           style={{
             position: 'fixed', inset: 0, zIndex: 99999,
-            background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(14px)',
-            WebkitBackdropFilter: 'blur(14px)',
+            background: 'rgba(0, 0, 0, 0.8)', backdropFilter: 'none',
+            WebkitBackdropFilter: 'none',
             display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
             animation: 'cmsFadeIn 0.2s ease-out'
           }}
@@ -7438,6 +7689,406 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
         document.body
       )}
 
+      {/* ── CLIENT PREVIEW & SHARE MODAL (READ-ONLY FOR CLIENTS) ── */}
+      {isShareModalOpen && currentNote && typeof document !== 'undefined' && createPortal(
+        <div
+          onClick={() => setIsShareModalOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 99999,
+            background: 'rgba(0, 0, 0, 0.72)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+            animation: 'cmsFadeIn 0.2s ease-out'
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: 540,
+              background: 'var(--cms-card-bg, #0f172a)',
+              borderRadius: 24,
+              border: '1.5px solid var(--glass-border, rgba(255,255,255,0.12))',
+              boxShadow: '0 30px 70px rgba(0,0,0,0.45)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              animation: 'cmsModalPop 0.22s cubic-bezier(0.16, 1, 0.3, 1)'
+            }}
+          >
+            {/* Modal Header */}
+            <div style={{
+              padding: '20px 24px',
+              borderBottom: '1px solid var(--glass-border)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+              background: 'rgba(var(--cms-accent-rgb, 99, 102, 241), 0.05)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <div style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 14,
+                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(168, 85, 247, 0.2) 100%)',
+                  border: '1px solid rgba(99, 102, 241, 0.35)',
+                  color: 'var(--cms-accent, #6366f1)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  <Share2 size={22} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 17, fontWeight: 900, color: 'var(--cms-text)', letterSpacing: '-0.015em' }}>
+                    Pratinjau Klien (Preview Only)
+                  </h3>
+                  <div style={{ fontSize: 12, color: 'var(--cms-text-muted)', marginTop: 2 }}>
+                    Tunjukkan konsep draf kepada klien secara aman tanpa akses edit.
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsShareModalOpen(false)}
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  border: 'none',
+                  background: 'var(--cms-input-bg)',
+                  color: 'var(--cms-text-muted)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div style={{ padding: '20px 24px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {/* Unified Card 1: Draf & Status Hub */}
+              <div style={{
+                padding: '14px 16px',
+                borderRadius: 16,
+                background: 'var(--cms-bg)',
+                border: '1px solid var(--glass-border)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 10.5, fontWeight: 800, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      Draf Aktif
+                    </div>
+                    <div style={{ fontSize: 15.5, fontWeight: 900, color: 'var(--cms-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 1 }}>
+                      {currentNote.title || 'Tanpa Judul'}
+                    </div>
+                  </div>
+
+                  <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '4px 11px',
+                    borderRadius: 100,
+                    background: currentNote.type === 'canvas' ? 'rgba(168, 85, 247, 0.14)' : 'rgba(99, 102, 241, 0.14)',
+                    border: `1px solid ${currentNote.type === 'canvas' ? 'rgba(168, 85, 247, 0.3)' : 'rgba(99, 102, 241, 0.3)'}`,
+                    color: currentNote.type === 'canvas' ? '#a855f7' : 'var(--cms-accent, #6366f1)',
+                    fontSize: 11,
+                    fontWeight: 850,
+                    flexShrink: 0
+                  }}>
+                    {currentNote.type === 'canvas' ? <Layers size={12} /> : <FileText size={12} />}
+                    <span>{currentNote.type === 'canvas' ? 'Whiteboard Canvas' : 'Dokumen Konsep'}</span>
+                  </div>
+                </div>
+
+                {/* Status Chips Row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingTop: 8, borderTop: '1px solid var(--glass-border)' }}>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 750, color: 'var(--cms-text-muted)' }}>
+                    <Eye size={13} />
+                    <span>Dilihat <strong>{currentNote.viewCount || 0}x</strong></span>
+                  </div>
+
+                  <span style={{ color: 'var(--glass-border)', fontSize: 10 }}>•</span>
+
+                  <div>
+                    {currentNote.approvalStatus === 'approved' ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#10b981', fontSize: 11.5, fontWeight: 850 }}>
+                        <Check size={12} /> Disetujui (ACC)
+                      </span>
+                    ) : currentNote.approvalStatus === 'revision' ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#f59e0b', fontSize: 11.5, fontWeight: 850 }}>
+                        <Edit3 size={12} /> Minta Revisi
+                      </span>
+                    ) : (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--cms-text-muted)', fontSize: 11.5, fontWeight: 700 }}>
+                        <Clock size={12} /> Menunggu Review
+                      </span>
+                    )}
+                  </div>
+
+                  <span style={{ color: 'var(--glass-border)', fontSize: 10 }}>•</span>
+
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 700, color: '#10b981' }}>
+                    <ShieldCheck size={13} />
+                    <span>Terkunci Read-Only</span>
+                  </div>
+                </div>
+
+                {currentNote.approvalNote && (
+                  <div style={{ fontSize: 11, color: '#f59e0b', fontStyle: 'italic', background: 'rgba(245,158,11,0.08)', padding: '5px 8px', borderRadius: 6, border: '1px solid rgba(245,158,11,0.2)' }}>
+                    Catatan Klien: "{currentNote.approvalNote}"
+                  </div>
+                )}
+              </div>
+
+              {/* Unified Card 2: Proteksi & Hak Cipta */}
+              <div style={{
+                padding: '14px 16px',
+                borderRadius: 16,
+                background: 'var(--cms-bg)',
+                border: '1px solid var(--glass-border)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12
+              }}>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Shield size={13} color="var(--cms-accent)" />
+                  <span>Proteksi Akses & Hak Cipta</span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  {/* PIN Protection */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: 11.5, fontWeight: 800, color: 'var(--cms-text)', marginBottom: 5 }}>
+                      Kunci PIN Akses
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type="text"
+                        maxLength={8}
+                        placeholder="Contoh: 1234"
+                        value={currentNote.sharePassword || ''}
+                        onChange={e => handleUpdateCurrentNoteMeta({ sharePassword: e.target.value.trim() })}
+                        style={{
+                          width: '100%',
+                          height: 38,
+                          padding: '0 12px 0 32px',
+                          borderRadius: 10,
+                          border: '1.5px solid var(--glass-border)',
+                          background: 'var(--cms-card-bg)',
+                          color: 'var(--cms-text)',
+                          fontSize: 12.5,
+                          fontWeight: 750,
+                          outline: 'none',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                      <Lock size={13} style={{ position: 'absolute', left: 10, top: 12, color: currentNote.sharePassword ? '#10b981' : 'var(--cms-text-muted)' }} />
+                    </div>
+                    <span style={{ fontSize: 10.5, color: 'var(--cms-text-muted)', marginTop: 4, display: 'block' }}>
+                      {currentNote.sharePassword ? '🔒 Wajib PIN untuk buka' : '🔓 Kosong = Akses publik'}
+                    </span>
+                  </div>
+
+                  {/* Watermark Toggle */}
+                  <div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11.5, fontWeight: 800, color: 'var(--cms-text)', cursor: 'pointer', marginBottom: 5 }}>
+                      <input
+                        type="checkbox"
+                        checked={!!currentNote.showWatermark}
+                        onChange={e => handleUpdateCurrentNoteMeta({ showWatermark: e.target.checked })}
+                        style={{ accentColor: 'var(--cms-accent)', width: 15, height: 15, cursor: 'pointer' }}
+                      />
+                      <span>Watermark Draf</span>
+                    </label>
+                    {currentNote.showWatermark ? (
+                      <input
+                        type="text"
+                        placeholder="Teks watermark (cth: DRAFT)"
+                        value={currentNote.watermarkText || ''}
+                        onChange={e => handleUpdateCurrentNoteMeta({ watermarkText: e.target.value })}
+                        style={{
+                          width: '100%',
+                          height: 38,
+                          padding: '0 10px',
+                          borderRadius: 10,
+                          border: '1.5px solid var(--glass-border)',
+                          background: 'var(--cms-card-bg)',
+                          color: 'var(--cms-text)',
+                          fontSize: 11.5,
+                          outline: 'none',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    ) : (
+                      <div style={{ height: 38, display: 'flex', alignItems: 'center', fontSize: 11.5, color: 'var(--cms-text-muted)' }}>
+                        Watermark nonaktif
+                      </div>
+                    )}
+                    <span style={{ fontSize: 10.5, color: 'var(--cms-text-muted)', marginTop: 4, display: 'block' }}>
+                      Mencegah konsep dipakai tanpa izin
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Shareable Link Input & Copy */}
+              <div>
+                <label style={{ display: 'block', fontSize: 10.5, fontWeight: 800, color: 'var(--cms-text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Tautan Pratinjau Publik Klien
+                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    type="text"
+                    readOnly
+                    value={`${window.location.origin}/preview/note/${currentNote.id}`}
+                    style={{
+                      flex: 1,
+                      height: 40,
+                      padding: '0 14px',
+                      borderRadius: 12,
+                      border: '1.5px solid var(--glass-border)',
+                      background: 'var(--cms-bg)',
+                      color: 'var(--cms-text)',
+                      fontSize: 12.5,
+                      fontWeight: 650,
+                      outline: 'none',
+                      fontFamily: 'monospace',
+                      boxSizing: 'border-box'
+                    }}
+                    onClick={e => (e.target as HTMLInputElement).select()}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCopyClientPreviewLink}
+                    style={{
+                      height: 40,
+                      padding: '0 18px',
+                      borderRadius: 12,
+                      border: 'none',
+                      background: copiedShareLink ? '#10b981' : 'var(--cms-accent, #6366f1)',
+                      color: '#ffffff',
+                      fontSize: 12.5,
+                      fontWeight: 850,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      boxShadow: '0 4px 12px rgba(var(--cms-accent-rgb, 99, 102, 241), 0.25)',
+                      transition: 'all 0.15s ease',
+                      flexShrink: 0
+                    }}
+                  >
+                    {copiedShareLink ? <Check size={14} /> : <Copy size={14} />}
+                    <span>{copiedShareLink ? 'Tersalin!' : 'Salin'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick Actions Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 2 }}>
+                <button
+                  type="button"
+                  onClick={handleOpenClientPreview}
+                  style={{
+                    height: 42,
+                    padding: '0 16px',
+                    borderRadius: 12,
+                    border: '1.5px solid var(--glass-border)',
+                    background: 'var(--cms-bg)',
+                    color: 'var(--cms-text)',
+                    fontSize: 12.5,
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 7,
+                    transition: 'all 0.15s ease'
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--cms-accent)'}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--glass-border)'}
+                >
+                  <ExternalLink size={14} color="var(--cms-accent)" />
+                  <span>Buka Pratinjau Klien</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleShareToClientWhatsApp}
+                  style={{
+                    height: 42,
+                    padding: '0 16px',
+                    borderRadius: 12,
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    color: '#ffffff',
+                    fontSize: 12.5,
+                    fontWeight: 850,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 7,
+                    boxShadow: '0 4px 14px rgba(16, 185, 129, 0.28)',
+                    transition: 'transform 0.15s ease'
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-1px)'}
+                  onMouseLeave={e => e.currentTarget.style.transform = 'none'}
+                >
+                  <MessageSquare size={14} />
+                  <span>Kirim via WhatsApp</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              padding: '14px 24px',
+              borderTop: '1px solid var(--glass-border)',
+              background: 'var(--cms-bg)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              fontSize: 11.5,
+              color: 'var(--cms-text-muted)'
+            }}>
+              <span>💡 Draf dapat diedit kapan saja, link pratinjau tetap sama.</span>
+              <button
+                type="button"
+                onClick={() => setIsShareModalOpen(false)}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'var(--cms-text)',
+                  fontWeight: 750,
+                  cursor: 'pointer',
+                  fontSize: 12
+                }}
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
       <style>{`
         .show-on-mobile { display: none; }
         .checklist-interactive-row:hover {
@@ -7513,11 +8164,20 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
           .memo-sidebar.sidebar-closed { display: none !important; width: 0 !important; min-width: 0 !important; }
           .memo-list-pane.mobile-hidden { display: none !important; }
           .memo-top-header.mobile-hidden { display: none !important; }
+          .memo-manager-root {
+            position: absolute !important;
+            inset: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            min-height: 100% !important;
+          }
           .memo-editor-pane {
             position: absolute !important;
             inset: 0 !important;
             width: 100% !important;
             min-width: 100% !important;
+            height: 100% !important;
+            min-height: 100% !important;
             z-index: 10;
             display: none !important;
           }
@@ -7530,7 +8190,22 @@ export const MemoManager: React.FC<{ notify?: (msg: string, type?: string) => vo
             box-shadow: 0 4px 12px rgba(0,0,0,0.03);
           }
           .memo-canvas-container {
-            padding: 20px 16px calc(100px + env(safe-area-inset-bottom, 16px)) 16px !important;
+            flex: 1 1 0% !important;
+            width: 100% !important;
+            min-height: 0 !important;
+            height: auto !important;
+            box-sizing: border-box !important;
+            padding: 16px 14px 20px 14px !important;
+            background: transparent !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            -webkit-overflow-scrolling: touch !important;
+            overscroll-behavior-y: contain !important;
+          }
+          .memo-document-sheet {
+            width: 100% !important;
+            min-height: min-content !important;
+            padding-bottom: calc(240px + env(safe-area-inset-bottom, 30px)) !important;
           }
           .memo-title-input {
             font-size: 24px !important;

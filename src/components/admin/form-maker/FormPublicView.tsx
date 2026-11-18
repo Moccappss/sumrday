@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { 
   CheckCircle2, AlertCircle, Send, Star, ArrowLeft, ChevronLeft, ChevronRight,
-  Mail, Phone, Globe, Upload, FileText, CheckSquare, Image as ImageIcon, Heading, PenTool
+  Mail, Phone, Globe, Upload, FileText, CheckSquare, Image as ImageIcon, Heading, PenTool,
+  Loader2
 } from 'lucide-react';
 import type { FormSchema, FormResponse } from './formTypes';
 import { RoundedPillDropdown } from './RoundedPillDropdown';
+import { uploadToCloudinary } from '../../../utils/cloudinary';
 
 interface FormPublicViewProps {
   form: FormSchema;
@@ -26,6 +28,7 @@ export const FormPublicView: React.FC<FormPublicViewProps> = ({
   const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [currentPage, setCurrentPage] = useState<number>(1);
+  const [uploadingQuestionId, setUploadingQuestionId] = useState<string | null>(null);
 
   const totalPages = Math.max(1, ...form.questions.map((q) => q.page || 1));
   const themeColor = form.themeColor || '#673ab7';
@@ -287,10 +290,10 @@ export const FormPublicView: React.FC<FormPublicViewProps> = ({
                 }} />
               ) : null}
 
-              <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ padding: 'clamp(18px, 4vw, 24px) clamp(16px, 4vw, 28px)', display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <h1 style={{
                   margin: 0,
-                  fontSize: 28,
+                  fontSize: 'clamp(22px, 5vw, 28px)',
                   fontWeight: 900,
                   color: isDarkMode ? '#f8fafc' : '#1e293b',
                   fontFamily: "'Outfit', sans-serif"
@@ -383,7 +386,7 @@ export const FormPublicView: React.FC<FormPublicViewProps> = ({
                   style={{
                     background: cardBackground,
                     borderRadius: 24,
-                    padding: '24px 28px',
+                    padding: 'clamp(18px, 4vw, 24px) clamp(16px, 4vw, 28px)',
                     boxShadow: '0 4px 14px rgba(0,0,0,0.04)',
                     borderLeft: `6px solid ${cardAccent}`,
                     border: hasError
@@ -430,7 +433,7 @@ export const FormPublicView: React.FC<FormPublicViewProps> = ({
                         justifyContent: 'center',
                         flexShrink: 0
                       }}>
-                        <FileText size={18} color={cardAccent} />
+                        <FileText size={18} color={cardAccent} style={{ flexShrink: 0 }} />
                       </div>
                       <div style={{ flex: 1 }}>
                         {q.title && (
@@ -736,10 +739,13 @@ export const FormPublicView: React.FC<FormPublicViewProps> = ({
                               <button
                                 key={val}
                                 type="button"
+                                data-scale-btn="true"
                                 onClick={() => handleAnswerChange(q.id, val)}
                                 style={{
-                                  width: 42,
-                                  height: 42,
+                                  width: 'clamp(36px, 9vw, 42px)',
+                                  height: 'clamp(36px, 9vw, 42px)',
+                                  minWidth: 36,
+                                  minHeight: 'unset',
                                   borderRadius: '50%',
                                   border: `2px solid ${isSelected ? cardAccent : (isDarkMode ? '#475569' : '#cbd5e1')}`,
                                   background: isSelected ? cardAccent : 'transparent',
@@ -747,7 +753,11 @@ export const FormPublicView: React.FC<FormPublicViewProps> = ({
                                   fontSize: 14,
                                   fontWeight: 800,
                                   cursor: 'pointer',
-                                  transition: 'all 0.15s ease'
+                                  transition: 'all 0.15s ease',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  flexShrink: 0
                                 }}
                               >
                                 {val}
@@ -765,13 +775,14 @@ export const FormPublicView: React.FC<FormPublicViewProps> = ({
 
                     {/* RATING */}
                     {q.type === 'rating' && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                         {Array.from({ length: q.ratingMax || 5 }, (_, i) => i + 1).map((starVal) => {
                           const isFilled = (value || 0) >= starVal;
                           return (
                             <button
                               key={starVal}
                               type="button"
+                              data-rating-star="true"
                               onClick={() => handleAnswerChange(q.id, starVal)}
                               style={{
                                 background: 'none',
@@ -779,12 +790,17 @@ export const FormPublicView: React.FC<FormPublicViewProps> = ({
                                 cursor: 'pointer',
                                 padding: 4,
                                 color: isFilled ? '#eab308' : (isDarkMode ? '#475569' : '#cbd5e1'),
-                                transition: 'transform 0.1s ease'
+                                transition: 'transform 0.1s ease',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                minHeight: 'unset',
+                                flexShrink: 0
                               }}
                               onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.2)')}
                               onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
                             >
-                              <Star size={28} fill={isFilled ? '#eab308' : 'none'} />
+                              <Star size={28} fill={isFilled ? '#eab308' : 'none'} style={{ flexShrink: 0 }} />
                             </button>
                           );
                         })}
@@ -805,7 +821,9 @@ export const FormPublicView: React.FC<FormPublicViewProps> = ({
                           color: isDarkMode ? '#f8fafc' : '#1e293b',
                           fontSize: 14,
                           fontWeight: 700,
-                          outline: 'none'
+                          outline: 'none',
+                          maxWidth: '100%',
+                          boxSizing: 'border-box'
                         }}
                       />
                     )}
@@ -824,7 +842,9 @@ export const FormPublicView: React.FC<FormPublicViewProps> = ({
                           color: isDarkMode ? '#f8fafc' : '#1e293b',
                           fontSize: 14,
                           fontWeight: 700,
-                          outline: 'none'
+                          outline: 'none',
+                          maxWidth: '100%',
+                          boxSizing: 'border-box'
                         }}
                       />
                     )}
@@ -832,7 +852,7 @@ export const FormPublicView: React.FC<FormPublicViewProps> = ({
                     {/* EMAIL */}
                     {q.type === 'email' && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, maxWidth: 420 }}>
-                        <Mail size={18} color="var(--cms-text-muted)" />
+                        <Mail size={18} color="var(--cms-text-muted)" style={{ flexShrink: 0 }} />
                         <input
                           type="email"
                           placeholder="nama@email.com"
@@ -847,7 +867,8 @@ export const FormPublicView: React.FC<FormPublicViewProps> = ({
                             color: isDarkMode ? '#f8fafc' : '#1e293b',
                             fontSize: 14.5,
                             outline: 'none',
-                            transition: 'border-color 0.2s'
+                            transition: 'border-color 0.2s',
+                            minWidth: 0
                           }}
                           onFocus={(e) => (e.target.style.borderBottomColor = cardAccent)}
                           onBlur={(e) => (e.target.style.borderBottomColor = isDarkMode ? '#475569' : '#cbd5e1')}
@@ -858,7 +879,7 @@ export const FormPublicView: React.FC<FormPublicViewProps> = ({
                     {/* PHONE / WHATSAPP */}
                     {q.type === 'phone' && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, maxWidth: 420 }}>
-                        <Phone size={18} color="var(--cms-text-muted)" />
+                        <Phone size={18} color="var(--cms-text-muted)" style={{ flexShrink: 0 }} />
                         <input
                           type="tel"
                           placeholder="+62 812-xxxx-xxxx"
@@ -873,7 +894,8 @@ export const FormPublicView: React.FC<FormPublicViewProps> = ({
                             color: isDarkMode ? '#f8fafc' : '#1e293b',
                             fontSize: 14.5,
                             outline: 'none',
-                            transition: 'border-color 0.2s'
+                            transition: 'border-color 0.2s',
+                            minWidth: 0
                           }}
                           onFocus={(e) => (e.target.style.borderBottomColor = cardAccent)}
                           onBlur={(e) => (e.target.style.borderBottomColor = isDarkMode ? '#475569' : '#cbd5e1')}
@@ -884,7 +906,7 @@ export const FormPublicView: React.FC<FormPublicViewProps> = ({
                     {/* WEBSITE */}
                     {q.type === 'website' && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, maxWidth: 450 }}>
-                        <Globe size={18} color="var(--cms-text-muted)" />
+                        <Globe size={18} color="var(--cms-text-muted)" style={{ flexShrink: 0 }} />
                         <input
                           type="url"
                           placeholder="https://..."
@@ -899,7 +921,8 @@ export const FormPublicView: React.FC<FormPublicViewProps> = ({
                             color: isDarkMode ? '#f8fafc' : '#1e293b',
                             fontSize: 14.5,
                             outline: 'none',
-                            transition: 'border-color 0.2s'
+                            transition: 'border-color 0.2s',
+                            minWidth: 0
                           }}
                           onFocus={(e) => (e.target.style.borderBottomColor = cardAccent)}
                           onBlur={(e) => (e.target.style.borderBottomColor = isDarkMode ? '#475569' : '#cbd5e1')}
@@ -908,61 +931,108 @@ export const FormPublicView: React.FC<FormPublicViewProps> = ({
                     )}
 
                     {/* FILE UPLOAD */}
-                    {q.type === 'file_upload' && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        <label style={{
-                          border: `2px dashed ${value ? cardAccent : (isDarkMode ? '#475569' : '#cbd5e1')}`,
-                          borderRadius: 18,
-                          padding: '24px 20px',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: 10,
-                          background: value ? `${cardAccent}0d` : (isDarkMode ? 'rgba(0,0,0,0.15)' : '#f8fafc'),
-                          cursor: 'pointer',
-                          transition: 'all 0.2s ease'
-                        }}>
-                          <Upload size={28} color={value ? cardAccent : 'var(--cms-text-muted)'} />
-                          <div style={{ textAlign: 'center' }}>
-                            <div style={{ fontSize: 14, fontWeight: 750, color: isDarkMode ? '#f8fafc' : '#1e293b' }}>
-                              {value ? (typeof value === 'string' ? value : value.name || 'Berkas dipilih') : 'Klik untuk memilih berkas'}
+                    {q.type === 'file_upload' && (() => {
+                      const isUploading = uploadingQuestionId === q.id;
+                      const hasFile = Boolean(value);
+                      const fileName = typeof value === 'object' && value ? (value.name || 'Berkas Terunggah') : (typeof value === 'string' ? value : '');
+                      const fileUrl = typeof value === 'object' && value ? value.url : '';
+
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                          <label style={{
+                            border: `2px dashed ${hasFile ? cardAccent : (isDarkMode ? '#475569' : '#cbd5e1')}`,
+                            borderRadius: 18,
+                            padding: '24px 20px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 10,
+                            background: hasFile ? `${cardAccent}0d` : (isDarkMode ? 'rgba(0,0,0,0.15)' : '#f8fafc'),
+                            cursor: isUploading ? 'not-allowed' : 'pointer',
+                            transition: 'all 0.2s ease',
+                            opacity: isUploading ? 0.7 : 1
+                          }}>
+                            {isUploading ? (
+                              <Loader2 size={32} className="animate-spin" color={cardAccent} style={{ flexShrink: 0 }} />
+                            ) : hasFile ? (
+                              <CheckCircle2 size={32} color="#10b981" style={{ flexShrink: 0 }} />
+                            ) : (
+                              <Upload size={28} color="var(--cms-text-muted)" style={{ flexShrink: 0 }} />
+                            )}
+                            <div style={{ textAlign: 'center' }}>
+                              <div style={{ fontSize: 14, fontWeight: 750, color: isDarkMode ? '#f8fafc' : '#1e293b' }}>
+                                {isUploading ? 'Sedang Mengunggah Berkas...' : hasFile ? fileName : 'Klik untuk memilih berkas'}
+                              </div>
+                              <div style={{ fontSize: 12, color: 'var(--cms-text-muted)', marginTop: 2 }}>
+                                {isUploading ? 'Mohon tunggu sebentar, berkas sedang diproses' : hasFile && fileUrl ? 'Berkas berhasil tersimpan di sistem' : 'PDF, DOCX, XLSX, JPG, PNG (Maks 10MB)'}
+                              </div>
                             </div>
-                            <div style={{ fontSize: 12, color: 'var(--cms-text-muted)', marginTop: 2 }}>
-                              PDF, DOCX, XLSX, JPG, PNG (Maks 10MB)
-                            </div>
-                          </div>
-                          <input
-                            type="file"
-                            style={{ display: 'none' }}
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) {
-                                handleAnswerChange(q.id, `${file.name} (${(file.size / 1024).toFixed(0)} KB)`);
-                              }
-                            }}
-                          />
-                        </label>
-                        {value && (
-                          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                            <button
-                              type="button"
-                              onClick={() => handleAnswerChange(q.id, '')}
-                              style={{
-                                background: 'none',
-                                border: 'none',
-                                color: '#ef4444',
-                                fontSize: 12,
-                                fontWeight: 750,
-                                cursor: 'pointer'
+                            <input
+                              type="file"
+                              disabled={isUploading}
+                              style={{ display: 'none' }}
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                setUploadingQuestionId(q.id);
+                                try {
+                                  const res = await uploadToCloudinary(file, 'auto');
+                                  const uploadedUrl = res?.url || '';
+                                  if (uploadedUrl) {
+                                    handleAnswerChange(q.id, {
+                                      name: file.name,
+                                      size: file.size,
+                                      url: uploadedUrl
+                                    });
+                                  } else {
+                                    handleAnswerChange(q.id, `${file.name} (${(file.size / 1024).toFixed(0)} KB)`);
+                                  }
+                                } catch (err) {
+                                  console.warn('[FormPublicView] Upload warning:', err);
+                                  handleAnswerChange(q.id, `${file.name} (${(file.size / 1024).toFixed(0)} KB)`);
+                                } finally {
+                                  setUploadingQuestionId(null);
+                                }
                               }}
-                            >
-                              Hapus berkas
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                            />
+                          </label>
+                          {hasFile && !isUploading && (
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, alignItems: 'center' }}>
+                              {fileUrl && (
+                                <a
+                                  href={fileUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    color: cardAccent,
+                                    textDecoration: 'underline'
+                                  }}
+                                >
+                                  Lihat berkas
+                                </a>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleAnswerChange(q.id, '')}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: '#ef4444',
+                                  fontSize: 12,
+                                  fontWeight: 750,
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                Hapus berkas
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {/* SIGNATURE / PERSETUJUAN */}
                     {q.type === 'signature' && (
@@ -1005,7 +1075,7 @@ export const FormPublicView: React.FC<FormPublicViewProps> = ({
                   {/* Error Message */}
                   {hasError && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#ef4444', fontSize: 12.5, fontWeight: 750 }}>
-                      <AlertCircle size={15} />
+                      <AlertCircle size={15} style={{ flexShrink: 0 }} />
                       <span>{errors[q.id]}</span>
                     </div>
                   )}
@@ -1015,7 +1085,7 @@ export const FormPublicView: React.FC<FormPublicViewProps> = ({
 
             {/* Navigation & Submit Buttons (Pill Design) */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, gap: 12, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 {totalPages > 1 && currentPage > 1 && (
                   <button
                     type="button"
@@ -1032,10 +1102,11 @@ export const FormPublicView: React.FC<FormPublicViewProps> = ({
                       fontSize: 14,
                       fontWeight: 800,
                       cursor: 'pointer',
-                      transition: 'all 0.15s ease'
+                      transition: 'all 0.15s ease',
+                      flexShrink: 0
                     }}
                   >
-                    <ChevronLeft size={16} />
+                    <ChevronLeft size={16} style={{ flexShrink: 0 }} />
                     <span>Sebelumnya</span>
                   </button>
                 )}
@@ -1057,11 +1128,12 @@ export const FormPublicView: React.FC<FormPublicViewProps> = ({
                       fontWeight: 850,
                       cursor: 'pointer',
                       boxShadow: `0 4px 18px ${themeColor}45`,
-                      transition: 'all 0.15s ease'
+                      transition: 'all 0.15s ease',
+                      flexShrink: 0
                     }}
                   >
                     <span>Berikutnya</span>
-                    <ChevronRight size={16} />
+                    <ChevronRight size={16} style={{ flexShrink: 0 }} />
                   </button>
                 ) : (
                   <button
@@ -1080,14 +1152,15 @@ export const FormPublicView: React.FC<FormPublicViewProps> = ({
                       fontWeight: 850,
                       cursor: isSubmitting ? 'wait' : 'pointer',
                       boxShadow: `0 4px 18px ${themeColor}45`,
-                      transition: 'all 0.15s ease'
+                      transition: 'all 0.15s ease',
+                      flexShrink: 0
                     }}
                   >
                     {isSubmitting ? (
                       <span>Mengirimkan...</span>
                     ) : (
                       <>
-                        <Send size={16} />
+                        <Send size={16} style={{ flexShrink: 0 }} />
                         <span>Kirim</span>
                       </>
                     )}

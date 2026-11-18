@@ -1,18 +1,22 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
+import {
   Gamepad2, Search, Sparkles, MessageCircle, Play, CheckCircle2,
   Users, Clock, Video, Monitor, Tag, Trophy, X, Zap, Calendar, Building2, MapPin
 } from 'lucide-react';
 import { GameInstance } from '../types/gameLicense';
-import { subscribeToGames } from '../services/gameService';
+import { subscribeToGames, STORAGE_GAMES_KEY } from '../services/gameService';
+import { SAMPLE_GAMES } from '../data/sampleGames';
+import { storage } from '../utils/storage';
 import { generateGameEngineHtml } from '../utils/gameEngineBuilder';
 import { useLandingData } from '../components/landing/useLandingData';
 import { useWebsiteTheme } from '../hooks/useWebsiteTheme';
 import { useLandingBodyFix } from '../hooks/useLandingBodyFix';
+import { useScrollReveal } from '../hooks/useScrollReveal';
 import LPNavbar from '../components/landing/LPNavbar';
 import LPFooter from '../components/landing/LPFooter';
 import SEOHelmet from '../components/SEOHelmet';
+import PageHeroHeader from '../components/common/PageHeroHeader';
 import { useBusinessProfile } from '../hooks/useBusinessProfile';
 
 export default function GameShowcasePage() {
@@ -21,14 +25,32 @@ export default function GameShowcasePage() {
   const { profile: businessProfile } = useBusinessProfile();
   const { isDark } = useWebsiteTheme(data?.theme?.defaultMode);
   useLandingBodyFix();
+  useScrollReveal();
 
-  const [games, setGames] = useState<GameInstance[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [games, setGames] = useState<GameInstance[]>(() => {
+    try {
+      const syncGames = storage.getSync<GameInstance[]>(STORAGE_GAMES_KEY, null);
+      if (Array.isArray(syncGames)) {
+        const filtered = syncGames.filter((g: any) => g.isActive !== false);
+        if (filtered.length > 0) return filtered;
+      }
+      const raw = localStorage.getItem(STORAGE_GAMES_KEY) || localStorage.getItem('sumr_games') || localStorage.getItem('porto_games');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          const filtered = parsed.filter((g: any) => g.isActive !== false);
+          if (filtered.length > 0) return filtered;
+        }
+      }
+    } catch { }
+    return (SAMPLE_GAMES as GameInstance[]).filter((g: any) => g.isActive !== false);
+  });
+  const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTag, setSelectedTag] = useState<string>('all');
   const [selectedGamePreview, setSelectedGamePreview] = useState<GameInstance | null>(null);
   const [activeVideoModal, setActiveVideoModal] = useState<GameInstance | null>(null);
-  
+
   // 30-Second Live Demo State
   const [activeDemoGame, setActiveDemoGame] = useState<GameInstance | null>(null);
   const [demoSecondsLeft, setDemoSecondsLeft] = useState(30);
@@ -62,10 +84,18 @@ export default function GameShowcasePage() {
   }, [activeDemoGame]);
 
   useEffect(() => {
-    setLoading(true);
     const unsub = subscribeToGames((dataList) => {
-      setGames(dataList.filter(g => g.isActive !== false));
+      let active = (Array.isArray(dataList) && dataList.length > 0)
+        ? dataList.filter(g => g.isActive !== false)
+        : [];
+      if (active.length === 0) {
+        active = (SAMPLE_GAMES as GameInstance[]).filter(g => g.isActive !== false);
+      }
+      setGames(active);
       setLoading(false);
+      try {
+        localStorage.setItem(STORAGE_GAMES_KEY, JSON.stringify(active));
+      } catch { }
     });
     return () => unsub();
   }, []);
@@ -82,14 +112,14 @@ export default function GameShowcasePage() {
 
   const filteredGames = useMemo(() => {
     return games.filter(g => {
-      const matchSearch = !searchQuery.trim() || 
+      const matchSearch = !searchQuery.trim() ||
         g.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         g.slug.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (g.description && g.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (g.category && g.category.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (g.tags && g.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase())));
 
-      const matchTag = selectedTag === 'all' || 
+      const matchTag = selectedTag === 'all' ||
         g.category?.toLowerCase() === selectedTag.toLowerCase() ||
         (g.tags && g.tags.some(t => t.toLowerCase() === selectedTag.toLowerCase()));
 
@@ -98,11 +128,11 @@ export default function GameShowcasePage() {
   }, [games, searchQuery, selectedTag]);
 
   const accentColor = data?.theme?.accentColor || '#7c3aed';
-  const textColor = isDark ? '#f8fafc' : '#0f172a';
+  const textColor = isDark ? '#ffffff' : '#0f172a';
   const subTextColor = isDark ? '#94a3b8' : '#64748b';
-  const cardBg = isDark ? 'rgba(24, 24, 37, 0.75)' : '#ffffff';
-  const cardBorder = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const pageBg = isDark ? '#090912' : '#f8fafc';
+  const cardBg = isDark ? '#151824' : '#ffffff';
+  const cardBorder = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,23,42,0.08)';
+  const pageBg = isDark ? '#06070a' : '#eef2f6';
 
   const handleHubungiSewa = (game: GameInstance) => {
     const rawWa = (businessProfile?.whatsapp || data?.footer?.whatsappNumber || '6281234567890').toString().replace(/[^0-9]/g, '');
@@ -126,79 +156,54 @@ export default function GameShowcasePage() {
         accentColor={accentColor}
       />
 
-      <section style={{ 
-        padding: '130px 24px 40px', 
-        maxWidth: 1200, 
-        margin: '0 auto', 
-        width: '100%', 
-        boxSizing: 'border-box',
-        textAlign: 'center' 
+      <section style={{
+        padding: '112px clamp(16px, 3.5vw, 24px) 20px',
+        maxWidth: 1240,
+        margin: '0 auto',
+        width: '100%',
+        boxSizing: 'border-box'
       }}>
-        <div style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '6px 16px',
-          borderRadius: 100,
-          background: `${accentColor}18`,
-          color: accentColor,
-          fontSize: 12,
-          fontWeight: 800,
-          marginBottom: 16,
-          border: `1px solid ${accentColor}30`
-        }}>
-          <Sparkles size={14} /> {data?.pagesHeader?.games?.badge || 'Interactive Event Activation Games'}
-        </div>
-
-        <h1 style={{ 
-          fontFamily: "'Outfit', sans-serif", 
-          fontSize: 'clamp(28px, 4.5vw, 46px)', 
-          fontWeight: 900, 
-          margin: '0 0 16px', 
-          lineHeight: 1.2 
-        }}>
-          {data?.pagesHeader?.games?.title || 'Koleksi Game Kustom untuk'} <br />
-          <span style={{ 
-            background: `linear-gradient(135deg, ${accentColor}, #3b82f6)`, 
-            WebkitBackgroundClip: 'text', 
-            WebkitTextFillColor: 'transparent' 
-          }}>
-            {data?.pagesHeader?.games?.highlight || 'Aktivasi Event & Booth Brand Anda'}
-          </span>
-        </h1>
-
-        <p style={{ 
-          fontSize: 'clamp(14px, 2vw, 16px)', 
-          color: subTextColor, 
-          maxWidth: 680, 
-          margin: '0 auto 32px', 
-          lineHeight: 1.6 
-        }}>
-          {data?.pagesHeader?.games?.description || 'Tingkatkan keterlibatan pengunjung di pameran, mal, expo, dan festival dengan game interaktif responsif berbasis HTML5. Tersedia opsi Sewa Lisensi Event atau Beli Putus (Hak Download Offline DRM-free).'}
-        </p>
-
-        <div style={{ maxWidth: 480, margin: '0 auto', position: 'relative' }}>
-          <Search size={18} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: subTextColor }} />
-          <input
-            type="text"
-            placeholder="Cari game event (misal: Spin Wheel, Kuis, Koin)..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={{
-              width: '100%',
-              height: 48,
-              padding: '0 18px 0 46px',
-              borderRadius: 100,
-              border: `1.5px solid ${cardBorder}`,
-              background: cardBg,
-              color: textColor,
-              fontSize: 14,
-              outline: 'none',
-              boxSizing: 'border-box',
-              boxShadow: isDark ? '0 10px 30px rgba(0,0,0,0.3)' : '0 6px 20px rgba(0,0,0,0.05)'
-            }}
-          />
-        </div>
+        {/* ── UNIFIED HERO POSTER SECTION ── */}
+        <PageHeroHeader
+          isDark={isDark}
+          accentColor={accentColor}
+          bgPattern={(data?.pagesHeader as any)?.games?.bgPattern || 'grid'}
+          textColor={textColor}
+          subTextColor={subTextColor}
+          badgeIcon={<Sparkles size={14} />}
+          badgeText={data?.pagesHeader?.games?.badge || 'Interactive Event Activation Games'}
+          title={data?.pagesHeader?.games?.title || 'Koleksi Game Kustom untuk Aktivasi Event & Booth Brand Anda'}
+          highlightText={data?.pagesHeader?.games?.highlight || 'Aktivasi Event & Booth Brand Anda'}
+          description={data?.pagesHeader?.games?.description || 'Tingkatkan keterlibatan pengunjung di pameran, mal, expo, dan festival dengan game interaktif responsif berbasis HTML5. Tersedia opsi Sewa Lisensi Event atau Beli Putus (Hak Download Offline DRM-free).'}
+          stats={[
+            { icon: <Gamepad2 size={14} />, value: games.length, label: 'Game Siap Pakai' },
+            { icon: <Trophy size={14} />, value: 'Event & Booth', label: 'Spesialisasi' },
+            { icon: <Sparkles size={14} />, value: 'DRM-Free', label: 'Lisensi Offline' }
+          ]}
+        >
+          <div style={{ maxWidth: 480, margin: '0 auto', position: 'relative' }}>
+            <Search size={18} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: subTextColor }} />
+            <input
+              type="text"
+              placeholder="Cari game event (misal: Spin Wheel, Kuis, Koin)..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                width: '100%',
+                height: 48,
+                padding: '0 18px 0 46px',
+                borderRadius: 100,
+                border: `1.5px solid ${cardBorder}`,
+                background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                color: textColor,
+                fontSize: 14,
+                outline: 'none',
+                boxSizing: 'border-box',
+                boxShadow: 'none'
+              }}
+            />
+          </div>
+        </PageHeroHeader>
 
         {/* Dynamic Tag Filter Buttons */}
         {allAvailableTags.length > 0 && (
@@ -240,9 +245,9 @@ export default function GameShowcasePage() {
         )}
       </section>
 
-      <main 
+      <main
         className="game-showcase-main"
-        style={{ maxWidth: 1200, margin: '0 auto 100px', width: '100%', padding: '0 20px', boxSizing: 'border-box', flex: 1 }}
+        style={{ maxWidth: 1240, margin: '0 auto 100px', width: '100%', padding: '0 clamp(16px, 3.5vw, 24px)', boxSizing: 'border-box', flex: 1 }}
       >
         <style>{`
           @media (max-width: 640px) {
@@ -257,11 +262,11 @@ export default function GameShowcasePage() {
             <p style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Memuat katalog game interaktif...</p>
           </div>
         ) : filteredGames.length === 0 ? (
-          <div style={{ 
-            textAlign: 'center', 
-            padding: '70px 20px', 
-            background: cardBg, 
-            borderRadius: 24, 
+          <div style={{
+            textAlign: 'center',
+            padding: '70px 20px',
+            background: cardBg,
+            borderRadius: 22,
             border: `1.5px dashed ${cardBorder}`,
             maxWidth: 520,
             margin: '20px auto'
@@ -295,30 +300,28 @@ export default function GameShowcasePage() {
                 style={{
                   background: cardBg,
                   borderRadius: 22,
-                  border: `1.5px solid ${cardBorder}`,
+                  border: `1px solid ${cardBorder}`,
                   overflow: 'hidden',
                   display: 'flex',
                   flexDirection: 'column',
-                  transition: 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s',
-                  boxShadow: isDark ? '0 10px 30px rgba(0,0,0,0.4)' : '0 8px 24px rgba(0,0,0,0.05)'
+                  transition: 'transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease',
+                  boxShadow: 'none'
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-4px)';
+                  e.currentTarget.style.transform = 'translateY(-3px)';
                   e.currentTarget.style.borderColor = accentColor;
-                  e.currentTarget.style.boxShadow = `0 16px 36px ${accentColor}25`;
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.transform = 'none';
                   e.currentTarget.style.borderColor = cardBorder;
-                  e.currentTarget.style.boxShadow = isDark ? '0 10px 30px rgba(0,0,0,0.4)' : '0 8px 24px rgba(0,0,0,0.05)';
                 }}
               >
                 <div style={{ height: 180, position: 'relative', overflow: 'hidden', background: '#09090f' }}>
                   {game.thumbnailUrl ? (
-                    <img 
-                      src={game.thumbnailUrl} 
-                      alt={game.title} 
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                    <img
+                      src={game.thumbnailUrl}
+                      alt={game.title}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                     />
                   ) : (
                     <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: `linear-gradient(135deg, ${accentColor}30, #3b82f630)` }}>
@@ -371,22 +374,22 @@ export default function GameShowcasePage() {
                     ))}
                   </div>
 
-                  <h3 style={{ 
-                    margin: '0 0 8px', 
-                    fontSize: 18, 
-                    fontWeight: 900, 
-                    color: textColor, 
-                    fontFamily: "'Outfit', sans-serif" 
+                  <h3 style={{
+                    margin: '0 0 8px',
+                    fontSize: 18,
+                    fontWeight: 900,
+                    color: textColor,
+                    fontFamily: "'Outfit', sans-serif"
                   }}>
                     {game.title}
                   </h3>
 
-                  <p style={{ 
-                    margin: 0, 
-                    fontSize: 13, 
-                    color: subTextColor, 
-                    lineHeight: 1.55, 
-                    flex: 1 
+                  <p style={{
+                    margin: 0,
+                    fontSize: 13,
+                    color: subTextColor,
+                    lineHeight: 1.55,
+                    flex: 1
                   }}>
                     {game.description || 'Game aktivasi interaktif ringan siap dibranding dengan logo dan grafis brand Anda untuk pameran atau promosi event.'}
                   </p>

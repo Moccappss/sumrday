@@ -206,7 +206,7 @@ const ContactPanel = forwardRef(({ isOpen }, ref) => {
     setIsUploadingFile(true);
     try {
       const url = await googleSync.uploadFileToDrive(file);
-      const text = `📁 File terlampir: ${file.name}\n${url}`;
+      const text = `File terlampir: ${file.name}\n${url}`;
       
       await addDoc(collection(db, 'porto_messages'), {
         roomId: sessionId,
@@ -216,7 +216,7 @@ const ContactPanel = forwardRef(({ isOpen }, ref) => {
         timestamp: serverTimestamp()
       });
       await updateDoc(doc(db, 'porto_conversations', sessionId), {
-        lastMessage: "📁 File dikirim",
+        lastMessage: "File dikirim",
         lastMessageTime: serverTimestamp(),
         unread: 1
       });
@@ -302,7 +302,7 @@ const ContactPanel = forwardRef(({ isOpen }, ref) => {
                   fontSize: window.innerWidth < 480 ? 14 : 15, fontWeight: 600, lineHeight: 1.5,
                   border: '1px solid var(--glass-border)', boxShadow: '0 4px 15px rgba(0,0,0,0.03)'
                 }}>
-                  Halo! 👋 Ingin bertanya sesuatu? Tim kami siap membantu Anda secara langsung.
+                  Halo! Ingin bertanya sesuatu? Tim kami siap membantu Anda secara langsung.
                 </div>
               </div>
             </div>

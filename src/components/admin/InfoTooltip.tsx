@@ -112,9 +112,16 @@ const InfoTooltip: React.FC<InfoTooltipProps> = ({ content, placement = 'top' })
       };
       window.addEventListener('scroll', handleReposition, true);
       window.addEventListener('resize', handleReposition);
+      const handleOutside = (e: MouseEvent) => {
+        if (triggerRef.current && !triggerRef.current.contains(e.target as Node)) {
+          setVisible(false);
+        }
+      };
+      document.addEventListener('mousedown', handleOutside);
       return () => {
         window.removeEventListener('scroll', handleReposition, true);
         window.removeEventListener('resize', handleReposition);
+        document.removeEventListener('mousedown', handleOutside);
       };
     }
   }, [visible, calculateCoords]);
@@ -164,7 +171,7 @@ const InfoTooltip: React.FC<InfoTooltipProps> = ({ content, placement = 'top' })
             transform: placement === 'top' ? 'translate(-50%, -100%)' :
                        placement === 'bottom' ? 'translate(-50%, 0)' :
                        placement === 'left' ? 'translate(-100%, -50%)' : 'translate(0, -50%)',
-            zIndex: 999999,
+            zIndex: 2147483644,
             pointerEvents: 'none',
             animation: 'cmsTooltipPureFade 0.15s ease-out'
           }}

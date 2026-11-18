@@ -77,12 +77,12 @@ export const PublicBroadcastPopup: React.FC = () => {
     >
       <div
         style={{
-          background: 'rgba(18, 19, 28, 0.94)',
+          background: 'rgba(18, 19, 28, 0.98)',
           color: '#ffffff',
           borderRadius: 22,
           border: '1.5px solid rgba(255, 255, 255, 0.16)',
-          backdropFilter: 'blur(24px)',
-          WebkitBackdropFilter: 'blur(24px)',
+          backdropFilter: 'none',
+          WebkitBackdropFilter: 'none',
           padding: 16,
           boxShadow: '0 8px 32px rgba(0,0,0,0.4), 0 0 20px rgba(124, 58, 237, 0.25)',
           display: 'flex',

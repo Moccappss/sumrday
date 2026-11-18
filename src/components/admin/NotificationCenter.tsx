@@ -162,7 +162,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ onSwitchPage })
     } else if (n.type === NOTIF_TYPES.SETTINGS) {
       onSwitchPage('settings');
     } else if (n.type === NOTIF_TYPES.SYSTEM) {
-      if (n.data?.userName) onSwitchPage('users');
+      if (n.data?.userName || n.data?.targetPage === 'users' || n.data?.role === 'Pending') onSwitchPage('users');
       else onSwitchPage('dashboard');
     }
   };
@@ -176,9 +176,9 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ onSwitchPage })
         style={{
           position: 'fixed',
           inset: 0,
-          background: isMobileScreen ? 'rgba(0, 0, 0, 0.4)' : 'transparent',
-          backdropFilter: isMobileScreen ? 'blur(3px)' : 'none',
-          WebkitBackdropFilter: isMobileScreen ? 'blur(3px)' : 'none',
+          background: isMobileScreen ? 'rgba(0, 0, 0, 0.7)' : 'rgba(0, 0, 0, 0.4)',
+          backdropFilter: 'none',
+          WebkitBackdropFilter: 'none',
           zIndex: 99998,
           cursor: 'default'
         }}

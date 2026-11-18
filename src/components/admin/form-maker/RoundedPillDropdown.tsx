@@ -45,12 +45,14 @@ export const RoundedPillDropdown: React.FC<RoundedPillDropdownProps> = ({
   const isSm = size === 'sm';
 
   return (
-    <div ref={dropdownRef} style={{ position: 'relative', width: minWidth ? 'fit-content' : '100%', minWidth }}>
+    <div ref={dropdownRef} style={{ position: 'relative', width: '100%', maxWidth: minWidth || '100%', boxSizing: 'border-box' }}>
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         style={{
           width: '100%',
+          maxWidth: '100%',
+          boxSizing: 'border-box',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -90,6 +92,7 @@ export const RoundedPillDropdown: React.FC<RoundedPillDropdownProps> = ({
             left: 0,
             width: '100%',
             minWidth: '100%',
+            maxWidth: '100vw',
             maxHeight: 250,
             overflowY: 'auto',
             background: isDarkMode ? '#1e293b' : '#ffffff',
@@ -103,7 +106,8 @@ export const RoundedPillDropdown: React.FC<RoundedPillDropdownProps> = ({
             display: 'flex',
             flexDirection: 'column',
             gap: 3,
-            animation: 'cmsPopIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
+            animation: 'cmsPopIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+            boxSizing: 'border-box'
           }}
         >
           {options.map((opt) => {
@@ -130,6 +134,7 @@ export const RoundedPillDropdown: React.FC<RoundedPillDropdownProps> = ({
                   fontWeight: isSelected ? 800 : 600,
                   cursor: 'pointer',
                   textAlign: 'left',
+                  minHeight: 'unset',
                   transition: 'background 0.12s ease'
                 }}
                 onMouseEnter={(e) => {
@@ -140,7 +145,7 @@ export const RoundedPillDropdown: React.FC<RoundedPillDropdownProps> = ({
                 }}
               >
                 <span>{opt.label}</span>
-                {isSelected && <Check size={14} color={cardAccent} />}
+                {isSelected && <Check size={14} color={cardAccent} style={{ flexShrink: 0 }} />}
               </button>
             );
           })}

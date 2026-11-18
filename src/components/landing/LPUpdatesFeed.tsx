@@ -48,9 +48,9 @@ export const CLUB_REACTIONS: ClubReactionItem[] = [
 export const LPUpdatesFeed: React.FC<LPUpdatesFeedProps> = ({
   isDark = true,
   accentColor = '#f59e0b',
-  badge = 'UTAS & CERITA HANGAT',
+  badge = 'JURNAL & CATATAN PROYEK',
   title = 'Jurnal Kreatif & Update Proyek',
-  subtitle = 'Catatan progres, kilas balik karya, dan cerita seru dari balik layar sumr.day ☀️',
+  subtitle = 'Catatan progres, kilas balik karya, dan dokumentasi proses dari balik layar studio.',
   maxPosts = 6,
   showSocialStats = true,
   onEditSection,
@@ -61,7 +61,7 @@ export const LPUpdatesFeed: React.FC<LPUpdatesFeedProps> = ({
   showOnlyPinnedOrSingle = false,
   showSeeMore,
   seeMoreUrl = '/updates',
-  seeMoreLabel = 'Selengkapnya ✨',
+  seeMoreLabel = 'Lihat Semua Catatan',
   hideBorderTop = false,
   customBg
 }) => {
@@ -444,9 +444,9 @@ export const LPUpdatesFeed: React.FC<LPUpdatesFeedProps> = ({
     window.dispatchEvent(new CustomEvent('porto_updates_updated', { detail: nextList }));
   };
 
-  // Color variables based on theme
-  const bgCard = isDark ? 'rgba(18, 18, 28, 0.75)' : 'rgba(255, 255, 255, 0.92)';
-  const borderCard = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.07)';
+  // Color variables based on theme - true flat solid with high contrast
+  const bgCard = isDark ? '#181b26' : '#ffffff';
+  const borderCard = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)';
   const textPrimary = isDark ? '#f8fafc' : '#0f172a';
   const textSecondary = isDark ? '#94a3b8' : '#64748b';
   const tagBg = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)';
@@ -465,7 +465,7 @@ export const LPUpdatesFeed: React.FC<LPUpdatesFeedProps> = ({
         transition: 'all 0.3s ease'
       }}
     >
-      <div style={{ maxWidth: 880, margin: '0 auto', width: '100%' }}>
+      <div style={{ maxWidth: 1140, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
         
         {/* ── SECTION HEADER ── */}
         <div style={{ textAlign: 'center', marginBottom: showOnlyPinnedOrSingle ? 36 : 28 }}>
@@ -478,14 +478,14 @@ export const LPUpdatesFeed: React.FC<LPUpdatesFeedProps> = ({
             borderRadius: 100,
             background: `${accentColor}18`,
             color: accentColor,
-            fontSize: 12,
-            fontWeight: 850,
+            fontSize: 11.5,
+            fontWeight: 700,
             letterSpacing: '0.06em',
             marginBottom: 14,
             border: `1px solid ${accentColor}33`,
             textTransform: 'uppercase'
           }}>
-            <Sparkles size={13} />
+            <Layers size={13} />
             <span
               contentEditable={isEditableInVisualWeb}
               suppressContentEditableWarning
@@ -504,7 +504,7 @@ export const LPUpdatesFeed: React.FC<LPUpdatesFeedProps> = ({
             style={{
               margin: '0 0 12px',
               fontSize: 'clamp(26px, 4vw, 36px)',
-              fontWeight: 900,
+              fontWeight: 800,
               color: textPrimary,
               fontFamily: "'Outfit', sans-serif",
               letterSpacing: '-0.02em',
@@ -966,19 +966,15 @@ export const LPUpdatesFeed: React.FC<LPUpdatesFeedProps> = ({
                   className={`update-card-spill ${isRevealed ? 'is-revealed' : ''}`}
                   style={{
                     background: bgCard,
-                    border: item.isPinned 
-                      ? `1.5px solid ${accentColor}66` 
-                      : `1px solid ${borderCard}`,
+                    border: `1px solid ${borderCard}`,
                     borderRadius: 24,
                     padding: '24px',
                     display: 'flex',
                     flexDirection: 'column',
                     gap: 16,
-                    backdropFilter: 'blur(20px)',
-                    WebkitBackdropFilter: 'blur(20px)',
-                    boxShadow: item.isPinned
-                      ? (isDark ? `0 12px 40px -10px ${accentColor}25` : `0 10px 30px -5px ${accentColor}15`)
-                      : (isDark ? '0 10px 30px rgba(0,0,0,0.25)' : '0 8px 24px rgba(0,0,0,0.04)'),
+                    backdropFilter: 'none',
+                    WebkitBackdropFilter: 'none',
+                    boxShadow: 'none',
                     transitionDelay: `${staggerDelay}ms`,
                     position: 'relative'
                   }}
@@ -996,12 +992,16 @@ export const LPUpdatesFeed: React.FC<LPUpdatesFeedProps> = ({
                       <img
                         src={item.author?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80'}
                         alt={item.author?.name || 'Author'}
+                        loading="lazy"
+                        decoding="async"
+                        width={46}
+                        height={46}
                         style={{
                           width: 46,
                           height: 46,
                           borderRadius: '50%',
                           objectFit: 'cover',
-                          border: `2px solid ${accentColor}44`
+                          border: `1px solid ${borderCard}`
                         }}
                       />
                       <div>
@@ -1015,16 +1015,16 @@ export const LPUpdatesFeed: React.FC<LPUpdatesFeedProps> = ({
                             gap: 3,
                             padding: '2px 7px',
                             borderRadius: 100,
-                            background: `${accentColor}18`,
-                            color: accentColor,
+                            background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                            color: textSecondary,
                             fontSize: 10.5,
                             fontWeight: 800,
-                            border: `1px solid ${accentColor}33`
+                            border: `1px solid ${borderCard}`
                           }}>
                             <span>☀️</span>
                             <span>Studio</span>
                           </span>
-                          <CheckCircle2 size={15} color={accentColor} fill={`${accentColor}20`} />
+                          <CheckCircle2 size={15} color={isDark ? '#60a5fa' : '#2563eb'} />
                           
                           {item.isPinned && (
                             <span style={{
@@ -1033,11 +1033,11 @@ export const LPUpdatesFeed: React.FC<LPUpdatesFeedProps> = ({
                               gap: 4,
                               padding: '2px 9px',
                               borderRadius: 100,
-                              background: `${accentColor}20`,
-                              color: accentColor,
+                              background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+                              color: textPrimary,
                               fontSize: 10.5,
                               fontWeight: 800,
-                              border: `1px solid ${accentColor}40`
+                              border: `1px solid ${borderCard}`
                             }}>
                               <Pin size={10} />
                               Tersemat
@@ -1080,11 +1080,12 @@ export const LPUpdatesFeed: React.FC<LPUpdatesFeedProps> = ({
                             gap: 5,
                             padding: '4px 12px',
                             borderRadius: 100,
-                            background: `${accentColor}15`,
-                            color: accentColor,
-                            fontSize: 11.5,
-                            fontWeight: 800,
-                            border: `1px solid ${accentColor}30`
+                            background: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(15, 23, 42, 0.05)',
+                            color: textPrimary,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            letterSpacing: '0.04em',
+                            border: `1px solid ${borderCard}`
                           }}>
                             <Tag size={11} />
                             {item.projectTag}
@@ -1212,9 +1213,9 @@ export const LPUpdatesFeed: React.FC<LPUpdatesFeedProps> = ({
                                 <img 
                                   src={url} 
                                   alt={`Media ${mIdx + 1}`} 
-                                  style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.3s ease' }}
-                                  onMouseOver={e => e.currentTarget.style.transform = 'scale(1.02)'}
-                                  onMouseOut={e => e.currentTarget.style.transform = 'scale(1)'}
+                                  loading="lazy"
+                                  decoding="async"
+                                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                                 />
                                 <div style={{
                                   position: 'absolute',

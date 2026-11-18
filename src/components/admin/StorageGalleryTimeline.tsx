@@ -6,7 +6,7 @@ import {
   Maximize2, ZoomIn, ZoomOut, AlertCircle, Plus, FileText, CheckSquare, Square
 } from 'lucide-react';
 import { storage } from '../../utils/storage';
-import { uploadToCloudinary, applyCloudinaryAi, type CloudinaryAiPreset } from '../../utils/cloudinary';
+import { uploadToCloudinary, applyCloudinaryAi, getResponsiveImg, type CloudinaryAiPreset } from '../../utils/cloudinary';
 import { googleSync } from '../../utils/googleSync';
 import { useDialog } from './DialogProvider';
 import { useContextMenu } from './ContextMenuProvider';
@@ -52,26 +52,50 @@ export const StorageGalleryTimeline: React.FC = () => {
       const explicitGallery: GalleryMediaItem[] = (await storage.getItem('porto_media_gallery', [])) || [];
 
       // Also scan other database collections to discover additional media
-      const [stickers, portfolio, catalog, memos, blogs] = await Promise.all([
+      const [stickers, portfolio, catalog, memos, blogs, mediaVault] = await Promise.all([
         storage.getItem('porto_stickers', {}),
         storage.getItem('porto_portfolio', []),
         storage.getItem('porto_catalog', []),
         storage.getItem('porto_memos', []),
-        storage.getItem('porto_blogs', [])
+        storage.getItem('porto_blogs', []),
+        storage.getItem('porto_media_vault', [])
       ]);
 
       const discoveredMap = new Map<string, GalleryMediaItem>();
 
       // Populate existing explicit gallery items first
       explicitGallery.forEach((item) => {
-        if (item && item.url) {
-          discoveredMap.set(item.url, {
+        const itemUrl = typeof item?.url === 'string' ? item.url : (item?.url as any)?.url;
+        if (item && itemUrl) {
+          discoveredMap.set(itemUrl, {
             ...item,
-            resource_type: item.resource_type || (item.url.match(/\.(mp4|webm|mov|ogg)$/i) ? 'video' : 'image'),
+            url: itemUrl,
+            resource_type: item.resource_type || (itemUrl.match(/\.(mp4|webm|mov|ogg)$/i) ? 'video' : 'image'),
             createdAt: item.createdAt || Date.now()
           });
         }
       });
+
+      // Populate from Media Vault (porto_media_vault)
+      if (Array.isArray(mediaVault)) {
+        mediaVault.forEach((vItem: any) => {
+          const vUrl = typeof vItem?.url === 'string' ? vItem.url : vItem?.url?.url;
+          if (vItem && vUrl && vUrl.startsWith('http') && vUrl !== 'https://drive.google.com' && !discoveredMap.has(vUrl)) {
+            const isVideo = vItem.type === 'video' || !!vUrl.match(/\.(mp4|webm|mov|ogg)$/i);
+            const isDrive = vItem.source === 'drive' || vUrl.includes('drive.google.com') || vUrl.includes('googleusercontent.com');
+            const isCloudinary = vItem.source === 'cloudinary' || vUrl.includes('res.cloudinary.com');
+            discoveredMap.set(vUrl, {
+              id: vItem.id || `mv_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+              url: vUrl,
+              name: vItem.name || 'Berkas Media Vault',
+              resource_type: isVideo ? 'video' : 'image',
+              source: isDrive ? 'drive' : isCloudinary ? 'cloudinary' : 'local',
+              bytes: vItem.size || 0,
+              createdAt: vItem.createdAt || Date.now()
+            });
+          }
+        });
+      }
 
       // Helper to add URL if not exists
       const registerUrl = (url: string, name: string, createdDate?: number | string) => {
@@ -361,7 +385,7 @@ export const StorageGalleryTimeline: React.FC = () => {
         {
           label: 'AI Hapus / Buram Latar',
           icon: <Wand2 size={15} color="#8b5cf6" />,
-          action: () => handleApplyAi({ stopPropagation: () => {} } as any, item, 'remove-bg')
+          action: () => handleApplyAi({ stopPropagation: () => {} } as any, item, 'bg-remove')
         }
       ] : []),
       { separator: true, label: '' },
@@ -722,6 +746,7 @@ export const StorageGalleryTimeline: React.FC = () => {
                               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                               muted
                               playsInline
+                              preload="metadata"
                             />
                             <div style={{
                               position: 'absolute',
@@ -736,9 +761,10 @@ export const StorageGalleryTimeline: React.FC = () => {
                           </div>
                         ) : (
                           <img
-                            src={item.url}
+                            src={getResponsiveImg(item.url, 360, 'auto:eco')}
                             alt={item.name}
                             loading="lazy"
+                            decoding="async"
                             style={{
                               width: '100%',
                               height: '100%',

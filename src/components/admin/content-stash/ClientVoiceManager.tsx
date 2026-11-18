@@ -3,7 +3,7 @@ import {
   Quote, Star, MessageSquare, HelpCircle, Plus, Trash2, Edit3, Check, 
   Sparkles, X, ChevronDown, CheckCircle2, AlertCircle, Heart, User, 
   Building, Search, Upload, Image, Share2, Copy, ExternalLink, ArrowRight,
-  Code2, Award, BarChart2, ArrowLeft, Eye, EyeOff
+  Code2, Award, BarChart2, ArrowLeft, Eye, EyeOff, Cloud
 } from 'lucide-react';
 import { storage } from '../../../utils/storage';
 import type { ClientReviewItem, ClientFeedbackItem, ClientFaqItem } from './stashTypes';
@@ -66,13 +66,15 @@ interface ClientVoiceManagerProps {
   confirm?: (opts: { title?: string; message: string; onConfirm: () => void; isDestructive?: boolean }) => void;
   isDarkMode?: boolean;
   onBack?: () => void;
+  hideHeader?: boolean;
 }
 
 export const ClientVoiceManager: React.FC<ClientVoiceManagerProps> = ({
   notify,
   confirm,
   isDarkMode = true,
-  onBack
+  onBack,
+  hideHeader = false,
 }) => {
   const [activeTab, setActiveTab] = useState<'reviews' | 'feedbacks' | 'faqs'>('reviews');
   const [reviews, setReviews] = useState<ClientReviewItem[]>([]);
@@ -392,7 +394,7 @@ export const ClientVoiceManager: React.FC<ClientVoiceManagerProps> = ({
   return (
     <div style={{ maxWidth: 1200, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
       {/* ── Header Banner ── */}
-      <div style={{
+      {!hideHeader && (<div style={{
         background: 'var(--cms-card-bg, #ffffff)',
         border: '1px solid var(--cms-border, rgba(255,255,255,0.1))',
         borderRadius: 22,
@@ -442,10 +444,13 @@ export const ClientVoiceManager: React.FC<ClientVoiceManagerProps> = ({
           }}>
             <Quote size={20} strokeWidth={2.4} />
           </div>
-          <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <h2 style={{ margin: 0, fontSize: 22, fontWeight: 900, color: 'var(--cms-text, currentColor)', fontFamily: "'Outfit', sans-serif" }}>
-              Ulasan
+              Cheers
             </h2>
+            <span style={{ fontSize: 11.5, fontWeight: 800, padding: '3px 10px', borderRadius: 100, background: 'rgba(139, 92, 246, 0.14)', border: '1px solid rgba(139, 92, 246, 0.28)', color: '#8b5cf6' }}>
+              {reviews.length} Ulasan • {faqs.length} FAQ
+            </span>
           </div>
         </div>
 
@@ -515,6 +520,35 @@ export const ClientVoiceManager: React.FC<ClientVoiceManagerProps> = ({
             }}
           >
             <ExternalLink size={16} color="#8b5cf6" />
+          </button>
+
+          {/* Sync to Google Sheets Button */}
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const { syncClientReviews } = await import('../../../utils/googleSync');
+                await syncClientReviews(notify);
+              } catch (err: any) {
+                notify?.('Gagal sinkronisasi: ' + err.message, 'error');
+              }
+            }}
+            title="Sinkronkan ke Google Sheets"
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: '50%',
+              border: '1px solid var(--cms-border, rgba(255,255,255,0.15))',
+              background: 'var(--cms-switcher-bg, rgba(255,255,255,0.06))',
+              color: '#8b5cf6',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <Cloud size={16} />
           </button>
 
           {activeTab === 'reviews' && (
@@ -600,7 +634,7 @@ export const ClientVoiceManager: React.FC<ClientVoiceManagerProps> = ({
             </button>
           )}
         </div>
-      </div>
+      </div>)}
 
       {/* ── SOCIAL PROOF & CLIENT SATISFACTION STATS ── */}
       <div style={{
@@ -899,13 +933,11 @@ export const ClientVoiceManager: React.FC<ClientVoiceManagerProps> = ({
                     )}
                     <div>
                       <h4 style={{ margin: 0, fontSize: 14.5, fontWeight: 800, color: 'var(--cms-text, currentColor)' }}>
-                        {rev.clientName}
+                        {rev.brand || rev.clientName}
                       </h4>
-                      {(rev.role || rev.brand) && (
-                        <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--cms-text-muted, #64748b)' }}>
-                          {rev.role} {rev.brand ? `• ${rev.brand}` : ''}
-                        </p>
-                      )}
+                      <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--cms-text-muted, #64748b)' }}>
+                        {rev.clientName}{rev.role ? ` • ${rev.role}` : ''}
+                      </p>
                     </div>
                   </div>
 
@@ -1148,46 +1180,52 @@ export const ClientVoiceManager: React.FC<ClientVoiceManagerProps> = ({
         </div>
       )}
 
-      {/* ── MODAL TAMBAH/EDIT REVIEW (DENGAN UPLOAD GAMBAR) ── */}
+      {/* ── MODAL TAMBAH/EDIT REVIEW (DENGAN UPLOAD GAMBAR & FIXED CONSISTENT DIMENSIONS) ── */}
       {showReviewModal && (
         <div style={{
           position: 'fixed',
           inset: 0,
-          background: 'rgba(0,0,0,0.6)',
-          backdropFilter: 'blur(6px)',
+          background: 'rgba(2, 6, 23, 0.72)',
+          backdropFilter: 'none',
+          WebkitBackdropFilter: 'none',
           zIndex: 99999,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          padding: 20
+          padding: 16
         }} onClick={() => setShowReviewModal(false)}>
           <div style={{
-            maxWidth: 540,
-            width: '100%',
+            width: 580,
+            maxWidth: 'calc(100vw - 32px)',
+            height: '80vh',
+            minHeight: 520,
+            maxHeight: 700,
             background: 'var(--cms-card-bg, #ffffff)',
             borderRadius: 22,
-            padding: '24px 26px',
+            padding: '20px 24px',
             display: 'flex',
             flexDirection: 'column',
-            gap: 16,
-            maxHeight: '90vh',
-            overflowY: 'auto'
+            gap: 14,
+            overflow: 'hidden',
+            border: '1.5px solid var(--cms-border, rgba(255,255,255,0.15))',
+            boxShadow: '0 24px 64px rgba(0,0,0,0.45)',
+            boxSizing: 'border-box'
           }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 850, color: 'var(--cms-text)' }}>
-                {editingReview ? 'Edit Testimoni Klien' : 'Tambah Testimoni Baru'}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, paddingBottom: 10, borderBottom: '1px solid var(--cms-border, rgba(255,255,255,0.08))' }}>
+              <h3 style={{ margin: 0, fontSize: 16.5, fontWeight: 850, color: 'var(--cms-text)' }}>
+                {editingReview ? 'Edit Ulasan' : 'Tambah Ulasan'}
               </h3>
-              <button onClick={() => setShowReviewModal(false)} style={{ background: 'none', border: 'none', color: 'var(--cms-text-muted)', cursor: 'pointer' }}>
-                <X size={18} />
+              <button onClick={() => setShowReviewModal(false)} style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--cms-switcher-bg)', border: '1px solid var(--cms-border)', color: 'var(--cms-text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <X size={15} />
               </button>
             </div>
 
             {/* Form Fields */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: 1, overflowY: 'auto', paddingRight: 4 }}>
               {/* Avatar / Photo Upload Field */}
               <div>
                 <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--cms-text-muted)', marginBottom: 6, display: 'block' }}>
-                  Foto Profil Klien / Logo Perusahaan (Upload)
+                  Foto / Logo
                 </label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                   {reviewDraft.avatarUrl ? (
@@ -1221,7 +1259,7 @@ export const ClientVoiceManager: React.FC<ClientVoiceManagerProps> = ({
                       }}
                     >
                       <Upload size={15} color="#8b5cf6" />
-                      <span>Unggah Foto dari Perangkat</span>
+                      <span>Upload Foto</span>
                     </button>
                   )}
                   <input
@@ -1245,7 +1283,7 @@ export const ClientVoiceManager: React.FC<ClientVoiceManagerProps> = ({
 
               {/* Name */}
               <div>
-                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--cms-text-muted)', marginBottom: 4, display: 'block' }}>Nama Klien / Instansi *</label>
+                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--cms-text-muted)', marginBottom: 4, display: 'block' }}>Nama Klien *</label>
                 <input
                   type="text"
                   value={reviewDraft.clientName || ''}
@@ -1258,7 +1296,7 @@ export const ClientVoiceManager: React.FC<ClientVoiceManagerProps> = ({
               {/* Brand & Role */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div>
-                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--cms-text-muted)', marginBottom: 4, display: 'block' }}>Brand / Perusahaan</label>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--cms-text-muted)', marginBottom: 4, display: 'block' }}>Brand</label>
                   <input
                     type="text"
                     value={reviewDraft.brand || ''}
@@ -1268,7 +1306,7 @@ export const ClientVoiceManager: React.FC<ClientVoiceManagerProps> = ({
                   />
                 </div>
                 <div>
-                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--cms-text-muted)', marginBottom: 4, display: 'block' }}>Jabatan / Role</label>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--cms-text-muted)', marginBottom: 4, display: 'block' }}>Jabatan</label>
                   <input
                     type="text"
                     value={reviewDraft.role || ''}
@@ -1281,7 +1319,7 @@ export const ClientVoiceManager: React.FC<ClientVoiceManagerProps> = ({
 
               {/* Star Rating */}
               <div>
-                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--cms-text-muted)', marginBottom: 4, display: 'block' }}>Rating Bintang (1 - 5)</label>
+                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--cms-text-muted)', marginBottom: 4, display: 'block' }}>Rating</label>
                 <div style={{ display: 'flex', gap: 6 }}>
                   {[1, 2, 3, 4, 5].map(star => (
                     <button
@@ -1298,57 +1336,54 @@ export const ClientVoiceManager: React.FC<ClientVoiceManagerProps> = ({
 
               {/* Review Text */}
               <div>
-                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--cms-text-muted)', marginBottom: 4, display: 'block' }}>Isi Ulasan / Testimoni *</label>
+                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--cms-text-muted)', marginBottom: 4, display: 'block' }}>Ulasan *</label>
                 <textarea
                   rows={4}
                   value={reviewDraft.reviewText || ''}
                   onChange={e => setReviewDraft({ ...reviewDraft, reviewText: e.target.value })}
-                  placeholder="Kutipan kepuasan hasil kerja, profesionalitas, dll..."
+                  placeholder="Kutipan ulasan klien..."
                   style={{ width: '100%', padding: '10px 14px', borderRadius: 14, border: '1px solid var(--cms-border)', background: 'var(--cms-switcher-bg)', color: 'var(--cms-text)', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }}
                 />
               </div>
 
               {/* Publication & Featured Status */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, background: 'var(--cms-switcher-bg, rgba(255,255,255,0.04))', padding: '12px 14px', borderRadius: 14 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: 750, color: reviewDraft.isPublished ? '#10b981' : 'var(--cms-text)', cursor: 'pointer' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, background: 'var(--cms-switcher-bg, rgba(255,255,255,0.04))', padding: '10px 14px', borderRadius: 14 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 750, color: reviewDraft.isPublished ? '#10b981' : 'var(--cms-text)', cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     checked={!!reviewDraft.isPublished}
                     onChange={e => setReviewDraft({ ...reviewDraft, isPublished: e.target.checked })}
                     style={{ accentColor: '#10b981', width: 16, height: 16 }}
                   />
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {reviewDraft.isPublished ? <Eye size={15} color="#10b981" /> : <EyeOff size={15} color="var(--cms-text-muted)" />}
-                    <span>Aktifkan Mata (Tayangkan Ulasan ini di Web Klien)</span>
-                  </div>
+                  <span>Tayang Publik</span>
                 </label>
 
-                <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: 700, color: 'var(--cms-text)', cursor: 'pointer' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 700, color: 'var(--cms-text)', cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     checked={reviewDraft.isFeatured !== false}
                     onChange={e => setReviewDraft({ ...reviewDraft, isFeatured: e.target.checked })}
                     style={{ accentColor: '#8b5cf6', width: 16, height: 16 }}
                   />
-                  <span>Tandai sebagai Ulasan Unggulan (Featured Highlight)</span>
+                  <span>Unggulan</span>
                 </label>
               </div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 6 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 10, borderTop: '1px solid var(--cms-border, rgba(255,255,255,0.08))', flexShrink: 0 }}>
               <button
                 type="button"
                 onClick={() => setShowReviewModal(false)}
-                style={{ height: 42, padding: '0 16px', borderRadius: 100, border: '1px solid var(--cms-border)', background: 'transparent', color: 'var(--cms-text)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
+                style={{ height: 38, padding: '0 16px', borderRadius: 100, border: '1px solid var(--cms-border)', background: 'transparent', color: 'var(--cms-text)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}
               >
                 Batal
               </button>
               <button
                 type="button"
                 onClick={handleSaveReview}
-                style={{ height: 42, padding: '0 22px', borderRadius: 100, border: 'none', background: '#8b5cf6', color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}
+                style={{ height: 38, padding: '0 20px', borderRadius: 100, border: 'none', background: '#8b5cf6', color: '#fff', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}
               >
-                Simpan Testimoni
+                Simpan
               </button>
             </div>
           </div>
@@ -1360,8 +1395,9 @@ export const ClientVoiceManager: React.FC<ClientVoiceManagerProps> = ({
         <div style={{
           position: 'fixed',
           inset: 0,
-          background: 'rgba(0,0,0,0.6)',
-          backdropFilter: 'blur(6px)',
+          background: 'rgba(0,0,0,0.8)',
+          backdropFilter: 'none',
+          WebkitBackdropFilter: 'none',
           zIndex: 99999,
           display: 'flex',
           alignItems: 'center',
@@ -1447,8 +1483,9 @@ export const ClientVoiceManager: React.FC<ClientVoiceManagerProps> = ({
         <div style={{
           position: 'fixed',
           inset: 0,
-          background: 'rgba(0,0,0,0.6)',
-          backdropFilter: 'blur(6px)',
+          background: 'rgba(0,0,0,0.8)',
+          backdropFilter: 'none',
+          WebkitBackdropFilter: 'none',
           zIndex: 99999,
           display: 'flex',
           alignItems: 'center',
@@ -1537,8 +1574,9 @@ export const ClientVoiceManager: React.FC<ClientVoiceManagerProps> = ({
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0,0,0,0.7)',
-          backdropFilter: 'blur(10px)',
+          background: 'rgba(0,0,0,0.8)',
+          backdropFilter: 'none',
+          WebkitBackdropFilter: 'none',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',

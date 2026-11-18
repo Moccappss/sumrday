@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { 
   ArrowLeft, Search, FileText, Settings, Image as ImageIcon, Trash2, Edit3, Eye, 
@@ -9,7 +10,7 @@ import {
   Maximize, Minimize, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Star,
   List as ListIcon, Link as LinkIcon, Video, File, Copy, ExternalLink,
   Sparkles, Zap, Wand2, BookOpen, TrendingUp, Cpu, Award, Briefcase, Info, Loader2, SlidersHorizontal, Bookmark,
-  Check, EyeOff
+  Check, EyeOff, Share2
 } from 'lucide-react';
 import { storage } from '../../utils/storage';
 import { uploadToCloudinary } from '../../utils/cloudinary';
@@ -20,7 +21,7 @@ import MediaGalleryModal from './MediaGalleryModal';
 import GlassColorPicker from './GlassColorPicker';
 import GlassSelect from './GlassSelect';
 import { OFFLINE_BLOG_TEMPLATES, buildOfflineBlogPost, type OfflineBlogTemplate } from '../../utils/offlineTemplates';
-import { generateAiBlogPost } from '../../utils/ai';
+import { generateAiBlogPost, callGemini } from '../../utils/ai';
 import InfoTooltip from './InfoTooltip';
 import { 
   getCustomBlogTemplates, 
@@ -45,7 +46,24 @@ const BLOG_ICON_MAP: Record<string, React.FC<{ size?: number; style?: React.CSSP
   Info
 };
 
-const BlogManager = () => {
+const BlogManager: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const getInitialViewMode = () => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname;
+      if (path.includes('/admin/updates') || path.includes('/admin/update')) {
+        return 'updates';
+      }
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('tab') === 'settings') {
+        return 'categories';
+      }
+    }
+    return 'list';
+  };
+
   const { showConfirm, showAlert } = useDialog();
   const { bindContextMenu, openContextMenu } = useContextMenu();
   const [posts, setPosts] = useState([]);
@@ -53,7 +71,31 @@ const BlogManager = () => {
   const [categories, setCategories] = useState([]);
   const [featuredPostIds, setFeaturedPostIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [viewMode, setViewMode] = useState('list');
+  const [viewMode, setViewMode] = useState<string>(getInitialViewMode);
+
+  useEffect(() => {
+    if (location.pathname.includes('/admin/updates') || location.pathname.includes('/admin/update')) {
+      if (viewMode !== 'updates') setViewMode('updates');
+    } else if (location.pathname.includes('/admin/blog')) {
+      const params = new URLSearchParams(location.search);
+      if (params.get('tab') === 'settings') {
+        if (viewMode !== 'categories') setViewMode('categories');
+      } else {
+        if (viewMode === 'updates') setViewMode('list');
+      }
+    }
+  }, [location.pathname, location.search]);
+
+  const handleSwitchTab = (mode: 'updates' | 'list' | 'categories') => {
+    setViewMode(mode);
+    if (mode === 'updates') {
+      navigate('/admin/updates');
+    } else if (mode === 'list') {
+      navigate('/admin/blog');
+    } else if (mode === 'categories') {
+      navigate('/admin/blog?tab=settings');
+    }
+  };
   const [currentPost, setCurrentPost] = useState(null);
   const [filterCategory, setFilterCategory] = useState('All');
   const [filterStatus, setFilterStatus] = useState('All');
@@ -108,6 +150,64 @@ const BlogManager = () => {
     tags: '',
     readingTime: '5 mnt'
   });
+
+  // ── Smart AI SEO & Headline Generator ──
+  const [isGeneratingSeo, setIsGeneratingSeo] = useState(false);
+  const [isGeneratingHeadlines, setIsGeneratingHeadlines] = useState(false);
+  const [headlineSuggestions, setHeadlineSuggestions] = useState<string[]>([]);
+
+  const handleAutoGenerateSeo = async () => {
+    if (!currentPost?.title) {
+      showAlert('Ketik judul artikel terlebih dahulu agar AI dapat merangkum SEO.', 'Pemberitahuan');
+      return;
+    }
+    setIsGeneratingSeo(true);
+    try {
+      const contentSnippet = (editorRef.current?.innerText || currentPost.content || '').slice(0, 1000);
+      const prompt = `Artikel berjudul: "${currentPost.title}". Cuplikan konten: "${contentSnippet}".
+Tolong buatkan:
+1. Meta Title (maks 55 karakter, menarik untuk pencarian Google)
+2. Meta Description (wajib antara 120-150 karakter, persuasif, ringkas)
+3. 4 Tags kata kunci dipisahkan koma
+
+Keluarkan hanya JSON valid tanpa markdown backtick:
+{
+  "metaTitle": "...",
+  "metaDescription": "...",
+  "tags": ["tag1", "tag2", "tag3"]
+}`;
+      const res = await callGemini(prompt, 'Anda adalah pakar SEO profesional.', 250);
+      const clean = res.replace(/```json/g, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(clean);
+
+      setCurrentPost(prev => ({
+        ...prev,
+        metaTitle: parsed.metaTitle || prev.metaTitle,
+        metaDescription: parsed.metaDescription || prev.metaDescription,
+        tags: Array.isArray(parsed.tags) ? parsed.tags : prev.tags
+      }));
+      showAlert('✅ Meta Title, Meta Description, & Tag SEO berhasil diisi otomatis oleh AI!', 'Sukses');
+    } catch (e) {
+      showAlert('Gagal menghasilkan snippet SEO otomatis.', 'Error');
+    } finally {
+      setIsGeneratingSeo(false);
+    }
+  };
+
+  const handleGenerateAiHeadlines = async () => {
+    const topic = currentPost?.title || 'Strategi Desain & Branding Kreatif';
+    setIsGeneratingHeadlines(true);
+    try {
+      const prompt = `Berikan 3 variasi judul artikel blog yang sangat menarik, ber-CTR tinggi, profesional, dan ramah SEO untuk topik: "${topic}". Format output: HANYA 3 baris judul tanpa nomor dan tanpa tanda kutip.`;
+      const res = await callGemini(prompt, 'Anda adalah copywriter editorial profesional.', 150);
+      const list = res.split('\n').map(s => s.trim().replace(/^["'\d\.\-\s]+/, '')).filter(Boolean);
+      setHeadlineSuggestions(list);
+    } catch (e) {
+      showAlert('Gagal menghasilkan variasi judul.', 'Error');
+    } finally {
+      setIsGeneratingHeadlines(false);
+    }
+  };
 
   const handleSaveNewCustomTemplate = () => {
     if (!newTemplateForm.label.trim()) {
@@ -326,6 +426,59 @@ const BlogManager = () => {
     }
   };
 
+  const handleBroadcastPostToFeed = async (post: any) => {
+    try {
+      const existingUpdates: any[] = (await storage.getItem('porto_social_updates', [])) || [];
+      const newUpdateId = `upd-${Date.now()}`;
+      const nowIso = new Date().toISOString();
+      const todayDate = nowIso.slice(0, 10);
+      const title = post.title || 'Artikel Baru';
+      const cleanContent = (post.content || '').replace(/<[^>]*>/g, '').trim();
+
+      const newUpdate = {
+        id: newUpdateId,
+        title: `Artikel Baru: ${title}`,
+        category: 'article',
+        content: post.excerpt || (cleanContent.slice(0, 200) + (cleanContent.length > 200 ? '...' : '')) || `Wawasan baru dari studio kami: "${title}". Simak ulasan selengkapnya di blog.`,
+        mediaUrls: post.thumbnail ? [post.thumbnail] : [],
+        mediaType: 'image',
+        projectTag: post.category || 'Wawasan Industri',
+        projectUrl: `/blog/${post.slug || post.id}`,
+        ctaLabel: 'Baca Artikel Lengkap',
+        badge: 'Artikel Baru',
+        customDate: todayDate,
+        createdAt: nowIso,
+        likesCount: 0,
+        isPinned: false,
+        isPublished: true,
+        author: {
+          name: 'sumr.day',
+          role: 'Creative Digital Studio & Enterprise Systems',
+          avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80'
+        }
+      };
+
+      const updated = [newUpdate, ...(Array.isArray(existingUpdates) ? existingUpdates : [])];
+      await storage.setItem('porto_social_updates', updated);
+      window.dispatchEvent(new CustomEvent('porto_social_updates_changed', { detail: updated }));
+      window.dispatchEvent(new CustomEvent('porto_updates_updated', { detail: updated }));
+      showAlert?.(`✓ Artikel "${title}" berhasil disiarkan ke Feed Beranda!`, 'Siarkan Berhasil');
+    } catch (err) {
+      console.error('Broadcast article error:', err);
+      showAlert?.('Gagal menyiarkan artikel ke feed', 'Error');
+    }
+  };
+
+  const handleBulkBroadcastPosts = async () => {
+    if (selectedPostIds.length === 0) return;
+    const targets = posts.filter((p: any) => selectedPostIds.includes(p.id));
+    for (const p of targets) {
+      await handleBroadcastPostToFeed(p);
+    }
+    setSelectedPostIds([]);
+    showAlert?.(`✓ Berhasil menyiarkan ${targets.length} artikel ke Feed Beranda!`, 'Siarkan Berhasil');
+  };
+
   const handleAddCategory = async () => {
     if (!newCategory.trim()) return;
     if (categories.includes(newCategory.trim())) { showAlert('Kategori sudah ada', 'error'); return; }
@@ -364,6 +517,9 @@ const BlogManager = () => {
   // ── AUTO-OPEN CREATE BLOG POST (GLOBAL SHORTCUT / SLASH COMMAND / SEARCH INTENT) ──
   useEffect(() => {
     const onAdd = () => handleCreatePost();
+    const onOpenUpdates = () => {
+      handleSwitchTab('updates');
+    };
 
     if (typeof window !== 'undefined' && sessionStorage.getItem('porto_auto_create_blog') === '1') {
       sessionStorage.removeItem('porto_auto_create_blog');
@@ -372,9 +528,11 @@ const BlogManager = () => {
 
     window.addEventListener('porto_add_blog_post', onAdd);
     window.addEventListener('porto_create_blog', onAdd);
+    window.addEventListener('porto_open_updates', onOpenUpdates);
     return () => {
       window.removeEventListener('porto_add_blog_post', onAdd);
       window.removeEventListener('porto_create_blog', onAdd);
+      window.removeEventListener('porto_open_updates', onOpenUpdates);
     };
   }, [categories, isMobile]);
 
@@ -459,7 +617,7 @@ const BlogManager = () => {
 
   const handleBackWithAutoSave = () => {
     if (currentPost) savePost(currentPost, true);
-    setViewMode('list');
+    handleSwitchTab('list');
     setCurrentPost(null);
   };
 
@@ -1095,10 +1253,33 @@ const BlogManager = () => {
           }}>
             {/* Left: Tabs */}
             <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '8px' : '10px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '2px', background: 'var(--cms-switcher-bg)', border: '1px solid var(--glass-border)', borderRadius: '99px', padding: '3px' }}>
-                <button onClick={() => setViewMode('updates')} style={{ background: viewMode === 'updates' ? 'var(--cms-accent)' : 'transparent', color: viewMode === 'updates' ? '#fff' : 'var(--cms-text-muted)', border: 'none', borderRadius: '99px', padding: isMobile ? '5px 12px' : '7px 16px', fontWeight: 800, fontSize: isMobile ? '12px' : '13px', cursor: 'pointer', transition: 'all 0.2s' }}>Update</button>
-                <button onClick={() => setViewMode('list')} style={{ background: viewMode === 'list' ? 'var(--cms-accent)' : 'transparent', color: viewMode === 'list' ? '#fff' : 'var(--cms-text-muted)', border: 'none', borderRadius: '99px', padding: isMobile ? '5px 12px' : '7px 16px', fontWeight: 800, fontSize: isMobile ? '12px' : '13px', cursor: 'pointer', transition: 'all 0.2s' }}>Artikel</button>
-                <button onClick={() => setViewMode('categories')} style={{ background: viewMode === 'categories' ? 'var(--cms-accent)' : 'transparent', color: viewMode === 'categories' ? '#fff' : 'var(--cms-text-muted)', border: 'none', borderRadius: '99px', padding: isMobile ? '5px 12px' : '7px 16px', fontWeight: 800, fontSize: isMobile ? '12px' : '13px', cursor: 'pointer', transition: 'all 0.2s' }}>Seting</button>
+              {onBack && (
+                <button
+                  type="button"
+                  onClick={onBack}
+                  title="Kembali ke Vault"
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    border: '1px solid var(--glass-border)',
+                    background: 'var(--cms-switcher-bg)',
+                    color: 'var(--cms-text-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    flexShrink: 0,
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <ArrowLeft size={16} />
+                </button>
+              )}
+              <div className="cms-segmented-tabs" style={{ display: 'flex', alignItems: 'center', gap: '3px', background: 'var(--cms-switcher-bg)', border: '1px solid var(--glass-border)', borderRadius: '99px', padding: '3px', flex: isMobile ? 1 : 'initial', height: isMobile ? '38px' : 'auto', boxSizing: 'border-box' }}>
+                <button onClick={() => handleSwitchTab('updates')} style={{ flex: isMobile ? 1 : 'initial', height: isMobile ? '100%' : 'auto', background: viewMode === 'updates' ? 'var(--cms-accent)' : 'transparent', color: viewMode === 'updates' ? '#fff' : 'var(--cms-text-muted)', border: 'none', borderRadius: '99px', padding: isMobile ? '0 10px' : '7px 16px', fontWeight: 800, fontSize: isMobile ? '12px' : '13px', cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap' }}>Update</button>
+                <button onClick={() => handleSwitchTab('list')} style={{ flex: isMobile ? 1 : 'initial', height: isMobile ? '100%' : 'auto', background: viewMode === 'list' ? 'var(--cms-accent)' : 'transparent', color: viewMode === 'list' ? '#fff' : 'var(--cms-text-muted)', border: 'none', borderRadius: '99px', padding: isMobile ? '0 10px' : '7px 16px', fontWeight: 800, fontSize: isMobile ? '12px' : '13px', cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap' }}>Artikel</button>
+                <button onClick={() => handleSwitchTab('categories')} style={{ flex: isMobile ? 1 : 'initial', height: isMobile ? '100%' : 'auto', background: viewMode === 'categories' ? 'var(--cms-accent)' : 'transparent', color: viewMode === 'categories' ? '#fff' : 'var(--cms-text-muted)', border: 'none', borderRadius: '99px', padding: isMobile ? '0 10px' : '7px 16px', fontWeight: 800, fontSize: isMobile ? '12px' : '13px', cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap' }}>Seting</button>
               </div>
             </div>
 
@@ -1245,9 +1426,53 @@ const BlogManager = () => {
                       flexDirection: 'column',
                       gap: 4
                     }}>
-                      <div style={{ fontSize: '11px', fontWeight: 800, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                        Judul Artikel
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 800, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          Judul Artikel
+                        </div>
+                        <button
+                          type="button"
+                          disabled={isGeneratingHeadlines}
+                          onClick={handleGenerateAiHeadlines}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 4,
+                            padding: '3px 9px', borderRadius: 9999,
+                            background: 'rgba(var(--cms-accent-rgb), 0.12)',
+                            border: '1px solid rgba(var(--cms-accent-rgb), 0.25)',
+                            color: 'var(--cms-accent)', fontSize: '10.5px', fontWeight: 750,
+                            cursor: isGeneratingHeadlines ? 'wait' : 'pointer'
+                          }}
+                        >
+                          <Sparkles size={11} />
+                          <span>{isGeneratingHeadlines ? 'Meracik Judul...' : '✨ Variasi Judul AI'}</span>
+                        </button>
                       </div>
+
+                      {headlineSuggestions.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 10, padding: 8, background: 'var(--cms-bg-elevated)', borderRadius: 10, border: '1px solid var(--cms-border)' }}>
+                          <div style={{ fontSize: '10px', fontWeight: 800, color: 'var(--cms-text-muted)', textTransform: 'uppercase' }}>Pilih Judul Rekomendasi AI:</div>
+                          {headlineSuggestions.map((hl, idx) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => {
+                                setCurrentPost(prev => ({ ...prev, title: hl }));
+                                setHeadlineSuggestions([]);
+                              }}
+                              style={{
+                                textAlign: 'left', padding: '5px 8px', borderRadius: 6,
+                                background: 'transparent', border: 'none', color: 'var(--cms-text-primary)',
+                                fontSize: '11.5px', fontWeight: 650, cursor: 'pointer',
+                                transition: 'background 0.15s'
+                              }}
+                              onMouseEnter={e => e.currentTarget.style.background = 'rgba(var(--cms-accent-rgb), 0.1)'}
+                              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                            >
+                              💡 {hl}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       <input 
                         type="text" 
                         value={currentPost?.title || ''} 
@@ -1277,7 +1502,7 @@ const BlogManager = () => {
                     {showMediaPopup && createPortal(
                       <div style={{ position: 'fixed', inset: 0, zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }} onClick={(e) => { if (e.target === e.currentTarget) setShowMediaPopup(false); }}>
                         {/* Backdrop */}
-                        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }} onClick={() => setShowMediaPopup(false)} />
+                        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'none', WebkitBackdropFilter: 'none' }} onClick={() => setShowMediaPopup(false)} />
                         {/* Modal */}
                         <div style={{ position: 'relative', background: 'var(--cms-bg)', border: '1px solid var(--cms-border)', borderRadius: '20px', padding: '24px', width: '100%', maxWidth: '420px', boxShadow: '0 24px 64px rgba(0,0,0,0.4)', zIndex: 1, animation: 'bm-fade-in 0.2s ease' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
@@ -1459,6 +1684,25 @@ const BlogManager = () => {
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                               <button
                                 type="button"
+                                onClick={handleBulkBroadcastPosts}
+                                style={{
+                                  padding: '7px 16px',
+                                  borderRadius: 10,
+                                  border: '1px solid rgba(99,102,241,0.3)',
+                                  background: 'rgba(99,102,241,0.18)',
+                                  color: 'var(--cms-accent, #6366f1)',
+                                  fontSize: 12,
+                                  fontWeight: 800,
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 6
+                                }}
+                              >
+                                <Share2 size={14} /> Siarkan ({selectedPostIds.length})
+                              </button>
+                              <button
+                                type="button"
                                 onClick={handleBulkDeletePosts}
                                 style={{
                                   padding: '7px 16px',
@@ -1524,6 +1768,11 @@ const BlogManager = () => {
                                         label: 'Edit Artikel',
                                         icon: <Edit3 size={15} color="var(--cms-accent)" />,
                                         action: () => handleEdit(post)
+                                      },
+                                      {
+                                        label: 'Siarkan Feed',
+                                        icon: <Share2 size={15} color="var(--cms-accent)" />,
+                                        action: () => handleBroadcastPostToFeed(post)
                                       },
                                       {
                                         label: isSelected ? 'Hilangkan Tanda' : 'Tandai / Mode Pilih',
@@ -1639,6 +1888,10 @@ const BlogManager = () => {
                                   </div>
                                   {!isMobile && (
                                     <div style={{ display: 'flex', gap: '10px', marginLeft: '16px', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+                                      <button onClick={() => handleBroadcastPostToFeed(post)} title="Siarkan Feed" style={{ width: '42px', height: '42px', borderRadius: '12px', background: 'rgba(var(--cms-accent-rgb), 0.08)', border: '1px solid rgba(var(--cms-accent-rgb), 0.2)', color: 'var(--cms-accent)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                                        onMouseOver={e => { e.currentTarget.style.background = 'var(--cms-accent)'; e.currentTarget.style.color = '#ffffff'; }}
+                                        onMouseOut={e => { e.currentTarget.style.background = 'rgba(var(--cms-accent-rgb), 0.08)'; e.currentTarget.style.color = 'var(--cms-accent)'; }}
+                                      ><Share2 size={17} /></button>
                                       <button onClick={() => handleEdit(post)} title="Edit Artikel" style={{ width: '42px', height: '42px', borderRadius: '12px', background: 'var(--cms-bg)', border: '1px solid var(--cms-border)', color: 'var(--cms-text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                                         onMouseOver={e => { e.currentTarget.style.background = 'rgba(var(--cms-accent-rgb), 0.08)'; e.currentTarget.style.color = 'var(--cms-accent)'; e.currentTarget.style.borderColor = 'transparent'; }}
                                         onMouseOut={e => { e.currentTarget.style.background = 'var(--cms-bg)'; e.currentTarget.style.color = 'var(--cms-text-secondary)'; e.currentTarget.style.borderColor = 'var(--cms-border)'; }}
@@ -1652,6 +1905,7 @@ const BlogManager = () => {
                                 </div>
                                 {isMobile && (
                                   <div style={{ display: 'flex', gap: '8px', marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--glass-border)' }} onClick={e => e.stopPropagation()}>
+                                    <button onClick={() => handleBroadcastPostToFeed(post)} style={{ padding: '9px 12px', background: 'rgba(var(--cms-accent-rgb), 0.1)', border: '1px solid rgba(var(--cms-accent-rgb), 0.2)', borderRadius: '10px', color: 'var(--cms-accent)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontWeight: 700 }}><Share2 size={14} /> Siarkan</button>
                                     <button onClick={() => handleEdit(post)} style={{ flex: 1, padding: '9px', background: 'var(--cms-input-bg)', border: '1px solid var(--glass-border)', borderRadius: '10px', color: 'var(--cms-text-primary)', cursor: 'pointer', fontSize: '12px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}><Edit3 size={14} /> Edit</button>
                                     <button onClick={() => handleDelete(post.id)} style={{ padding: '9px 16px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: '10px', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 700 }}><Trash2 size={14} /> Hapus</button>
                                   </div>
@@ -1668,21 +1922,22 @@ const BlogManager = () => {
                 /* ===== CATEGORIES VIEW ===== */
                 <div style={{ maxWidth: '560px', width: '100%', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   {/* Category Manager */}
-                  <div style={{ background: 'var(--cms-bg-card)', padding: '24px', borderRadius: '20px', border: '1.5px solid var(--cms-border)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
-                      <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'rgba(var(--cms-accent-rgb), 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div style={{ background: 'var(--cms-bg-card)', padding: isMobile ? '16px' : '24px', borderRadius: '20px', border: '1.5px solid var(--cms-border)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+                      <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'rgba(var(--cms-accent-rgb), 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                         <Tag size={15} color="var(--cms-accent)" />
                       </div>
-                      <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: 'var(--cms-text-primary)' }}>Manajemen Kategori</h3>
+                      <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: 'var(--cms-text-primary)' }}>Kategori</h3>
                     </div>
-                    <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-                      <input type="text" value={newCategory} onChange={e => setNewCategory(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleAddCategory(); }} placeholder="Nama kategori baru..."
-                        style={{ flex: 1, padding: '12px 16px', borderRadius: '12px', border: '1.5px solid var(--cms-border)', background: 'var(--cms-bg)', color: 'var(--cms-text-primary)', outline: 'none', fontSize: '14px' }}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+                      <input type="text" value={newCategory} onChange={e => setNewCategory(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleAddCategory(); }} placeholder="Nama kategori baru..." aria-label="Nama kategori baru"
+                        style={{ flex: 1, minWidth: 0, height: '42px', padding: '0 14px', borderRadius: '12px', border: '1.5px solid var(--cms-border)', background: 'var(--cms-bg)', color: 'var(--cms-text-primary)', outline: 'none', fontSize: '13.5px', boxSizing: 'border-box' }}
                         onFocus={e => e.target.style.borderColor = 'rgba(var(--cms-accent-rgb), 0.4)'}
                         onBlur={e => e.target.style.borderColor = 'var(--cms-border)'}
                       />
-                      <button onClick={handleAddCategory} style={{ padding: '12px 18px', background: 'var(--cms-accent)', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Plus size={16} /> Tambah
+                      <button type="button" onClick={handleAddCategory} aria-label="Tambah Kategori" title="Tambah Kategori" style={{ height: '42px', padding: isMobile ? '0 14px' : '0 18px', background: 'var(--cms-accent)', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 750, fontSize: '13px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        <Plus size={16} />
+                        <span>Tambah</span>
                       </button>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1780,7 +2035,7 @@ const BlogManager = () => {
 
                 {/* Cover Banner */}
                 <div style={{ padding: '14px', background: 'var(--cms-bg-elevated)', borderRadius: '14px', border: '1px solid var(--cms-border)', boxSizing: 'border-box' }}>
-                  <div style={{ fontSize: '11px', fontWeight: 800, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 800, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <CheckCircle2 size={12} /> Kategori & Slug
                   </div>
                   <div style={{ marginBottom: '12px' }}>
@@ -1822,8 +2077,32 @@ const BlogManager = () => {
 
                 {/* SEO */}
                 <div style={{ padding: '14px', background: 'var(--cms-bg-elevated)', borderRadius: '14px', border: '1px solid var(--cms-border)', boxSizing: 'border-box' }}>
-                  <div style={{ fontSize: '11px', fontWeight: 800, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Search size={12} /> SEO
+                  <div style={{ fontSize: '11px', fontWeight: 800, color: 'var(--cms-text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Search size={12} /> SEO
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isGeneratingSeo}
+                      onClick={handleAutoGenerateSeo}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        padding: '3px 8px',
+                        borderRadius: 9999,
+                        background: 'rgba(56, 189, 248, 0.12)',
+                        border: '1px solid rgba(56, 189, 248, 0.3)',
+                        color: '#38bdf8',
+                        fontSize: '10px',
+                        fontWeight: 750,
+                        cursor: isGeneratingSeo ? 'wait' : 'pointer'
+                      }}
+                      title="Isi Meta Title, Description, dan Tags Otomatis dengan AI"
+                    >
+                      <Sparkles size={11} />
+                      <span>{isGeneratingSeo ? 'Meracik SEO...' : '✨ Auto-SEO (AI)'}</span>
+                    </button>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     <div>

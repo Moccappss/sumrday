@@ -1,4 +1,3 @@
-import * as XLSX from 'xlsx';
 import type { FormSchema, FormResponse } from '../components/admin/form-maker/formTypes';
 import { googleSync } from './googleSync';
 
@@ -15,10 +14,11 @@ export const sanitizeFileName = (name: string): string => {
 /**
  * Menghasilkan file Excel (.xlsx) murni dalam bentuk Blob, Filename & Base64
  */
-export const generateFormExcelBlob = (
+export const generateFormExcelBlob = async (
   form: FormSchema,
   responses: FormResponse[]
-): { blob: Blob; filename: string; base64: string } => {
+): Promise<{ blob: Blob; filename: string; base64: string }> => {
+  const XLSX = await import('xlsx');
   const wb = XLSX.utils.book_new();
 
   // 1. Definisikan Kolom Header
@@ -52,6 +52,8 @@ export const generateFormExcelBlob = (
         rowData.push(val.join(', '));
       } else if (typeof val === 'boolean') {
         rowData.push(val ? 'Ya' : 'Tidak');
+      } else if (typeof val === 'object' && val !== null) {
+        rowData.push(val.url ? `${val.name || 'Berkas'}: ${val.url}` : JSON.stringify(val));
       } else {
         rowData.push(String(val));
       }
@@ -103,12 +105,12 @@ export const generateFormExcelBlob = (
 /**
  * Unduh langsung file Excel (.xlsx) ke komputer pengguna
  */
-export const downloadFormExcel = (
+export const downloadFormExcel = async (
   form: FormSchema,
   responses: FormResponse[]
-): boolean => {
+): Promise<boolean> => {
   try {
-    const { blob, filename } = generateFormExcelBlob(form, responses);
+    const { blob, filename } = await generateFormExcelBlob(form, responses);
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -134,7 +136,7 @@ export const autoSaveFormExcelToDrive = async (
   notify?: (msg: string, type?: 'success' | 'error' | 'info') => void
 ): Promise<{ success: boolean; url?: string; message?: string }> => {
   try {
-    const { blob, filename } = generateFormExcelBlob(form, responses);
+    const { blob, filename } = await generateFormExcelBlob(form, responses);
     const file = new File([blob], filename, {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });

@@ -48,6 +48,15 @@ export const useBlockMusic = (blocks: MusicBlock[]) => {
         }
       }
     });
+
+    return () => {
+      Object.keys(audiosRef.current).forEach(id => {
+        try {
+          audiosRef.current[id].pause();
+          audiosRef.current[id].src = '';
+        } catch (_) {}
+      });
+    };
   }, [blocks, isMuted]);
 
   // Fade helper
